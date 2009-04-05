@@ -1119,7 +1119,8 @@ class PDFData(object):
     os.remove('type1cconv.rgb.tmp.ps')
 
     # !! shortcut for sam2p (don't need pngtopnm)
-    #    (add basic support for reading PNG to sam2p?)
+    #    (add basic support for reading PNG to sam2p? -- just what GS produces)
+    #    (or just add .gz support?)
     images = {}
     for obj_num in sorted(rendered_images):
       rendered_image_file_name = rendered_images[obj_num]
