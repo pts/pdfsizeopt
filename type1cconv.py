@@ -45,11 +45,12 @@ class PDFObj(object):
       self.head = other.head
       self.stream = other.stream
     elif isinstance(other, str):
-      # !! what if endobj is part of a string in the obj? -- parse properly
+      # !! TODO(pts): what if endobj is part of a string in the obj? --
+      # parse properly
       match = re.match(r'(?s)\d+\s+0\s+obj\b\s*', other)
       assert match
       skip_obj_number_idx = len(match.group(0))
-      match = re.search(r'\b(stream\s|endobj(?:\s|\Z))', other)
+      match = re.search(r'\b(stream(?:\r\n|\s)|endobj(?:\s|\Z))', other)
       assert match
       self.head = other[skip_obj_number_idx : match.start(0)].rstrip()
       if match.group(1).startswith('endobj'):
@@ -135,6 +136,8 @@ class PDF(object):
     if prev_obj_num is not None:
       obj_data[prev_obj_num] = data[prev_obj_start_idx : ]
 
+    # SUXX: no trailer in  pdf_reference_1-7-o.pdf
+    # TODO(pts): Learn to parse that as well.
     assert prev_obj_num == 'trailer'
     trailer_data = obj_data.pop('trailer')
     print >>sys.stderr, 'info: separated to %s objs' % len(obj_data)
@@ -239,8 +242,8 @@ class PDF(object):
         # TODO(pts): Do only Type1 fonts have /FontFile ?
         # What about Type3 fonts?
         match = re.search(r'/(FontFile\d*)\s+(\d+)\s+0 R\b', obj.head)
-        if (match and font_file_tag is None or
-            match.group(1) == font_file_tag):
+        if (match and (font_file_tag is None or
+            match.group(1) == font_file_tag)):
           font_obj_num = int(match.group(2))
           if do_obj_num_from_font_name:
             match = re.search(r'/FontName\s*/([#-.\w]+)', obj.head)
@@ -470,7 +473,12 @@ def main(argv):
     file_name = 'progalap_doku.pdf'
   else:
     file_name = sys.argv[1]
-  pdf = PDF().Load(file_name).ConvertType1FontsToType1C().Save('type1c.pdf')
+  if len(sys.argv) < 3:
+    if file_name.endswith('.pdf'):
+      output_file_name = file_name[:-4] + '.type1c.pdf'
+    else:
+      output_file_name = file_name + '.type1c.pdf'
+  PDF().Load(file_name).ConvertType1FontsToType1C().Save(output_file_name)
 
 if __name__ == '__main__':
   main(sys.argv)
