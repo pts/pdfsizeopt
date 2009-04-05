@@ -125,7 +125,7 @@ class PDFObj(object):
       # or a binary /Indexed palette
       h = {}
       rest = re.sub(
-          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|\S[^/]*)',
+          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|\S[^/]*)',
           lambda match: h.__setitem__(match.group(1), match.group(2).rstrip()),
           self.head[:-2])  # Without `>>'
       rest = rest.strip()
@@ -189,7 +189,7 @@ class PDFObj(object):
       raise NotImplementedError('filter not implemented: %s' + filter)
     decodeparms = self.Get('DecodeParms') or ''
     if '/Predictor' in decodeparms:
-      raise NotImplementederror('/DecodeParms not implemented')
+      raise NotImplementedError('/DecodeParms not implemented')
     return zlib.decompress(self.stream)
 
 
@@ -208,12 +208,13 @@ class ImageData(object):
       or none
     predictor: integer predictor specification, 1 if no predictor, >= 10 for
       PNG predictors.
+    file_name: name of the file originally loaded
 
   TODO(pts): Make this a more generic image object; possibly store /Filter
     and predictor.
   """
   __slots__ = ['width', 'height', 'bpc', 'color_type', 'is_interlaced',
-               'idat', 'plte', 'predictor']
+               'idat', 'plte', 'predictor', 'file_name']
 
   def __init__(self, other=None):
     """Initialize from other.
@@ -231,19 +232,22 @@ class ImageData(object):
       self.idat = other.idat
       self.plte = other.plte
       self.predictor = other.predictor
+      self.file_name = other.file_name
     else:
       self.Clear()
 
   def Clear(self):
     self.width = self.height = self.bpc = self.color_type = None
     self.is_interlaced = self.idat = self.plte = self.predictor = None
+    self.file_name = None
 
   def __nonzero__(self):
     """Return true iff this object contains a valid image."""
     return bool(self.width and self.height and self.bpc and self.color_type and
                 self.predictor and
                 self.is_interlaced is not None and self.idat and (
-                not self.color_type.startswith('indexed-') or self.plte))
+                not self.color_type.startswith('indexed-') or (
+                isinstance(self.plte, str) and len(self.plte) % 3 == 0)))
 
   def CanBePDFImage(self):
     return bool(self and self.bpc in (1, 2, 4, 8) and
@@ -294,7 +298,25 @@ class ImageData(object):
       pdf_image_data['DecodeParms'] = (
           '<</BitsPerComponent %d/Columns %d/Colors %d/Predictor 10>>' %
           (self.bpc, self.width, self.samples_per_pixel))
+    if self.bpc == 1 and self.color_type == 'indexed-rgb':
+      # Such images are emitted by PNGOUT.
+      if self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0'):
+        pdf_image_data['ColorSpace'] = '/DeviceGray'
+      elif self.plte in ('\xff\xff\xff\0\0\0', '\xff\xff\xff'):
+        # TODO(pts): Test this.
+        pdf_image_data['ColorSpace'] = '/DeviceGray'
+        pdf_image_data['Decode'] = '[1 0]'
+
     return pdf_image_data
+
+  def CanUpdateImageMask(self):
+    """Return bool saying whether self.UpdatePDFObj works on an /ImageMask."""
+    if self.bpc != 1: return False
+    if (self.color_type == 'indexed-rgb' and
+        self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0',
+                      '\xff\xff\xff\0\0\0', '\xff\xff\xff')):
+      return True
+    return self.color_type == 'gray'
 
   def UpdatePDFObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
@@ -307,17 +329,35 @@ class ImageData(object):
     else:
       pdf_obj.Set('Width', pdf_image_data['Width'])
       pdf_obj.Set('Height', pdf_image_data['Height'])
-    if pdf_obj.Get('ImageMask') is True:
+    if pdf_obj.Get('ImageMask'):
       # !! PNGOUT converts an ImageMask to a non-imagemask. Can we convert it
       # back without modifying the content stream?
-      z = dict(pdf_image_data)
-      del z['.stream']
-      print (z, pdf_obj.head)
+      #z = dict(pdf_image_data)
+      #del z['.stream']
+      #print (z, pdf_obj.head)
+      assert self.CanUpdateImageMask()
       assert pdf_image_data['BitsPerComponent'] == 1
       assert pdf_image_data['ColorSpace'] == '/DeviceGray'
+      pdf_obj.Set('ColorSpace', None)
+      image_decode = pdf_image_data.get('Decode')
+      if image_decode in (None, '[0 1]'):
+        if pdf_obj.Get('Decode') == '[0 1]':
+          pdf_obj.Set('Decode', None)
+      elif image_decode == '[1 0]':
+        # Imp: test this
+        decode = pdf_obj.Get('Decode')
+        if decode in (None, '[0 1]'):
+          pdf_obj.Set('Decode', '[1 0]')
+        elif decode == '[1 0]':
+          pdf_obj.Set('Decode', None)
+        else:
+          assert 0, 'unknown decode value in PDF: %r' % decode
+      else:
+        assert 0, 'unknown decode value: %r' % image_decode
     else:
       pdf_obj.Set('BitsPerComponent', pdf_image_data['BitsPerComponent'])
       pdf_obj.Set('ColorSpace', pdf_image_data['ColorSpace'])
+      pdf_obj.Set('Decode', pdf_image_data.get('Decode'))
     pdf_obj.Set('Filter', pdf_image_data['Filter'])
     pdf_obj.Set('DecodeParms', pdf_image_data.get('DecodeParms'))
     pdf_obj.Set('Length', len(pdf_image_data['.stream']))
@@ -360,6 +400,7 @@ class ImageData(object):
         assert 0, 'bad PNG/PDF signature in file'
     finally:
       f.close()
+    self.file_name = file_name
     assert self, 'could not load valid image'
     assert not self.color_type.startswith('indexed-') or self.plte, (
         'missing PLTE data')
@@ -373,7 +414,11 @@ class ImageData(object):
     return self
 
   def LoadPDF(self, f):
-    """Load image data from single ZIP-compressed image in PDF."""
+    """Load image data from single ZIP-compressed image in PDF.
+
+    The features of this method is rather limited: it can load the output of
+    `sam2p -c zip' and alike, but not much more.
+    """
     pdf = PDFData().Load(f)
     # !! proper PDF object parsing
     image_obj_nums = [
@@ -383,7 +428,6 @@ class ImageData(object):
         'no single image XObject in PDF, got %r' % image_obj_nums)
     obj = pdf.objs[image_obj_nums[0]]
     # !! support single-color image by sam2p
-    # !! support /ImageMask by sam2p
     filter = obj.Get('Filter')
     if filter is None:
       filter = '/FlateDecode'
@@ -391,13 +435,56 @@ class ImageData(object):
       obj.stream = zlib.compress(obj.stream, 9)
       obj.Set('DecodeParms', None)
     assert filter == '/FlateDecode', 'image in PDF is not ZIP-compressed'
-    colorspace = obj.Get('ColorSpace')
-    # !! support /Indexed, parse palette in PDF string
-    assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
-        'unrecognized Colorspace %r' % colorspace)
+    width = int(obj.Get('Width'))
+    height = int(obj.Get('Height'))
+    palette = None
+    if obj.Get('ImageMask'):
+      colorspace = None
+      # Convert imagemask generated by sam2p to indexed8
+      page_objs = [pdf.objs[obj_num] for obj_num in sorted(pdf.objs) if
+                   re.search(r'/Type\s*/Page\b', pdf.objs[obj_num].head)]
+      if len(page_objs) == 1:
+        contents = page_objs[0].Get('Contents')
+        match = re.match(r'(\d+)\s+0\s+R\Z', contents)
+        assert match
+        content_obj = pdf.objs[int(match.group(1))]
+        content_stream = content_obj.GetDecompressedStream()
+        content_stream = ' '.join(content_stream.strip().split())
+        number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
+        # Example content_stream, as emitted by sam2p-0.46:
+        # q 0.2118 1 0 rg 0 0 m %(width)s 0 l %(width)s %(height)s l 0
+        # %(height)s l F 1 1 1 rg %(width)s 0 0 %(height)s 0 0 cm /S Do Q
+        content_re = (
+            r'q (%(number_re)s) (%(number_re)s) (%(number_re)s) rg 0 0 m '
+            r'%(width)s 0 l %(width)s %(height)s l 0 %(height)s l F '
+            r'(%(number_re)s) (%(number_re)s) (%(number_re)s) rg %(width)s '
+            r'0 0 %(height)s 0 0 cm /[-.#\w]+ Do Q\Z' % locals())
+        match = re.match(content_re, content_stream)
+        if match:
+          # TODO(pts): Clip the floats to the interval [0..1]
+          color1 = (chr(int(float(match.group(1)) * 255 + 0.5)) +
+                    chr(int(float(match.group(2)) * 255 + 0.5)) +
+                    chr(int(float(match.group(3)) * 255 + 0.5)))
+          color2 = (chr(int(float(match.group(4)) * 255 + 0.5)) +
+                    chr(int(float(match.group(5)) * 255 + 0.5)) +
+                    chr(int(float(match.group(6)) * 255 + 0.5)))
+          if not (obj.Get('Decode') or '[0 1]').startswith('[0'):
+            palette = color2 + color1
+          else:
+            palette = color1 + color2
+          colorspace = '.indexed'
+      assert colorspace is not None, 'unrecognized sam2p /ImageMask'
+    else:
+      colorspace = obj.Get('ColorSpace')
+      # !! support /Indexed, parse palette in PDF string
+      # !! gracefully fail if cannot parse
+      assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
+          'unrecognized ColorSpace %r' % colorspace)
     decodeparms = PDFObj(None)
     decodeparms.head = obj.Get('DecodeParms') or '<<\n>>'
     predictor = decodeparms.Get('Predictor')
+    if obj.Get('Decode') is not None:
+      raise NotImplementederror('parsing PDF /Decode not implemented')
     if predictor and predictor != 1:
       # TODO(pts): Test this.
       assert isinstance(predictor, int), (
@@ -415,19 +502,25 @@ class ImageData(object):
       predictor = 1
 
     self.Clear()
-    self.width = int(obj.Get('Width'))
-    self.height = int(obj.Get('Height'))
+    self.width = width
+    self.height = height
     self.bpc = int(obj.Get('BitsPerComponent'))
     if colorspace == '/DeviceRGB':
+      assert palette is None
       self.color_type = 'rgb'
     elif colorspace == '/DeviceGray':
+      assert palette is None
       self.color_type = 'gray'
+    elif colorspace == '.indexed':
+      self.color_type = 'indexed-rgb'
+      assert isinstance(palette, str)
+      assert len(palette) % 3 == 0
     else:
-      assert 0  # !! implement /Indexed
+      assert 0, 'bad colorspace %r' % colorspace
     self.is_interlaced = False
-    self.idat = str(obj.stream)
-    self.plte = None  # !! implement /Indexed
+    self.plte = palette
     self.predictor = predictor
+    self.idat = str(obj.stream)
     
   def LoadPNG(self, f):
     signature = f.read(8)
@@ -917,7 +1010,6 @@ class PDFData(object):
   } ifelse
   /DataSource exch def
   % Stack: <streamdict>
-  dup /ColorSpace get setcolorspace
   dup /BitsPerComponent get /BitsPerComponent exch def
   dup /Width get /Width exch def
   dup /Height get /Height exch def
@@ -932,6 +1024,8 @@ class PDFData(object):
   % ``<< /PageCount ... >> setpagedevice'' has no effect.
   % It's OK to change /PageSize for each page.
   << /PageSize [Width Height] >> setpagedevice
+  % This must come after setpagedevice to take effect.
+  dup /ColorSpace get setcolorspace
   /ImageType 1 def
   dup /Height get [1 0 0 -1 0 0] exch 5 exch 3 copy put pop pop
       /ImageMatrix exch def
@@ -978,11 +1072,11 @@ class PDFData(object):
     # Remove old PNG output files.
     i = 0
     while True:
+      i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
       if not os.path.exists(png_tmp_file_name): break
       os.remove(png_tmp_file_name)
       assert not os.path.exists(png_tmp_file_name)
-      i += 1
 
     gs_cmd = (
         'gs -q -dNOPAUSE -dBATCH -sDEVICE=%s '
@@ -1159,36 +1253,40 @@ class PDFData(object):
           r'(?sm)^/(\S+)[ \t]*<<(.*?)>>',
           lambda match: '/%s <<%s>>' % (match.group(1), match.group(2).strip().replace('\n', '')),
           obj.head)
-      obj_infos = [(obj.size, 0, obj)]
+      obj_infos = [(obj.size, 0, '', obj)]
       for image_data in images[obj_num]:
-        #print 'GG', len(obj_infos), obj.Get('BitsPerComponent'), image_data.bpc
+        #print ('GG', len(obj_infos), obj.Get('BitsPerComponent'), obj.Get('ColorSpace'), image_data.bpc)
         new_obj = PDFObj(obj)
         # !!! BUG: bad conversion (lost color) of page 2 of pts2ep.pdf
-        if obj.Get('ImageMask') and (
-            new_obj.Get('BitsPerComponent') != 1 or
-            new_obj.Get('ColorSpace') != '/DeviceGray'):
-          # !! better handling this instead of skipping
-          print >>sys.stderr, 'warning: skipping because of source /Imagemask'
+        if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
+          print >>sys.stderr, (
+              'warning: skipping bpc=%s color_type=%s file_name=%r '
+              'for image XObject %s because of source /ImageMask' %
+              (image_data.bpc, image_data.color_type, image_data.file_name,
+               obj_num))
         else:
           image_data.UpdatePDFObj(new_obj)
-          # !! cmd_name
-          obj_infos.append([new_obj.size, len(obj_infos), new_obj])
+          # !! cmd_name instead of len(obj_infos); also for 0 above
+          obj_infos.append(
+              [new_obj.size, len(obj_infos), image_data.file_name, new_obj])
       replacement_sizes = dict(
           [(obj_info[1], obj_info[0]) for obj_info in obj_infos[1:]])
-      best_obj_info = min(obj_infos)
+      best_obj_info = min(obj_infos)  # Never empty.
       if best_obj_info[-1] is obj:
         print >>sys.stderr, (
             'info: keeping original image XObject %s, replacements too large (%r >= %s bytes)' %
             (obj_num, replacement_sizes, obj.size))
       else:
         print >>sys.stderr, (
-            'info: optimized image XObject %s best_method=%s size=%s (%s)' %
-            (obj_num, best_obj_info[1], best_obj_info[0],
-             FormatPercent(best_obj_info[0], obj.size))) 
+            'info: optimized image XObject %s best_method=%s file_name=%s '
+            ' size=%s (%s)' %
+            (obj_num, best_obj_info[1], best_obj_info[2],
+             best_obj_info[0], FormatPercent(best_obj_info[0], obj.size))) 
         print >>sys.stderr, (
             'info: replacements are %r <= %s bytes' %
             (replacement_sizes, obj.size))
         self.objs[obj_num] = best_obj_info[-1]
+    # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
     # !! os.remove(images[obj_num][...])
     return self
