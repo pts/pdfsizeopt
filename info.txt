@@ -1,0 +1,258 @@
+# by pts@fazekas.hu at Fri Mar 27 22:37:48 CET 2009
+
+* gs -sDEVICE=pdfwrite can do Type1C font embedding --> great reduction for small PDFs
+* PDF tools including compression:
+  http://multivalent.sourceforge.net/Tools/index.html
+  old (2006-01-02)
+  -max and -compact can only be read by Mulivalent tools
+    bzip2, very small; file format details:
+    http://multivalent.sourceforge.net/Research/CompactPDF.html
+    white paper (2003) http://portal.acm.org/citation.cfm?id=958220.958253
+  ?? does it recompress images?
+  converts fn.pdf to fn-o.pdf  (makes it much smaller)
+  SUXX: java -cp Multivalent.jar tool.pdf.Compress texbook.9.2.pdf
+  texbook.9.2.pdf: java.lang.ArrayIndexOutOfBoundsException: 1820
+  * good idea to compress fn.9.0.pdf to fn.9.0-o.pdf, to PDF1.5 with object
+    compression
+* is there a tool for Type1C (CFF) font conversion in PDF?
+* \cite (2004)
+  Creative use of PDF files in L A T E X environments
+  http://www.tu-chemnitz.de/urz/anwendungen/tex/stammtisch/chronik/pdf_interna.pdf - 
+* Ubuntu Hardy has latest pdftk 1.41
+  pdftk texbook.9.0.pdf output texbook.9.0.tk.pdf compress
+  only compresses the page stream a little bit
+* http://www.egregorion.net/servicemenu-pdf/
+  various operations on PDf
+* concatenation requires gs (\cite my eurotex2007 article with .ps hack)
+* -dPDFSETTINGS=/printer : embed all fonts (see docs at http://pages.cs.wisc.edu/~ghost/doc/cvs/Ps2pdf.htm)
+* pdftex type1c http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=424404
+* http://www.adobe.com/devnet/acrobat/pdfs/pdf_reference_1-7.pdf
+* TODO: how \pdfcompresslevel affects the effectiveness of Multivalent?
+* TODO: how to recompress inline images? What is the sam2p default?
+* TODO: does Multivalent recompress images? try...
+* TODO: do sam2p-produced inline images remain inline images with pdftex,
+  without recompression? [unchanged, kept RLE by pdftex] what if Multivalent?
+  [unchanged, kept RLE by Multivalent]
+  pdftex doesn't recompress or change BitsPerComponent, colorspace, filter etc.
+  of /XObject
+  multivalent doesn't change the BitsPerComponent or colorspace, but it
+  changes the filter from none or RLE to /FlateDecode (TODO: what about LZW or
+  fax?), but it keeps /DCTDecode.
+  SUXX: TODO: multivalent is buggy, it removes the whole /DecodeParms,
+  including the /Predictor, but it doesn't
+  reencode the image; it also removes an unknown /Filter/FooDecode
+* TODO: experiment with PNG and TIFF predictors -- will we gain size by
+  default? or should the user do it?
+* TODO: use standard PNG tools (or pnmtopng -- does it optimize? yes, it
+  seems to find out number of bits; creates PNG smaller than sam2p) if
+  available to achieve superior (?) compression
+* doc: which version of pdftex used and why?
+* TODO: how to fix images after reencoding with gs -sDEVICE=pdfwrite?
+  (use my Perl script?)
+* (from pnmtopng.c)
+  PNG allows only depths of 8 and 16 for a truecolor image
+  and for a grayscale image with an alpha channel.
+* create small PNG: png_create_write_struct (PNG_LIBPNG_VER_STRING,
+  &pnmtopng_jmpbuf_struct, pnmtopng_error_handler, NULL);
+* similar to sam2p (EPS and PDF output): http://bmeps.sf.net/
+* TODO: first RLEEncode, then FlateEncode
+* doc: pdfconcat (does it keep hyperlinks? does anything keep hyperlinks?
+  document our gs script: lme2006/art/02typeset/pdfconcatlinks.ps)
+* lme2006 was latex + dvips + gs -sDEVICE=pdfwrite
+* eurotex2006 was pdflatex + pdfconcat
+* doc: converting large images needs lots of memory (for tool.pdf.Compress,
+  the image stream must fit to memory)
+* png2pdf 1.0.12: 2006-07-11
+* TODO: meps.sf.net png2pdf.net: does it decompress PNG? Yes.
+* http://en.wikipedia.org/wiki/Portable_Network_Graphics
+  The current version of IrfanView can use PNGOUT as an external plug-in,
+  obviating the need for a separate compressor.
+* However, IrfanView doesn't support transparency, so the image compression
+  with IrfanView isn't guaranteed to be lossless. There is also a freeware GUI
+  frontend to PNGOUT known as PNGGauntlet.
+* pngout.exe is not open source; 11/20/2008
+  * amazingly small: 11/20/2008 version: 40960 bytes
+  * has variouse flags tuning speed and compression parameters
+  * description of flags: http://advsys.net/ken/util/pngout.htm
+  out of memory for very large images: lme_v6/00001.png: PNG image data, 17382 x 23547, 1-bit grayscale, non-interlaced
+  very slow:
+  $ file lme_v6/600dpi_00001.png
+  lme_v6/600dpi_00001.png: PNG image data, 5794 x 7849, 1-bit grayscale, non-interlaced
+  $ time wine ./pngout.exe lme_v6/600dpi_00001{,.pngout}.png
+  In:   78862 bytes               lme_v6/600dpi_00001.png /c0 /f0 /d1
+  Out:                             lme_v6/600dpi_00001.pngout.png /c3 /f0 /d1, 2 c
+  Out:   54135 bytes               
+  Chg:  -24727 bytes ( 68% of original)
+  real	6m48.734s
+  user	6m32.473s
+  sys	0m2.480s
+  old linux version available (20070430)
+  http://static.jonof.id.au/dl/kenutils/pngout-20070430-linux-static.tar.gz
+  only free to use: http://www.advsys.net/ken/utils.htm#pngoutkziplicense
+  * seems to do color space conversion
+  $ time ./pngout-linux-pentium4-static lme_v6/300dpi_00001.rgb8{,.pngout}.png
+  In:34118768 bytes               lme_v6/300dpi_00001.rgb8.png /c2 /f0
+  Out:                            lme_v6/300dpi_00001.rgb8.pngout.png /c3 /f0 /d1
+  Out:   19817 bytes               
+  Chg:-34098951 bytes (  0% of original)
+  real	0m47.100s
+  user	0m46.803s
+  sys	0m0.248s
+  $ time ./pngout-linux-pentium4-static lme_v6/300dpi_00008{,.pngout}.png
+  In:  124462 bytes               lme_v6/300dpi_00008.png /c0 /f0 /d1
+  Out:                             lme_v6/300dpi_00008.pngout.png /c3 /f0 /d1, 2 c
+  Out:  107256 bytes               
+  Chg:  -17206 bytes ( 86% of original)
+  real	0m58.512s
+  user	0m58.192s
+  sys	0m0.244s
+  $ time sam2p -pdf:2 lme_v6/00008.png lme_v6/00008.sam2p.pdf
+  This is sam2p v0.45-3.
+  Available Loaders: PS PDF JAI PNG JPEG TIFF PNM BMP GIF LBM XPM PCX TGA.
+  Available Appliers: XWD Meta Empty BMP PNG TIFF6 TIFF6-JAI JPEG-JAI JPEG PNM
+  GIF89a+LZW XPM PSL1C PSL23+PDF PSL2+PDF-JAI P-TrOpBb.
+  sam2p: Notice: PNM: loaded alpha, but no transparent pixels
+  sam2p: Notice: job: read InputFile: lme_v6/00008.png
+  sam2p: Notice: writeTTT: using template: p02
+  sam2p: Notice: applyProfile: applied OutputRule #4
+  sam2p: Notice: job: written OutputFile: lme_v6/00008.sam2p.pdf
+  Success.
+
+  real	1m16.780s
+  user	1m9.492s
+  sys	0m6.632s
+  $ time java -cp Multivalent.jar tool.pdf.Compress lme_v6/00008.sam2p.pdf
+  file:/home/kat/mix/trunk/pdfsize/lme_v6/00008.sam2p.pdf, 1419665 bytes
+  additional compression may be possible with:
+           -compact -jpeg
+  => new length = 1246436, saved 12%, elapsed time = 13 sec
+
+  real	0m14.039s
+  user	0m13.705s
+  sys	0m0.356s
+  $ time ./optipng lme_v6/00008.optipng.png 
+  OptiPNG 0.6.2: Advanced PNG optimizer.
+  Copyright (C) 2001-2008 Cosmin Truta.
+
+  ** Processing: lme_v6/00008.optipng.png
+  17382x23547 pixels, 1 bit/pixel, grayscale
+  Input IDAT size = 1371588 bytes
+  Input file size = 1373711 bytes
+  Trying:
+    zc = 9  zm = 8  zs = 0  f = 0		IDAT size = 1246754
+    zc = 9  zm = 8  zs = 1  f = 0		IDAT size = 1241149
+    zc = 9  zm = 8  zs = 0  f = 5		IDAT size = 1090056
+    zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
+                                          
+  Selecting parameters:
+    zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
+
+  Output IDAT size = 1085643 bytes (285945 bytes decrease)
+  Output file size = 1085762 bytes (287949 bytes = 21.02% decrease)
+  real	2m28.465s
+  user	2m27.521s
+  sys	0m0.560s
+  * optipng uses very little memory (50M for 00008.png), it doesn't read the
+    whole PNG input image to memory.
+* TODO: JPEG optimization
+* http://lyncd.com/2009/03/imgopt-lossless-optimize-png-jpeg/
+  shell script using jpegtran, optipng, advpng and pngout
+* OptiPNG is a PNG optimizer that recompresses image files to a smaller
+  size, without losing any information. This program also converts external
+  formats (BMP, GIF, PNM and TIFF) to optimized PNG, and performs PNG
+  integrity checks and corrections.
+  If you wish to learn how PNG optimization is done, or to know about other
+  similar tools, read the PNG-Tech article "A guide to PNG optimization". 
+  (optipng is a redesign of pngcrush)
+  * At the time of this writing, AdvPNG does not perform image reductions,
+    so the use of pngrewrite or OptiPNG prior to optimiziation may be
+    necessary. However, given the effectivenes of 7-Zip deflation, AdvanceCOMP
+    is a powerful contender.
+  * contains minitiff.c and tiffread.c for reading TIFF files
+  * can process large images: 17382x23547 pixels, 1 bit/pixel, grayscale
+* TODO: \cite PNG optimization  http://optipng.sourceforge.net/pngtech/optipng.html
+  lists ll relevant tools
+* Latest version: OptiPNG 0.6.2 (released on 9 Nov 2008). 
+* SUXX: advpng in advancecomp-1.15 doesn't support 1-bit grayscale
+  lme_v6/300dpi_00008.advpng-4.png (Unsupported bit depth/color type, 1/0)
+* ultimate data compression comparison: http://uclc.info/
+  TODO: Google, includes PAQ: slow, but emits small file
+* TODO: unused palette color optimization for PDF images
+  (pngout does it, optipng doesn't do it)
+* TODO: convert-indexed-to-grayscale optimization for PDF images
+  (pngout or optipng doesn't do it, optipng doesn't do it)
+* TODO: single-color image optimization
+* TODO: How to optimize a PDF image object
+  0. Let the original PDF XImage object be orig.pdfimg .
+  1. Create v0.pdfimg from orig.pdfimg by keeping only /Width, /Height,
+     /ColorSpace, /BitsPerComponent, /Filter and /DecodeParms and the
+     compressed stream. Convert ``/ImageMask true'' to /ColorSpace /DeviceGray.
+  2. If the /Filter contains /JBIG2Decode or /JPXDecode or /DCTDecode, then
+     stop and use v0.pdfimg . (Imp: eliminate /ASCIIHexDecode and
+     /ASCII85Decode, also later)
+  3. If /ColorSpace is not /DeviceRGB, /DeviceGray or /Indexed of /DeviceRGB
+     or /DeviceGray, then stop and use v0.pdfimg . (Imp: /DeviceCMYK, but
+     PNG has no support for this).
+  4. If /BitsPerComponent is greater than 8, then stop and use v0.pdfimg .
+  5. If /Mask is present and it's nonempty, then stop and use v0.pdfimg
+     (Imp: easy support for non-indexed /DeviceRGB and /DeviceGray: convert
+     the /Mask to RGB8, remove it, and add it back (properly converted back) to
+     the final PDF; pay attention to /Decode differences as well.)
+  6. Render v0.pdfimg with Ghostscript to -sDEVICE=ppmraw,
+     ``/Interpolate false''
+     (or -sDEVICE=pgmraw if /DeviceGray or /Indexed/DeviceGray)
+     (Imp: maybe -sDEVICE=pdfwrite with
+     the appropriate setpagedevice to produce something uncompressed that
+     sam2p understands directly.)
+  7. Convert the rendered PNM with sam2p to PDF XObject (-pdf:2 PDF1.2:).
+     Use the -s option to prevent the creation of a single-color image
+     without an image XObject.
+     sam2p by default does:
+     * removing unused colors from the palette
+     * picking the smallest /ColorSpace and /BitsPerComonent (== SampleFormat)
+     * using ZIP compression (/FlateDecode)
+     (Imp: improve the /FlateDecode predictor selection algorithm of sam2p)
+  8. Extract the image XObject from the PDF created by sam2p to v1.pdfimg .
+  9. Convert the rendered PNM with sam2p to PNG. (Imp: optimize with
+     SampleFormat RGB1, RGB2 and RGB4) (Imp: if BitsPerComponent is not 8,
+     do an alternate conversion, specifing only 8-bit SampleFormats)
+  10. Use pngout (or optipng, if pdfout is not available). (Imp: with some
+      flags: optipng -o5) (Imp: use pnmtopng, which creates a little bit
+      smaller PNG than sam2p because it chooses better predictors)
+      (Imp: for some very large images (what is the limit?), pdfout runs out
+      of memory (malloc fails) -- prevent that, and use optipng)
+  11. Extract the new /Width, /Height, /ColorSpace and /BitsPerComponent
+      values from the PNG header, and the palette from the PNG PLTE chunk.
+  12. Create v2.pdfimg from v0.pdfimg by replacing /Width, /Height,
+      /ColorSpace and /BitsPerComponent from the values extracted above,
+      adding the corresponding PNG /DecodeParms, /Filter /FlateDecode and
+      replacing the image stream with the contents of the PNG IDAT chunk.
+      (Imp: experiment size reduction with /DecodeParms and image data being
+      out of sync.) This operation is fast, because no recoding or
+      recompression takes place.
+  13. Pick the smallest of v*.pdfimg created above.
+  14. If not v0.pdfimg was picked, then create the output by taking
+      orig.pdfimg and replacing /ColorSpace, /BitsPerComponent,
+      /DecodeParms, /Filter and the image stream. Verify that /Width and
+      /Height of orig.pdf and the v*.pdfimg picked match.
+      (Imp: apply the /Mask color interval, if appropriate.)
+* TODO: prevent tool.pdf.Compress from decompressing, and/or recompressing
+  the image XObjects we have created
+* doc: none of the tools optimize inline images (TODO?), so please don't use
+  sam2p (by default) to embed them, use sam2p -pdf:2 to create image
+  XObjects.
+* TODO: measure PNG/PDF image size reduction compared to tool.pdf.Compress
+* http://prdownloads.sourceforge.net/libpng/libpng-1.2.16.tar.bz2
+* pngwutil.c
+  png_write_find_filter  (finds a filter for the current row)
+    The prediction method we use is to find which method provides the
+    smallest value when summing the absolute values of the distances
+    from zero, using anything >= 128 as negative numbers.  This is known
+    as the "minimum sum of absolute differences" heuristic.  Other
+    heuristics are the "weighted minimum sum of absolute differences"
+    (experimental and can in theory improve compression), and the "zlib
+    predictive" method (not implemented yet), which does test compressions
+    of lines using different filter methods, and then chooses the
+    (series of) filter(s) that give minimum compressed data size (VERY
+    computationally expensive).
+* gs -sDEVICE=ppmraw doesn't change any pixel value
