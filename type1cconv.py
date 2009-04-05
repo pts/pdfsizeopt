@@ -3,12 +3,14 @@
 # type1cconv.py: convert Type1 fonts in a PDF to Type1C
 # by pts@fazekas.hu at Sun Mar 29 13:42:05 CEST 2009
 #
+# !! rename this file to get image conversion
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
 
 import os
 import os.path
 import re
+import struct
 import sys
 import time
 
@@ -21,10 +23,13 @@ def ShellQuote(string):
   else:
     return "'%s'" % string.replace("'", "'\\''")
 
+def FormatPercent(num, den):
+  return '%d%%' % int((num * 100 + (den / 2)) // den)
+
 
 class PDFObj(object):
   """Contents of a PDF object.
-  
+
   Attributes:
     head: stripped string between `obj' and (`stream' or `endobj')
     stream: stripped string between `stream' and `endstream', or None
@@ -75,7 +80,7 @@ class PDFObj(object):
         self.stream = other[stream_start_idx : stream_end_idx]
 
   def AppendTo(self, output, obj_num):
-    """Append serialized self to output list, using obj_num."""        
+    """Append serialized self to output list, using obj_num."""
     output.append('%s 0 obj\n' % int(obj_num))
     output.append(self.head.strip())  # Implicit \s .
     if self.stream is not None:
@@ -92,7 +97,268 @@ class PDFObj(object):
     else:
       return len(self.head) + len(self.stream) + 32
 
-class PDF(object):
+  def GetScalar(self, key):
+    """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
+    # !! autoresolve refs
+    # !! proper PDF object parsing
+    i = self.head.find('\n/' + key + ' ')
+    if i < 0: return None
+    i += len(key) + 3
+    j = self.head.find('\n', i)
+    value = self.head[i : j].strip()
+    if value in ('true', 'false'):
+      return value == 'true'
+    elif value == 'null':
+      return None
+    elif re.match(r'\d+\Z', value):
+      return int(value)
+    elif re.match(r'\d[.\d]*\Z', value):  # !! proper PDF float parsing
+      return float(value)
+    else:
+      return value
+
+  def Set(self, key, value):
+    """Set value to key or remove key if value is None."""
+    # !! proper PDF object parsing
+    # !! doc: slow because of string concatenation
+    assert self.head.endswith('\n>>')
+    i = self.head.find('\n/' + key + ' ')
+    if i < 0:
+      if value is not None:
+        self.head = '%s/%s %s\n>>' % (self.head[:-2], key, value)
+    else:
+      j = self.head.find('\n', i + len(key) + 3)
+      self.head = self.head[:i] + self.head[j:]
+      if value is not None:
+        self.head = '%s/%s %s\n>>' % (self.head[:-2], key, value)
+
+
+class PNGData(object):
+  """Partial PNG image data, undecompressed by default.
+
+  Attributes:
+    width: in pixels
+    height: in pixels
+    bpc: bit depth, BitsPerComponent value (1, 2, 4, 8 or 16)
+    color_type: 'gray', 'rgb', 'indexed-rgb', 'gray-alpha', 'rgb-alpha'
+    is_interlaced: boolean
+    idat: compressed binary string containing the image data (i.e. the
+      IDAT chunk), or None
+    plte: binary string (R0, G0, B0, R1, G1, B1) containing the PLTE chunk,
+      or none
+
+  TODO(pts): Make this a more generic image object; possibly store /Filter
+    and predictor.
+  """
+  __slots__ = ['width', 'height', 'bpc', 'color_type', 'is_interlaced',
+               'idat', 'plte']
+
+  def __init__(self, other=None):
+    """Initialize from other.
+
+    Args:
+      other: A PNGData object or none.
+    """
+    if other is not None:
+      if not isinstance(other, PNGData): raise TypeError
+      self.width = other.width
+      self.height = other.height
+      self.bpc = other.bpc
+      self.color_type = other.color_type
+      self.is_interlaced = other.is_interlaced
+      self.idat = other.idat
+      self.plte = other.plte
+    else:
+      self.Clear()
+
+  def Clear(self):
+    self.width = self.height = self.bpc = self.color_type = None
+    self.is_interlaced = self.idat = self.plte = None
+
+  def __nonzero__(self):
+    """Return true iff this object contains a valid image."""
+    return (self.width and self.height and self.bpc and self.color_type and
+            self.is_interlaced is not None and self.idat and (
+            not self.color_type.startswith('indexed-') or self.plte))
+
+  def CanBePDFImage(self):
+    return (self and self.bpc in (1, 2, 4, 8) and
+            self.color_type in ('gray', 'rgb', 'indexed-rgb') and
+            not self.is_interlaced)
+
+  SAMPLES_PER_PIXEL_DICT = {
+      'gray': 1,
+      'rgb': 3,
+      'indexed-rgb': 1,
+      'gray-alpha': 2,
+      'rgb-alpha': 4,
+  }
+
+  @property
+  def samples_per_pixel(self):
+    assert self.color_type
+    return self.SAMPLES_PER_PIXEL_DICT[self.color_type]
+
+  def GetPDFColorSpace(self):
+    assert self.color_type
+    assert not self.color_type.startswith('indexed-') or self.plte
+    if self.color_type == 'gray':
+      return '/DeviceGray'
+    elif self.color_type == 'rgb':
+      return '/DeviceRGB'
+    elif self.color_type == 'indexed-rgb':
+      assert self.plte
+      assert len(self.plte) % 3 == 0
+      # TODO(pts): Use less parens if they are nested.
+      palette_dump1 = '(%s)' % re.sub(r'([()\\])', r'\\\1', self.plte)
+      palette_dump2 = '<%s>' % str(self.plte).encode('hex')
+      if len(palette_dump1) < len(palette_dump2):
+        palette_dump = palette_dump1
+      else:
+        palette_dump = palette_dump2
+      return '[/Indexed/DeviceRGB %d%s]' % (
+          len(self.plte) / 3 - 1, palette_dump)
+    else:
+      assert 0, 'cannot convert to PDF color space'
+
+  def GetPDFImageData(self):
+    """Return a dictinary useful as a PDF image."""
+    assert self.CanBePDFImage()
+    return {
+        'Width': self.width,
+        'Height': self.height,
+        'BitsPerComponent': self.bpc,
+        'Filter': '/FlateDecode',
+        'DecodeParms':
+            '<</BitsPerComponent %d/Columns %d/Colors %d/Predictor 10>>' %
+            (self.bpc, self.width, self.samples_per_pixel),
+        'ColorSpace': self.GetPDFColorSpace(),
+        '.stream': self.idat,
+    }
+
+  def UpdatePDFObj(self, pdf_obj, do_check_dimensions=True):
+    """Update the /Subtype/Image PDF XObject from self."""
+    if not isinstance(pdf_obj, PDFObj): raise TypeError
+    pdf_image_data = self.GetPDFImageData()
+    # !! parse pdf_obj., implement PDFObj.Get (with references?), .Set with None
+    if do_check_dimensions:
+      assert pdf_obj.GetScalar('Width') == pdf_image_data['Width']
+      assert pdf_obj.GetScalar('Height') == pdf_image_data['Height']
+    else:
+      pdf_obj.Set('Width', pdf_image_data['Width'])
+      pdf_obj.Set('Height', pdf_image_data['Height'])
+    if pdf_obj.GetScalar('ImageMask') is True:
+      assert pdf_image_data['BitsPerComponent'] == 1
+      assert pdf_image_data['ColorSpace'] == '/DeviceGray'
+    else:
+      pdf_obj.Set('BitsPerComponent', pdf_image_data['BitsPerComponent'])
+      pdf_obj.Set('ColorSpace', pdf_image_data['ColorSpace'])
+    pdf_obj.Set('Filter', pdf_image_data['Filter'])
+    pdf_obj.Set('DecodeParms', pdf_image_data['DecodeParms'])
+    pdf_obj.Set('Length', len(pdf_image_data['.stream']))
+    # Don't pdf_obj.Set('Decode', ...): it is goot as is.
+    pdf_obj.stream = pdf_image_data['.stream']
+
+  COLOR_TYPE_PARSE_DICT = {
+     0: 'gray',
+     2: 'rgb',
+     3: 'indexed-rgb',
+     4: 'gray-alpha',
+     6: 'rgb-alpha',
+  }
+  """Map a PNG color type byte value to a color_type string."""
+
+  def Load(self, file_name):
+    """Load (parts of) a PNG file to self, return self.
+
+    Please note that this method discards possibly important PNG chunks.
+
+    Please note that this method doesn't verify chunk CRC.
+
+    Returns:
+      self
+    Raises:
+      KeyError, ValueError, AssertionError, FileError, struct.error etc.:
+        On error, self is possibly left in an inconsistent state, use
+        self.Clear() to clean up.
+    """
+    print >>sys.stderr, 'info: loading PNG from: %s' % (file_name,)
+    f = open(file_name, 'rb')
+    try:
+      signature = f.read(8)
+      assert signature == '\x89PNG\r\n\x1A\n', 'bad PNG signature in file'
+      self.Clear()
+      ihdr = None
+      idats = []
+      need_plte = False
+      while True:
+        data = f.read(8)
+        if not data: break  # EOF
+        assert len(data) == 8
+        chunk_data_size, chunk_type = struct.unpack('>L4s', data)
+        if not (chunk_type in ('IHDR', 'IDAT', 'IEND') or
+                (chunk_type == 'PLTE' and need_plte)):
+          # The chunk is not interesting so we skip through it.
+          try:
+            ofs = f.tell()
+            target_ofs = ofs + chunk_data_size + 4
+            f.seek(chunk_data_size + 4, 1)
+            if f.tell() != target_ofs:
+              raise IOError(
+                  'could not seek from %s to %s' % target_ofs)
+          except IOError:
+            # Can't seek => read.
+            left = chunk_data_size + 4  # 4: length of CRC
+            while left > 0:
+              to_read = min(left, 65536)
+              assert to_read == len(f.read(to_read))
+              left -= to_read
+        else:
+          chunk_data = f.read(chunk_data_size)
+          assert len(chunk_data) == chunk_data_size
+          chunk_crc = f.read(4)
+          assert len(chunk_crc) == 4
+          if chunk_type == 'IHDR':
+            assert self.width is None, 'duplicate IHDR chunk'
+            # struct.unpack checks for len(chunk_data) == 5
+            (self.width, self.height, self.bpc, color_type, compression_method,
+             filter_method, interlace_method) = struct.unpack(
+                '>LL5B', chunk_data)
+            # Raise KeyError.
+            self.color_type = self.COLOR_TYPE_PARSE_DICT[color_type]
+            assert compression_method == 0
+            assert filter_method == 0
+            assert interlace_method in (0, 1)
+            self.is_interlaced = bool(interlace_method)
+            need_plte = self.color_type.startswith('indexed-')
+          elif chunk_type == 'PLTE':
+            assert need_plte, 'unexpected PLTE chunk'
+            assert self.color_type == 'indexed-rgb'
+            assert len(chunk_data) % 3 == 0
+            assert chunk_data
+            self.plte = chunk_data
+            need_plte = False
+          elif chunk_type == 'IDAT':
+            idats.append(chunk_data)
+          elif chunk_type == 'IEND':
+            break  # Don't read till EOF.
+          else:
+            assert 0, 'not ignored chunk of type %r' % chunk_type
+    finally:
+      f.close()
+    self.idat = ''.join(idats)
+    assert not need_plte, 'missing PLTE chunk'
+    if self.plte:
+      print >>sys.stderr, (
+          'info: loaded PNG IDAT of %s bytes and PLTE of %s bytes' %
+          (len(self.idat), len(self.plte)))
+    else:
+      print >>sys.stderr, 'info: loaded PNG IDAT of %s bytes' % len(self.idat)
+    assert self.idat, 'image data empty'
+    return self
+
+
+class PDFData(object):
   def __init__(self):
     # Maps an object number to a PDFObj
     self.objs = {}
@@ -200,7 +466,7 @@ class PDF(object):
           output.append('%010d 00000 n \n' % obj_ofs[obj_num])
         else:
           output.append('0000000000 65535 f \n')
-          
+
       # Emit trailer etc.
       output.append('trailer\n')
       output.append(self.trailer)
@@ -294,6 +560,7 @@ class PDF(object):
 /DecompressString {  % <compressed-string> <decompression-filter-or-null> DecompressString <decompressed-string>
   % Example <decompression-filter>: /FlateDecode
   % TODO: support decompression filter arrays, e.g. [/ASCIIHexDecode/FlateDecode]
+  % TODO: support /DecodeParams
   dup null eq {pop} {
     filter
     dup 32768 string readstring {% !!
@@ -315,7 +582,7 @@ class PDF(object):
   %      don't redefine `stream'
 } bind def
 
-/stream {  % <streamdict> stream -  
+/stream {  % <streamdict> stream -
   dup /Length get string currentfile exch readstring
   not{/invalidfileaccess /ReadStreamData signalerror}if
   currentfile SkipWhitespaceRead
@@ -330,7 +597,11 @@ class PDF(object):
   (endobj) ne{/invalidfileaccess /CompareEndObj signalerror}if
   currentfile ReadWhitespaceChar pop
   % stack: <streamdict> <compressed-string>
-  exch /Filter .knownget not {null} if
+  exch
+  dup /DecodeParams .knownget not {null} if null ne {
+    /ivalidfileaccess /DecodeParamsFound signalerror
+  }if
+  /Filter .knownget not {null} if
   % stack: <compressed-string> <decompression-filter-or-null>
   DecompressString
   % Undefine all fonts before running our font program.
@@ -434,7 +705,7 @@ class PDF(object):
           pdf_tmp_file_name)
       assert 0, 'Type1CConverter failed (no output)'
     os.remove(ps_tmp_file_name)
-    pdf = PDF().Load(pdf_tmp_file_name)
+    pdf = PDFData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
     type1c_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
     assert sorted(type1c_objs) == sorted(objs), 'font obj number list mismatch'
@@ -447,8 +718,9 @@ class PDF(object):
     os.remove(pdf_tmp_file_name)
     # TODO(pts): Undo if no reduction in size.
     print >>sys.stderr, (
-        'info: reduced total Type1 font size %s to Type1C font size %s' %
-        (type1_size, type1c_size))
+        'info: optimized total Type1 font size %s to Type1C font size %s '
+        '(%s)' %
+        (type1_size, type1c_size, FormatPercent(type1c_size, type1_size)))
     return type1c_objs
 
   def ConvertType1FontsToType1C(self):
@@ -460,13 +732,63 @@ class PDF(object):
       match = re.search(r'/FontFile\s+(\d+)\s+0 R\b', obj.head)
       assert match
       font_file_obj_num = int(match.group(1))
-      obj.head = (
+      new_obj_head = (
           obj.head[:match.start(0)] +
           '/FontFile3 %d 0 R' % font_file_obj_num +
           obj.head[match.end(0):])
-      self.objs[font_file_obj_num] = type1c_objs[obj_num]
-      
+      old_size = self.objs[font_file_obj_num].size + obj.size
+      new_size = type1c_objs[obj_num].size + (
+          obj.size + len(new_obj_head) - len(obj.head))
+      if new_size < old_size:
+        obj.head = new_obj_head
+        self.objs[font_file_obj_num] = type1c_objs[obj_num]
+        print >>sys.stderr, (
+            'info: optimized Type1 font XObject %s,%s: new size=%s (%s)' %
+            (obj_num, font_file_obj_num, new_size,
+             FormatPercent(new_size, old_size)))
+      else:
+        print >>sys.stderr, (
+            'info: keeping original Type1 font XObject %s,%s, '
+            'replacement too large: old size=%s, new size=%s' %
+            obj_num, font_file_obj_num, old_size, new_size)
+
     return self
+
+  def OptimizeImages(self):
+    """Optimize image XObjects in the PDF."""
+    # !! implement according to the plan
+    for obj_num in self.objs:
+      obj = self.objs[obj_num]
+      # !! proper PDF object parsing, everywhere
+      if (re.search(r'/Subtype\s*/Image\b', obj.head) and
+          obj.stream is not None):  # !! more checks
+        # !! check type of Width, Height
+        print >>sys.stderr, (
+            'info: optimizing image XObject %s; orig width=%s height=%s '
+            'filter=%s size=%s' %
+            (obj_num, obj.GetScalar('Width'), obj.GetScalar('Height'),
+             obj.GetScalar('Filter'), obj.size))
+        print obj.head
+        # !! proper PDF object parsing
+        obj.head = re.sub(
+            r'(?sm)^/(\S+)[ \t]*<<(.*?)>>',
+            lambda match: '/%s <<%s>>' % (match.group(1), match.group(2).strip().replace('\n', '')),
+            obj.head)
+        # !! sam2p emits pts3.png as imagemask. Optimize that.
+        new_obj = PDFObj(obj)
+        PNGData().Load('pts2.png').UpdatePDFObj(new_obj)  # !! export PNG, load that file
+        if new_obj.size < obj.size:
+          print >>sys.stderr, (
+              'info: optimized image filter=%s size=%s (%s)' %
+              (new_obj.GetScalar('Filter'), new_obj.size,
+               FormatPercent(new_obj.size, obj.size)))
+          self.objs[obj_num] = new_obj
+        else:
+          print >>sys.stderr, (
+              'info: keeping original, replacement too large (%s bytes)',
+              new_obj.size)
+    return self
+
 
 def main(argv):
   if len(sys.argv) < 2:
@@ -478,7 +800,10 @@ def main(argv):
       output_file_name = file_name[:-4] + '.type1c.pdf'
     else:
       output_file_name = file_name + '.type1c.pdf'
-  PDF().Load(file_name).ConvertType1FontsToType1C().Save(output_file_name)
+  (PDFData().Load(file_name)
+   .ConvertType1FontsToType1C()
+   .OptimizeImages()
+   .Save(output_file_name))
 
 if __name__ == '__main__':
   main(sys.argv)
