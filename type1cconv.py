@@ -591,6 +591,9 @@ class ImageData(object):
 
 
 class PDFData(object):
+
+  __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size']
+
   def __init__(self):
     # Maps an object number to a PDFObj
     self.objs = {}
@@ -598,6 +601,8 @@ class PDFData(object):
     self.trailer = '<<>>'
     # PDF version string.
     self.version = '1.0'
+    self.file_name = None
+    self.file_size = None
 
   def Load(self, file_data):
     """Load PDF from file_name to self, return self."""
@@ -616,11 +621,13 @@ class PDFData(object):
       f.seek(0, 0)
       data = f.read()  # Don't close.
     print >>sys.stderr, 'info: loaded PDF of %s bytes' % len(data)
+    self.file_name = f.name
+    self.file_size = len(data)
     match = re.match(r'^%PDF-(1[.]\d)\s', data)
     assert match, 'uncrecognized PDF signature'
     version = match.group(1)
     self.objs = {}
-    self.trialer = ''
+    self.trailer = ''
     # None, an int or 'trailer'.
     prev_obj_num = None
     prev_obj_start_idx = None
@@ -710,12 +717,16 @@ class PDFData(object):
       output.append(self.trailer)
       output.append('\nstartxref\n%s\n' % xref_ofs)
       output.append('%%EOF\n')
-      print >>sys.stderr, 'info: generated %s bytes' % GetOutputSize()
+      print >>sys.stderr, 'info: generated %s bytes (%s)' % (
+          GetOutputSize(), FormatPercent(GetOutputSize(), self.file_size))
 
       # TODO(pts): Don't keep enverything in memory.
       f.write(''.join(output))
     finally:
       f.close()
+    # TODO(pts): Flag not to update these.
+    self.file_size = GetOutputSize()
+    self.file_name = file_name
     return self
 
   GENERIC_PROCSET = r'''
@@ -743,9 +754,16 @@ class PDFData(object):
   } if
 } bind def
 
-/ReadStream {  % <streamdict> ReadStream <streamdict> <compressed-string>
-  dup /Length get string currentfile exch readstring
-  not{/invalidfileaccess /ReadStreamData signalerror}if
+/ReadStreamFile {  % <streamdict> ReadStream <streamdict> <compressed-file>
+  dup /Length get
+  % Reading to a string would fail for >65535 bytes (this is the maximum
+  % string size in PostScript)
+  %string currentfile exch readstring
+  %not{/invalidfileaccess /ReadStreamData signalerror}if
+  currentfile exch () /SubFileDecode filter
+  << /CloseSource true /Intent 0 >> /ReusableStreamDecode filter
+  %dup 0 setfileposition % by default
+
   currentfile SkipWhitespaceRead
   (.) dup 0 3 index put exch pop  % Convert char to 1-char string.
   currentfile 8 string readstring
@@ -758,7 +776,6 @@ class PDFData(object):
   (endobj) ne{/invalidfileaccess /CompareEndObj signalerror}if
   currentfile ReadWhitespaceChar pop
 } bind def
-% </ProcSet>
 
 /obj {  % <objnumber> <gennumber> obj -
   pop
@@ -767,6 +784,7 @@ class PDFData(object):
   % Imp: read <streamdict> here (not with `token', but recursively), so
   %      don't redefine `stream'
 } bind def
+% </ProcSet>
 
 '''
 
@@ -775,41 +793,28 @@ class PDFData(object):
 % PDF Type1 font extraction and typesetter procset
 % by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
 
-/DecompressString {  % <compressed-string> <decompression-filter-or-null> DecompressString <decompressed-string>
-  % Example <decompression-filter>: /FlateDecode
-  % TODO: support decompression filter arrays, e.g. [/ASCIIHexDecode/FlateDecode]
-  % TODO: support /DecodeParams
-  dup null eq {pop} {
-    filter
-    dup 32768 string readstring {% !!
-      {
-        % stack: <filter> <partial-decompressed-string>
-        2 copy length string readstring not {concatstrings exit}if
-        concatstrings
-      } loop
-    } if
-    % stack: <filter> <decompressed-string>
-    exch closefile
-  } ifelse
-} bind def
-
 /stream {  % <streamdict> stream -
-  ReadStream
-  % stack: <streamdict> <compressed-string>
+  ReadStreamFile
+  % stack: <streamdict> <compressed-file>
   exch
-  dup /DecodeParams .knownget not {null} if null ne {
-    /ivalidfileaccess /DecodeParamsFound signalerror
-  }if
-  /Filter .knownget not {null} if
-  % stack: <compressed-string> <decompression-filter-or-null>
-  DecompressString
+  % TODO(pts): Give these parameters to th /ReusableStreamDecode in
+  % ReadStreamFile.
+  9 dict begin
+    /Intent 2 def  % sequential access
+    /CloseSource true def
+    dup /Filter .knownget not {null} if dup null ne {
+      dup /Filter exch def
+    } if pop
+    dup /DecodeParms .knownget not {null} if dup null ne {
+      dup /DecodeParms exch def
+    } if pop
+  currentdict end
+  % stack: <compressed-file> <streamdict> <reusabledict>
+  exch pop /ReusableStreamDecode filter
+  % stack: <decompressed-file> (containing a Type1 font program)
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
-  % stack: <decompressed-string> (containing a Type1 font program)
-  % Without /ReusablestreamDecode here, ``currentfile eexec'' wouldn't work
-  % in the font program, becasue currentfile wasn't the font program file
-  /ReusableStreamDecode filter cvx
-  9 dict begin dup mark exch exec cleartomark cleartomark closefile end
+  9 dict begin dup mark exch cvx exec cleartomark cleartomark closefile end
   systemdict /FontDirectory get
   dup length 0 eq {/invalidfileaccess /NoFontDefined signalerror} if
   dup length 1 gt {/invalidfileaccess /MultipleFontsDefined signalerror} if
@@ -831,7 +836,7 @@ class PDFData(object):
     _OrigFontName =only
     ( to /) print
     dup /FontName get =only
-    (\n) print
+    (\n) print flush
   dup /FontName get dup length string cvs
   systemdict /FontDirectory get {  % Undefine all fonts except for <fake-font>
     pop dup
@@ -923,7 +928,7 @@ class PDFData(object):
     for obj_num in sorted(objs):
       type1_size += objs[obj_num].size
       objs[obj_num].AppendTo(output, obj_num)
-    output.append(r'(Type1CConverter: all OK\n) print')
+    output.append(r'(Type1CConverter: all OK\n) print flush')
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing Type1CConverter (%s font bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
@@ -980,8 +985,8 @@ class PDFData(object):
 % Sun Apr  5 15:58:02 CEST 2009
 
 /stream {  % <streamdict> stream -
-  ReadStream
-  % stack: <streamdict> <compressed-string>
+  ReadStreamFile
+  % stack: <streamdict> <compressed-file>
 
   1 index
     (ImageRenderer: rendering image XObject ) print _ObjNumber =only
@@ -991,23 +996,29 @@ class PDFData(object):
     ( colorspace=) print dup /ColorSpace get ===only
     ( filter=) print dup /Filter .knownget not {null} if ===only
     ( decodeparms=) print dup /DecodeParms .knownget not {null} if ===only
-    (\n) print
+    (\n) print flush
   pop
   
-  dup /_CompressedString exch def
-  1 index exch
-  % stack: <streamdict> <streamdict> <compressed-string>
-  exch /Filter .knownget not {null} if
-  % TODO(pts): Support double filters !! error on double filter
+  % stack: <streamdict> <compressed-file>
+  exch
+  % TODO(pts): Give these parameters to th /ReusableStreamDecode in
+  % ReadStreamFile.
+  % !! reuse this code
+  9 dict begin
+    /Intent 2 def  % sequential access
+    /CloseSource true def
+    dup /Filter .knownget not {null} if dup null ne {
+      dup /Filter exch def
+    } if pop
+    dup /DecodeParms .knownget not {null} if dup null ne {
+      dup /DecodeParms exch def
+    } if pop
+  exch currentdict end
+  % stack: <streamdict> <compressed-file> <reusabledict>
+  /ReusableStreamDecode filter
+  % stack: <streamdict> <decompressed-file> (containing image /DataSource)
+
   9 dict begin  % Image dictionary
-  % stack: <streamdict> <compressed-string> <decompression-filter-name-or-null>
-  dup null eq {
-    pop
-  } {
-    2 index /DecodeParms .knownget {exch} if
-    % stack: <streamdict> <compressed-string> [<decodeparms>] <decompression-filter-name>
-    filter
-  } ifelse
   /DataSource exch def
   % Stack: <streamdict>
   dup /BitsPerComponent get /BitsPerComponent exch def
@@ -1033,9 +1044,7 @@ class PDFData(object):
   currentdict end
   % Stack: <streamdict> <datasource> <psimagedict>
   image showpage
-  % TODO(pts): Close multiple filters.
-  dup _CompressedString ne {dup closefile} if
-  pop
+  closefile
   % Stack: <streamdict>
   pop restore
 } bind def
@@ -1059,7 +1068,7 @@ class PDFData(object):
     for obj_num in sorted_objs:
       image_size += objs[obj_num].size
       objs[obj_num].AppendTo(output, obj_num)
-    output.append(r'(ImageRenderer: all OK\n) print')
+    output.append(r'(ImageRenderer: all OK\n) print flush')
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing ImageRenderer (%s image bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
@@ -1201,6 +1210,7 @@ class PDFData(object):
             obj = PDFObj(obj)
             obj.Set('ColorSpace', colorspace2)
         rgb_objs[obj_num] = obj
+    if not rgb_objs: return self # No images => no conversion.
 
     rendered_images = {}
     # !! try to convert some images to unoptimized PNG without Ghostscript, e.g

@@ -256,3 +256,4 @@
     (series of) filter(s) that give minimum compressed data size (VERY
     computationally expensive).
 * gs -sDEVICE=ppmraw doesn't change any pixel value
+* TODO: sam2p /Filter array ==> /DecodeParams should be a similar array
