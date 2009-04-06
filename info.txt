@@ -236,6 +236,7 @@
       /DecodeParms, /Filter and the image stream. Verify that /Width and
       /Height of orig.pdf and the v*.pdfimg picked match.
       (Imp: apply the /Mask color interval, if appropriate.)
+  +15. Find identical images in the PDF file, and unify them.
 * TODO: prevent tool.pdf.Compress from decompressing, and/or recompressing
   the image XObjects we have created
 * doc: none of the tools optimize inline images (TODO?), so please don't use

@@ -424,6 +424,7 @@ class ImageData(object):
     image_obj_nums = [
         obj_num for obj_num in sorted(pdf.objs)
         if re.search(r'/Subtype\s*/Image\b', pdf.objs[obj_num].head)]
+    # !! image_obj_nums is empty on empty page (by sam2p)
     assert len(image_obj_nums) == 1, (
         'no single image XObject in PDF, got %r' % image_obj_nums)
     obj = pdf.objs[image_obj_nums[0]]
@@ -1235,7 +1236,12 @@ class PDFData(object):
       images[obj_num].append(self.ConvertImage(
           sourcefn=rendered_image_file_name,
           targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
-          cmd_pattern='sam2p -pdf:2 -c zip:1:9 -- %(sourcefnq)s %(targetfnq)s',
+          # We specify -s here to explicitly exclue SF_Opaque for single-color
+          # images.
+          # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
+          # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
+          # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
+          cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- %(sourcefnq)s %(targetfnq)s',
           cmd_name='sam2p_nopredictor_cmd'))
       images[obj_num].append(self.ConvertImage(
           sourcefn=rendered_image_file_name,
@@ -1296,6 +1302,7 @@ class PDFData(object):
             'info: replacements are %r <= %s bytes' %
             (replacement_sizes, obj.size))
         self.objs[obj_num] = best_obj_info[-1]
+    # !! unify identical images (don't even recompress them?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
     # !! os.remove(images[obj_num][...])
