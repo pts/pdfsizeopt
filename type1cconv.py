@@ -7,6 +7,7 @@
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
 
+import getopt
 import os
 import os.path
 import re
@@ -1350,29 +1351,29 @@ def main(argv):
   # Find image converters in script dir first.
   os.environ['PATH'] = '%s:%s' % (
       os.path.dirname(os.path.abspath(argv[0])), os.getenv('PATH', ''))
-  # !! getopt for args
+
   use_pngout = True
-  i = 1
-  if len(argv) > i and argv[i] == '--use-pngout=false':
-    use_pngout = False
-    i += 1
-  if len(argv) <= i:
+  # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
+  opts, args = getopt.gnu_getopt(argv[1:], '+', ['use-pngout='])
+  for key, value in opts:
+    if key == '--use-pngout':
+      use_pngout = {'true': True, 'false': False}[value.lower()]
+  if not args:
     print >>sys.stderr, 'error: missing filename in command-line\n'
     sys.exit(1)
-  file_name = argv[i]
-  i += 1
-  output_file_name = None
-  if len(argv) > i:
-    output_file_name = argv[i]
-    i += 1
-  if len(argv) != i:
-    print >>sys.stderr, 'error: too many command-line args\n'
-    sys.exit(1)
-  if output_file_name is None:
+  elif len(args) == 1:
+    file_name = args[0]
     if file_name.endswith('.pdf'):
       output_file_name = file_name[:-4] + '.type1c.pdf'
     else:
       output_file_name = file_name + '.type1c.pdf'
+  elif len(args) == 2:
+    file_name = args[0]
+    output_file_name = args[1]
+  else:
+    print >>sys.stderr, 'error: too many command-line args\n'
+    sys.exit(1)
+
   (PDFData().Load(file_name)
    .ConvertType1FontsToType1C()
    .OptimizeImages(use_pngout=use_pngout)
