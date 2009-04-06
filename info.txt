@@ -237,6 +237,7 @@
       /Height of orig.pdf and the v*.pdfimg picked match.
       (Imp: apply the /Mask color interval, if appropriate.)
   +15. Find identical images in the PDF file, and unify them.
+  +16. Find identical palettes and move them to an object.
 * TODO: prevent tool.pdf.Compress from decompressing, and/or recompressing
   the image XObjects we have created
 * doc: none of the tools optimize inline images (TODO?), so please don't use
@@ -258,3 +259,52 @@
     computationally expensive).
 * gs -sDEVICE=ppmraw doesn't change any pixel value
 * TODO: sam2p /Filter array ==> /DecodeParams should be a similar array
+* TODO: why is the sam2p predictor consistently larger than the nonpredictor
+  in lme_v6/300dpi_all.pdf ?
+* ./type1cconv.py lme_v6/empty_page.pdf 
+info: optimized image XObject 1 best_method=4 file_name=type1cconv-1.pngout.png  size=20000 (63%)
+info: replacements are {1: 71448, 2: 25368, 3: 25943, 4: 20000} <= 31827 bytes
+info: optimized image XObject 6 best_method=4 file_name=type1cconv-6.pngout.png  size=30453 (73%)
+info: replacements are {1: 92313, 2: 36256, 3: 37044, 4: 30453} <= 41589 bytes
+info: optimized image XObject 10 best_method=4 file_name=type1cconv-10.pngout.png  size=62584 (80%)
+info: replacements are {1: 145040, 2: 71281, 3: 71123, 4: 62584} <= 77822 bytes
+info: optimized image XObject 14 best_method=4 file_name=type1cconv-14.pngout.png  size=15611 (62%)
+info: replacements are {1: 63576, 2: 20613, 3: 20514, 4: 15611} <= 25030 bytes
+info: optimized image XObject 18 best_method=4 file_name=type1cconv-18.pngout.png  size=37037 (76%)
+info: replacements are {1: 98083, 2: 43685, 3: 42789, 4: 37037} <= 48694 bytes
+info: optimized image XObject 22 best_method=4 file_name=type1cconv-22.pngout.png  size=1668 (19%)
+info: replacements are {1: 42650, 2: 5052, 3: 5090, 4: 1668} <= 8614 bytes
+info: optimized image XObject 26 best_method=4 file_name=type1cconv-26.pngout.png  size=76605 (82%)
+info: replacements are {1: 161343, 2: 85964, 3: 84647, 4: 76605} <= 92913 bytes
+info: optimized image XObject 31 best_method=4 file_name=type1cconv-31.pngout.png  size=105073 (84%)
+info: replacements are {1: 204348, 2: 116765, 3: 114193, 4: 105073} <= 124411 bytes
+info: optimized image XObject 35 best_method=4 file_name=type1cconv-35.pngout.png  size=72229 (82%)
+info: replacements are {1: 154129, 2: 81512, 3: 80321, 4: 72229} <= 87722 bytes
+info: optimized image XObject 39 best_method=4 file_name=type1cconv-39.pngout.png  size=77050 (83%)
+info: replacements are {1: 236762, 2: 84980, 3: 99845, 4: 77050} <= 92476 bytes
+...
+info: optimized image XObject 72 best_method=4 file_name=type1cconv-72.pngout.png  size=73335 (82%)
+info: replacements are {1: 173074, 2: 82009, 3: 84978, 4: 73335} <= 89180 bytes
+info: optimized image XObject 76 best_method=4 file_name=type1cconv-76.pngout.png  size=45594 (78%)
+info: replacements are {1: 115776, 2: 52471, 3: 52603, 4: 45594} <= 58737 bytes
+info: optimized image XObject 81 best_method=4 file_name=type1cconv-81.pngout.png  size=87807 (83%)
+info: replacements are {1: 177788, 2: 97827, 3: 96149, 4: 87807} <= 105321 bytes
+info: optimized image XObject 85 best_method=4 file_name=type1cconv-85.pngout.png  size=104283 (85%)
+info: replacements are {1: 204822, 2: 115707, 3: 112802, 4: 104283} <= 123369 bytes
+info: optimized image XObject 89 best_method=4 file_name=type1cconv-89.pngout.png  size=61667 (81%)
+info: replacements are {1: 141101, 2: 69353, 3: 69315, 4: 61667} <= 75941 bytes
+info: saving PDF to: lme_v6/300dpi_all.type1c.pdf
+info: generated 1420015 bytes (82%)
+
+real	40m7.868s
+user	38m45.777s
+sys	0m42.015s
+* TODO: tool.pdf.Compress increases the image size
+$ java -cp Multivalent.jar tool.pdf.Compress lme_v6/300dpi_all.type1c.pdf 
+file:/home/kat/mix/trunk/pdfsize/lme_v6/300dpi_all.type1c.pdf, 1420015 bytes
+PDF 1.1, producer=pdfTeX-1.40.3, creator=TeX
+additional compression may be possible with:
+	 -compact -jpeg
+=> new length = 1543091, saved -8%, elapsed time = 7 sec
+* TODO: get rid of unreachable objects
+* TODO: renumber existing objects to gain xref space

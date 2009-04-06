@@ -108,6 +108,28 @@ class PDFObj(object):
     else:
       return len(self.head) + len(self.stream) + 32
 
+  def GetParseableHead(self):
+    """Make self.head parseable for Get and Set, return the new head."""
+    # !! stupid code here
+    assert self.head.startswith('<<')
+    assert self.head.endswith('>>')
+    if not self.head.startswith('<<\n'):
+      # !! avoid code duplication with self.Get()
+      h = {}
+      rest = re.sub(
+          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|\S[^/]*)',
+          lambda match: h.__setitem__(match.group(1), match.group(2).rstrip()),
+          self.head[:-2])  # Without `>>'
+      rest = rest.strip()
+      assert re.match(r'<<\s*\Z', rest), (
+          'could not parse PDF obj, left %r' % rest)
+      if not h: return '<<\n>>'
+      return '<<\n%s>>' % ''.join(
+          ['/%s %s\n' % (key, value)
+           for key, value in h.items()])  # TODO(pts): sorted
+    else:
+      return self.head
+
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
     # !! autoresolve refs
@@ -123,6 +145,7 @@ class PDFObj(object):
     else:
       # Parse dict from sam2p. This cannot parse a /DecodeParms<<...>> value
       # or a binary /Indexed palette
+      # !! avoid code duplication
       h = {}
       rest = re.sub(
           r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|\S[^/]*)',
@@ -149,7 +172,10 @@ class PDFObj(object):
     """Set value to key or remove key if value is None."""
     # !! proper PDF object parsing
     # !! doc: slow because of string concatenation
-    assert self.head.endswith('\n>>')
+    if not self.head.endswith('\n>>'):
+      self.head = self.GetParseableHead()
+    assert self.head.endswith('\n>>'), 'bad head: %r' % self.head
+    assert self.head.startswith('<<')
     if isinstance(value, bool):
       value = str(value).lower()
     elif isinstance(value, int) or isinstance(value, long):
@@ -479,8 +505,17 @@ class ImageData(object):
       colorspace = obj.Get('ColorSpace')
       # !! support /Indexed, parse palette in PDF string
       # !! gracefully fail if cannot parse
-      assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
-          'unrecognized ColorSpace %r' % colorspace)
+      # !! parse palette in full binary syntax
+      match = re.match(r'\[\s*/Indexed\s*/DeviceRGB\s*\d+\s*<([\s0-9a-fA-F]*)>\s*\]\Z', colorspace)
+      if match:
+        # !! document error in `.decode'
+        palette = re.sub(r'\s+', '', match.group(1)).decode('hex')
+        assert palette
+        assert len(palette) % 3 == 0
+        colorspace = '.indexed'
+      else:
+        assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
+            'unrecognized ColorSpace %r' % colorspace)
     decodeparms = PDFObj(None)
     decodeparms.head = obj.Get('DecodeParms') or '<<\n>>'
     predictor = decodeparms.Get('Predictor')
@@ -1172,45 +1207,49 @@ class PDFData(object):
         '%s has not created the output image %r' % (cmd_name, targetfn))
     return ImageData().Load(targetfn)
 
-  def OptimizeImages(self):
+  def OptimizeImages(self, use_pngout=True):
     """Optimize image XObjects in the PDF."""
     # !! implement according to the plan in info.txt
     rgb_objs = {}
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! proper PDF object parsing, everywhere
-      if (re.search(r'/Subtype\s*/Image\b', obj.head) and
-          obj.stream is not None):  # !! more checks
-        # !! check type of Width, Height
-        # !! select pnggray and pngmono
-        # !! sam2p emits pts3.png as imagemask. Convert to grayscale.
-        print >>sys.stderr, (
-            'info: will optimize image XObject %s; orig width=%s height=%s '
-            'filter=%s size=%s' %
-            (obj_num, obj.Get('Width'), obj.Get('Height'),
-             obj.Get('Filter'), obj.size))
-
-        if obj.Get('ImageMask'):
-          obj = PDFObj(obj)
-          obj.Set('ImageMask', None)
-          obj.Set('Decode', None)
-          obj.Set('ColorSpace', '/DeviceGray')
-          obj.Set('BitsPerComponent', 1)
+      if (not re.search(r'/Subtype\s*/Image\b', obj.head) or
+          not obj.stream is not None): continue
+      filter = obj.Get('Filter')
+      if ('/JBIG2Decode' in filter or '/JPXDecode' in filter or
+          '/DCTDecode' in filter): continue
+      # !! more checks
         
-        colorspace = obj.Get('ColorSpace')
-        # !! proper PDF object parsing
-        if '(' not in colorspace and '<' not in colorspace:
-          # TODO(pts): Inline this to reduce PDF size.
-          # pdftex emits: /ColorSpace [/Indexed /ImageRGB <n> <obj_num> 0 R] 
-          colorspace2 = re.sub(
-              r'\b(\d+)\s+0\s+R\b',
-              (lambda match:
-               PDFObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
-              colorspace)
-          if colorspace2 != colorspace:
-            obj = PDFObj(obj)
-            obj.Set('ColorSpace', colorspace2)
-        rgb_objs[obj_num] = obj
+      # !! check type of Width, Height
+      # !! select pnggray and pngmono based on /ColorSpace
+      print >>sys.stderr, (
+          'info: will optimize image XObject %s; orig width=%s height=%s '
+          'filter=%s size=%s' %
+          (obj_num, obj.Get('Width'), obj.Get('Height'),
+           obj.Get('Filter'), obj.size))
+
+      if obj.Get('ImageMask'):
+        obj = PDFObj(obj)
+        obj.Set('ImageMask', None)
+        obj.Set('Decode', None)
+        obj.Set('ColorSpace', '/DeviceGray')
+        obj.Set('BitsPerComponent', 1)
+      
+      colorspace = obj.Get('ColorSpace')
+      # !! proper PDF object parsing
+      if '(' not in colorspace and '<' not in colorspace:
+        # TODO(pts): Inline this to reduce PDF size.
+        # pdftex emits: /ColorSpace [/Indexed /ImageRGB <n> <obj_num> 0 R] 
+        colorspace2 = re.sub(
+            r'\b(\d+)\s+0\s+R\b',
+            (lambda match:
+             PDFObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
+            colorspace)
+        if colorspace2 != colorspace:
+          obj = PDFObj(obj)
+          obj.Set('ColorSpace', colorspace2)
+      rgb_objs[obj_num] = obj
     if not rgb_objs: return self # No images => no conversion.
 
     rendered_images = {}
@@ -1247,20 +1286,18 @@ class PDFData(object):
           sourcefn=rendered_image_file_name,
           targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
           cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
-          cmd_name='pngout_cmd'))
+          cmd_name='sam2p_predictor_cmd'))
       # TODO(pts): Check pngout filename escaping
       # !! TODO(pts): Find better pngout binary.
       # TODO(pts): Try optipng as well (-o5?)
-      images[obj_num].append(self.ConvertImage(
-          sourcefn=rendered_image_file_name,
-          targetfn='type1cconv-%d.pngout.png' % obj_num,
-          cmd_pattern='pngout-linux-pentium4-static '
-                      '%(sourcefnq)s %(targetfnq)s',
-          cmd_name='sam2p_predictor_cmd'))
-      #if self.objs[obj_num].Get('ImageMask'):
-      #  # !! for all
-      #  assert images[obj_num][-1].bpc == 1
-      #  assert images[obj_num][-1].color_type == 'gray'
+      # TODO(pts): Silently skip pngout if not found (in command line)
+      if use_pngout:
+        images[obj_num].append(self.ConvertImage(
+            sourcefn=rendered_image_file_name,
+            targetfn='type1cconv-%d.pngout.png' % obj_num,
+            cmd_pattern='pngout-linux-pentium4-static '
+                        '%(sourcefnq)s %(targetfnq)s',
+            cmd_name='pngout_cmd'))
 
     for obj_num in sorted(images):
       obj = self.objs[obj_num]
@@ -1313,18 +1350,32 @@ def main(argv):
   # Find image converters in script dir first.
   os.environ['PATH'] = '%s:%s' % (
       os.path.dirname(os.path.abspath(argv[0])), os.getenv('PATH', ''))
-  if len(sys.argv) < 2:
-    file_name = 'progalap_doku.pdf'
-  else:
-    file_name = sys.argv[1]
-  if len(sys.argv) < 3:
+  # !! getopt for args
+  use_pngout = True
+  i = 1
+  if len(argv) > i and argv[i] == '--use-pngout=false':
+    use_pngout = False
+    i += 1
+  if len(argv) <= i:
+    print >>sys.stderr, 'error: missing filename in command-line\n'
+    sys.exit(1)
+  file_name = argv[i]
+  i += 1
+  output_file_name = None
+  if len(argv) > i:
+    output_file_name = argv[i]
+    i += 1
+  if len(argv) != i:
+    print >>sys.stderr, 'error: too many command-line args\n'
+    sys.exit(1)
+  if output_file_name is None:
     if file_name.endswith('.pdf'):
       output_file_name = file_name[:-4] + '.type1c.pdf'
     else:
       output_file_name = file_name + '.type1c.pdf'
   (PDFData().Load(file_name)
    .ConvertType1FontsToType1C()
-   .OptimizeImages()
+   .OptimizeImages(use_pngout=use_pngout)
    .Save(output_file_name))
 
 if __name__ == '__main__':
