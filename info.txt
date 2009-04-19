@@ -308,3 +308,23 @@ additional compression may be possible with:
 => new length = 1543091, saved -8%, elapsed time = 7 sec
 * TODO: get rid of unreachable objects
 * TODO: renumber existing objects to gain xref space
+* CFF (Compact Font Format):
+  Adobe Tech. Note 5176, The CFF (Compact Font Format) Spec., (PDF: 251 KB)
+  http://partners.adobe.com/public/developer/en/font/5176.CFF.pdf
+  Adobe Tech. Note 5177, Type 2 Charstring Format (PDF: 212 KB)
+  http://partners.adobe.com/public/developer/en/font/5177.Type2.pdf
+* TODO: embed all fonts (especially base 14); or unembed; which Adobe Reader
+  is affected?
+* PDF/X-3: Specify -sProcessColorModel=DeviceGray or
+  -sProcessColorModel=DeviceCMYK  (DeviceRGB is not allowed).
+  (same applies to PDF/A)
+* TODO: use /JBIG2Encode for image compression
+* gs 8.61 has /JBIG2Decode, but not /JBIG2Encode
+* TODO: unify fonts (gs 6.51 -sDEVICE=pdfwrite doesn't do this, keeps two
+  /Subtype/Type1C objs in the font dict) 
+  * TODO: ignore small mismatches in gs' /Type1C output:
+    /BlueScale, /BlueShift, /ForceBold
+  * use pdftops to convert /Type1C output of gs back to Type1.
+* TODO: unify identical images
+* TODO: doc: ghostscript to-/Type1C conversion eliminates subrs; usually no
+  problem because /A and /Aacute are nearby, /FlateEncode catches it
