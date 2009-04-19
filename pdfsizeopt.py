@@ -1,11 +1,23 @@
 #! /usr/bin/python2.4
 #
-# type1cconv.py: convert Type1 fonts in a PDF to Type1C
+# pdfsizeopt.py: do various PDF size optimizations
 # by pts@fazekas.hu at Sun Mar 29 13:42:05 CEST 2009
 #
 # !! rename this file to get image conversion
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
+
+"""pdfsizeopt.py: do various PDF size optimizations
+
+This Python script implements some techniques for making PDF files smaller.
+It should be used together with pdflatex and tool.pdf.Compress to get a minimal
+PDF. See also !!
+
+This scripts needs a Unix system, with Ghostscript and pdftops (from xpdf),
+sam2p and pngout. Future versions may relax the system requirements.
+"""
+
+__author__ = 'pts@fazekas.hu (Peter Szabo)'
 
 import getopt
 import os
@@ -25,8 +37,10 @@ def ShellQuote(string):
   else:
     return "'%s'" % string.replace("'", "'\\''")
 
+
 def FormatPercent(num, den):
   return '%d%%' % int((num * 100 + (den / 2)) // den)
+
 
 def EnsureRemoved(file_name):
   try:
@@ -199,14 +213,12 @@ class PDFObj(object):
 
   @classmethod
   def EscapeString(cls, data):
+    """Escape a string to the shortest possible PDF string literal."""
     if not isinstance(data, str): raise TypeError
+    # We never emit hex strings (e.g. <face>), because they cannot ever be
+    # shorter than the literal binary string.
     # TODO(pts): Use less parens if they are nested. !!
-    dump1 = '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
-    dump2 = '<%s>' % data.encode('hex')
-    if len(dump1) < len(dump2):
-      return dump1
-    else:
-      return dump2
+    return '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
 
   def GetDecompressedStream(self):
     if self.stream is None: return None
