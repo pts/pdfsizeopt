@@ -13,6 +13,8 @@ This Python script implements some techniques for making PDF files smaller.
 It should be used together with pdflatex and tool.pdf.Compress to get a minimal
 PDF. See also !!
 
+This script is work in progress.
+
 This scripts needs a Unix system, with Ghostscript and pdftops (from xpdf),
 sam2p and pngout. Future versions may relax the system requirements.
 """
@@ -217,8 +219,39 @@ class PDFObj(object):
     if not isinstance(data, str): raise TypeError
     # We never emit hex strings (e.g. <face>), because they cannot ever be
     # shorter than the literal binary string.
-    # TODO(pts): Use less parens if they are nested. !!
-    return '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
+    if '(' not in data or ')' not in data:
+      # No way to match parens.
+      return '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
+    else:
+      close_remaining = 0
+      for c in data:
+        if c == ')': close_remaining += 1
+      depth = 0
+      output = ['(']
+      i = j = 0
+      while j < len(data):
+        c = data[j]
+        if (c == '\\' or
+            (c == ')' and depth == 0) or
+            (c == '(' and close_remaining <= depth)):
+          output.append(data[i : j])  # Flush unescaped.
+          output.append('\\' + c)
+          if c == ')':
+            close_remaining -= 1
+          j += 1
+          i = j
+        else:
+          if c == '(':
+            depth += 1
+          elif c == ')':
+            depth -= 1
+            close_remaining -= 1
+          j += 1
+      output.append(data[i:])
+      output.append(')')
+      assert depth == 0
+      assert close_remaining == 0
+      return ''.join(output)
 
   def GetDecompressedStream(self):
     if self.stream is None: return None

@@ -17,10 +17,14 @@ class PdfSizeOptTest(unittest.TestCase):
     e = pdfsizeopt.PDFObj.EscapeString
     self.assertEqual('()', e(''))
     self.assertEqual('(Hello, World!)', e('Hello, World!'))
+    self.assertEqual('(\\\\Hello, \\(World!)', e('\\Hello, (World!'))
+    self.assertEqual('(Hello, \\)World!\\\\)', e('Hello, )World!\\'))
     s = ''.join([c for c in map(chr, xrange(255, -1, -1)) if c not in '()\\'])
     self.assertEqual('(%s)' % s, e(s))
     self.assertEqual('(Hello, \\)\\(Wo\\\\rld!)', e('Hello, )(Wo\\rld!'))
-    #!!self.assertEqual('((((foo\\\\))))', '(((foo\\)))')
+    self.assertEqual('((((foo\\\\))))', e('(((foo\\)))'))
+    self.assertEqual('(((foo)) (\\(bar)d)', e('((foo)) ((bar)d'))
+    self.assertEqual('((foo)\\) (bar))', e('(foo)) (bar)'))
 
   #def testBar(self):
   #  pass # !!print 'BAR'
