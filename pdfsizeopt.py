@@ -51,7 +51,15 @@ def EnsureRemoved(file_name):
     assert not os.path.exists(file_name)
 
 
-class PDFObj(object):
+class PdfTokenParseError(Exception):
+  """Raised if a string cannot be parsed to a PDF token sequence."""
+
+
+class PdfTokenTruncated(Exception):
+  """Raised if a string is only a prefix of a PDF token sequence."""
+
+
+class PdfObj(object):
   """Contents of a PDF object.
 
   Attributes:
@@ -63,14 +71,14 @@ class PDFObj(object):
   def __init__(self, other, objs=None, file_ofs=0):
     """Initialize from other.
 
-    If other is a PDFObj, copy everything. Otherwise, if other is a string,
+    If other is a PdfObj, copy everything. Otherwise, if other is a string,
     start parsing it from `X 0 obj' (ignoring the number) till endobj.
 
     Args:
-      objs: A dictionary mapping obj numbers to existing PDFObj objects. These
+      objs: A dictionary mapping obj numbers to existing PdfObj objects. These
         can be used for resolving `R's to build self.
     """
-    if isinstance(other, PDFObj):
+    if isinstance(other, PdfObj):
       self.head = other.head
       self.stream = other.stream
     elif isinstance(other, str):
@@ -253,6 +261,291 @@ class PDFObj(object):
       assert close_remaining == 0
       return ''.join(output)
 
+  PDF_CLASSIFY = [40] * 256
+  """Mapping a 0..255 byte to a character type used by RewriteParsable.
+
+  * PDF whitespace(0) is  [\\000\\011\\012\\014\\015\\040]
+  * PDF separators(10) are < > { } [ ] ( ) / %
+  * PDF regular(40) character is any of [\\000-\\377] which is not whitespace
+    or separator.
+  """
+
+  PDF_CLASSIFY[ord('\0')] = PDF_CLASSIFY[ord('\t')] = 0
+  PDF_CLASSIFY[ord('\n')] = PDF_CLASSIFY[014] = 0
+  PDF_CLASSIFY[ord('\r')] = PDF_CLASSIFY[ord(' ')] = 0
+  PDF_CLASSIFY[ord('<')] = 10
+  PDF_CLASSIFY[ord('>')] = 11
+  PDF_CLASSIFY[ord('{')] = 12
+  PDF_CLASSIFY[ord('}')] = 13
+  PDF_CLASSIFY[ord('[')] = 14
+  PDF_CLASSIFY[ord(']')] = 15
+  PDF_CLASSIFY[ord('(')] = 16
+  PDF_CLASSIFY[ord(')')] = 17
+  PDF_CLASSIFY[ord('/')] = 18
+  PDF_CLASSIFY[ord('%')] = 19
+
+  @classmethod
+  def RewriteParsable(cls, data, start_ofs=0,
+      end_ofs_out=None, do_terminate_obj=False):
+    """Rewrite PDF token sequence so it will be easier to parse by regexps.
+
+    Parsing stops at `stream', `endobj' or `startxref', which will also
+    be returned at the end of the string.
+
+    This code is based on pdf_rewrite in pdfdelimg.pl, which is based on
+    pdfconcat.c . Lesson learned: Perl is more compact than Python; Python is
+    easier to read than Perl.
+
+    This method doesn't check the type of dict keys, the evenness of dict
+    item size etc.
+
+    Args:
+      data: String containing a PDF token sequence.
+      start_ofs: Offset in data to start the parsing at.
+      end_ofs_out: None or a list for the first output byte
+        (which is unparsed) offset to be appended. Terminating whitespace is not included, except for
+        a single withespace is only after the `stream'.
+      do_terminate_obj: Boolean indicating whether to include the `stream' or
+        `endobj'. at the end of the returned data.
+    Returns:
+      Nonempty string containing a PDF token sequence which is easier to
+      parse with regexps, because it has additional whitespace, it has no
+      funny characters, and it has strings escaped as hex. The returned string
+      starts with a single space.
+    Raises:
+      PdfTokenParseError: TODO(pts): Report the error offset as well.
+      PdfTokenTruncated:
+    """
+    # !! inline regexps here
+    data_size = len(data)
+    i = start_ofs
+    if data_size <= start_ofs:
+      raise PdfTokenTruncated
+    output = []
+    # Stack of '[' (list) and '<' (dict)
+    stack = ['-']
+    if do_terminate_obj:
+      stack[:0] = ['.']
+
+    while stack:
+      if i >= data_size:
+        raise PdfTokenTruncated('structures open: %r' % stack)
+    
+      # TODO(pts): Faster parsing (skipping whitespace?) by regexp search.
+      o = cls.PDF_CLASSIFY[ord(data[i])]
+      if o == 0:  # whitespace
+        i += 1
+        while i < data_size and cls.PDF_CLASSIFY[ord(data[i])] == 0:
+          i += 1
+      elif o == 14:  # [
+        stack.append('[')
+        output.append(' [')
+        i += 1
+      elif o == 15:  # ]
+        item = stack.pop()
+        if item != '[':
+          raise PdfTokenParseError('got list-close, expected %r' % item)
+        output.append(' ]')
+        i += 1
+        if stack[-1] == '-':
+          stack.pop()
+      elif o in (18, 40):  # name or /name or number
+        # TODO(pts): Be more strict on PDF token names.
+        j = i
+        p = o == 18
+        i += 1
+        if p:
+          if i >= data_size:
+            raise PdfTokenTruncated
+          i += 1  # Accept e.g. /% as a token.
+        while i < data_size and cls.PDF_CLASSIFY[ord(data[i])] == 40:
+          i += 1
+        if i == data_size:
+          raise PdfTokenTruncated
+        token = re.sub(
+            r'#([0-9a-f-A-F]{2})',
+            lambda match: chr(int(match.group(0))), data[j : i])
+        if token[0] == '/' and data[j] != '/':
+          raise PdfTokenParseError('bad slash-name token')
+
+        number_match = re.match(r'(?:([-])|[+]?)0*(\d+(?:[.]\d+)?)\Z', token)
+        if number_match:
+          # From the PDF reference: Note: PDF does not support the PostScript
+          # syntax for numbers with nondecimal radices (such as 16#FFFE) or in
+          # exponential format (such as 6.02E23).
+
+          # Convert the number to canonical (shortest) form.
+          token = (number_match.group(1) or '') + number_match.group(2)
+          if '.' in token:
+            token = token.rstrip('0')
+            if token.endswith('.'):
+              token = token[:-1]  # Convert real to integer.
+          if token == '-0':
+            token = '0'
+
+        # Append token with special characters escaped.
+        if token[0] == '/':
+          output.append(
+              ' /' + re.sub(r'[^-A-Za-z0-9_.]',
+                  lambda match: '#%02x' % ord(match.group(0)), token[1:]))
+        else:
+          output.append(
+              ' ' + re.sub(r'[^-A-Za-z0-9_.]',
+                  lambda match: '#%02x' % ord(match.group(0)), token))
+
+        if (number_match or token[0] == '/' or
+            token in ('true', 'false', 'null')):
+          if stack[-1] == '-':
+            stack.pop()
+        else:
+          # TODO(pts): Support parsing PDF content streams.
+          if stack[-1] != '.':
+            raise PdfTokenParseError(
+                'invalid name %r with stack %r' % (token, stack))
+          stack.pop()
+          if token == 'stream':
+            if data[i] == '\r':
+              i += 1
+              if i == data_size:
+                raise PdfTokenTruncated
+              if data[i] == '\n':  # Skip over \r\n.
+                i += 1
+            elif cls.PDF_CLASSIFY[ord(data[i])] == 0:
+              i += 1  # Skip over whitespace.
+      elif o == 11:  # >
+        i += 1
+        if i == data_size:
+          raise PdfTokenTruncated
+        if data[i] != '>':
+          raise PdfTokenParseError('dict-close expected')
+        item = stack.pop()
+        if item != '<':
+          raise PdfTokenParseError('got dict-close, expected %r' % item)
+        output.append(' >>')
+        i += 1
+        if stack[-1] == '-':
+          stack.pop()
+      elif o == 10:  # <
+        i += 1
+        if i == data_size:
+          raise PdfTokenTruncated
+        if data[i] == '<':
+          stack.append('<')
+          output.append(' <<')
+          i += 1
+        else:  # hex string
+          j = data.find('>', i)
+          if j < 0:
+            hex_data = data[i :]
+          else:
+            hex_data = data[i : j]
+          hex_data = re.sub(r'[\0\t\n\r \014]+', '', hex_data)
+          if not re.match('[0-9a-fA-F]*\Z', hex_data):
+            raise PdfTokenParseError('invalid hex data')
+          if j < 0 or len(hex_data) % 2 != 0:
+            raise PdfTokenTruncated
+          i = j + 1
+          output.append(' <%s>' % hex_data.lower())
+          if stack[-1] == '-':
+            stack.pop()
+      elif o == 16:  # string
+        depth = 1
+        i += 1
+        j = data.find(')', i)
+        if j > 0:
+          s = data[i : j]
+        else:
+          s = '('
+        if '(' not in s and ')' not in s and '\\' not in s:
+          output.append(' <%s>' % s.encode('hex'))
+          i = j + 1
+        else:
+          # Compose a Python eval()able string in string_output.
+          string_output = ["'"]
+          j = i
+          while True:
+            if j == data_size:
+              raise PdfTokenTruncated
+            c = data[j]
+            if c == '(':
+              depth += 1
+              j += 1
+            elif c == ')':
+              depth -= 1
+              if not depth:
+                string_output.append(data[i : j])
+                j += 1
+                i = j
+                break
+              j += 1
+            elif c == "'":
+              string_output.append("\\'")
+            elif c == '\\':
+              if j + 1 == data_size:
+                raise PdfTokenTruncated
+              c = data[j + 1]
+              if c in '0123nrtbf':
+                string_output.append(data[i : j])
+                string_output.append('\\' + c)
+                j += 2
+                i = j
+              elif c in '4567':
+                string_output.append(data[i : j])
+                string_output.append('\\00' + c)
+                j += 2
+                i = j
+              else:
+                string_output.append(data[i : j])
+                i = j
+                j += 2
+            else:
+              j += 1
+          string_output.append("'")
+          # eval() works for all 8-bit strings.
+          output.append(
+              ' <%s>' % eval(''.join(string_output), {}).encode('hex'))
+          i = j
+        if stack[-1] == '-':
+          stack.pop()
+      elif o == 19:  # single-line comment
+        while i < data_size and data[i] != '\r' and data[i] != '\n':
+          i += 1
+        if i < data_size:
+          i += 1  # Don't increase it further.
+      else:
+        raise PdfTokenParseError('syntax error, expecing PDF token, got %r' %
+                                 data[i])
+
+    assert i <= data_size
+    output_data = ''.join(output)
+    assert output_data
+    if end_ofs_out is not None:
+      end_ofs_out.append(i)
+    return output_data
+
+  # Unit test:
+  #die unless pdf_rewrite("hello \n\t world\n\t") eq " hello world";
+  #die unless pdf_rewrite('(hel\)lo\n\bw(or)ld)') eq ' (hel\051lo\012\010w\050or\051ld)';
+  #die unless pdf_rewrite('(hel\)lo\n\bw(orld)') eq '';
+  #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld)>>') eq ' [ (hel\051lo\012\010w\050or\051ld) >>';
+  #die unless pdf_rewrite('>') eq "";
+  #die unless pdf_rewrite('<') eq "";
+  #die unless pdf_rewrite('< ') eq "";
+  #die unless !defined pdf_rewrite('< <');
+  #die unless !defined pdf_rewrite('> >');
+  #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld) <') eq "";
+  #die unless pdf_rewrite("<\n3\t1\r4f5C5 >]") eq ' (1O\134P) ]';
+  #die unless pdf_rewrite("<\n3\t1\r4f5C5") eq "";
+  #die unless !defined pdf_rewrite("<\n3\t1\r4f5C5]>");
+  #die unless pdf_rewrite("% he te\n<\n3\t1\r4f5C5 >]endobj<<") eq ' (1O\134P) ] endobj';
+  #die unless pdf_rewrite("") eq "";
+  #die unless pdf_rewrite("<<") eq " <<";
+  #die unless pdf_rewrite('%hello') eq '';
+  #die unless pdf_rewrite("alma\n%korte\n42") eq ' alma 42';
+  #die unless pdf_rewrite('/Size 42') eq ' /Size 42';
+
+  # !! def OptimizeSource()
+
   def GetDecompressedStream(self):
     if self.stream is None: return None
     filter = self.Get('Filter')
@@ -349,7 +642,7 @@ class ImageData(object):
     elif self.color_type == 'indexed-rgb':
       assert self.plte
       assert len(self.plte) % 3 == 0
-      palette_dump = PDFObj.EscapeString(self.plte)
+      palette_dump = PdfObj.EscapeString(self.plte)
       return '[/Indexed/DeviceRGB %d%s]' % (
           len(self.plte) / 3 - 1, palette_dump)
     else:
@@ -382,7 +675,7 @@ class ImageData(object):
     return pdf_image_data
 
   def CanUpdateImageMask(self):
-    """Return bool saying whether self.UpdatePDFObj works on an /ImageMask."""
+    """Return bool saying whether self.UpdatePdfObj works on an /ImageMask."""
     if self.bpc != 1: return False
     if (self.color_type == 'indexed-rgb' and
         self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0',
@@ -390,11 +683,11 @@ class ImageData(object):
       return True
     return self.color_type == 'gray'
 
-  def UpdatePDFObj(self, pdf_obj, do_check_dimensions=True):
+  def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
-    if not isinstance(pdf_obj, PDFObj): raise TypeError
+    if not isinstance(pdf_obj, PdfObj): raise TypeError
     pdf_image_data = self.GetPDFImageData()
-    # !! parse pdf_obj., implement PDFObj.Get (with references?), .Set with None
+    # !! parse pdf_obj., implement PdfObj.Get (with references?), .Set with None
     if do_check_dimensions:
       assert pdf_obj.Get('Width') == pdf_image_data['Width']
       assert pdf_obj.Get('Height') == pdf_image_data['Height']
@@ -562,7 +855,7 @@ class ImageData(object):
       else:
         assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
             'unrecognized ColorSpace %r' % colorspace)
-    decodeparms = PDFObj(None)
+    decodeparms = PdfObj(None)
     decodeparms.head = obj.Get('DecodeParms') or '<<\n>>'
     predictor = decodeparms.Get('Predictor')
     if obj.Get('Decode') is not None:
@@ -677,7 +970,7 @@ class PDFData(object):
   __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size']
 
   def __init__(self):
-    # Maps an object number to a PDFObj
+    # Maps an object number to a PdfObj
     self.objs = {}
     # Stripped string dict. Must contain /Size (max # objs) and /Root ref.
     self.trailer = '<<>>'
@@ -745,13 +1038,13 @@ class PDFData(object):
     for obj_num in obj_data:
       this_obj_data = obj_data[obj_num]
       if 'endstream' not in this_obj_data and '<<' not in this_obj_data:
-        self.objs[obj_num] = PDFObj(obj_data[obj_num],
+        self.objs[obj_num] = PdfObj(obj_data[obj_num],
                                     file_ofs=obj_start[obj_num], )
 
     # Second pass once we have all length numbers.
     for obj_num in obj_data:
       if obj_num not in self.objs:
-        self.objs[obj_num] = PDFObj(obj_data[obj_num], objs=self.objs,
+        self.objs[obj_num] = PdfObj(obj_data[obj_num], objs=self.objs,
                                     file_ofs=obj_start[obj_num])
 
     return self
@@ -960,7 +1253,7 @@ class PDFData(object):
         the /FontName, e.g. /FontName/Obj42 --> 42.
     Returns:
       A dictionary mapping the obj number of the /Type/FontDescriptor obj to
-      the PDFObj of the /FontFile* obj. Please note that this dictionary is not
+      the PdfObj of the /FontFile* obj. Please note that this dictionary is not
       a subdictionary of self.objs, because of the different key--value
       mapping.
     """
@@ -1276,7 +1569,7 @@ class PDFData(object):
            obj.Get('Filter'), obj.size))
 
       if obj.Get('ImageMask'):
-        obj = PDFObj(obj)
+        obj = PdfObj(obj)
         obj.Set('ImageMask', None)
         obj.Set('Decode', None)
         obj.Set('ColorSpace', '/DeviceGray')
@@ -1290,10 +1583,10 @@ class PDFData(object):
         colorspace2 = re.sub(
             r'\b(\d+)\s+0\s+R\b',
             (lambda match:
-             PDFObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
+             PdfObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
             colorspace)
         if colorspace2 != colorspace:
-          obj = PDFObj(obj)
+          obj = PdfObj(obj)
           obj.Set('ColorSpace', colorspace2)
       rgb_objs[obj_num] = obj
     if not rgb_objs: return self # No images => no conversion.
@@ -1355,7 +1648,7 @@ class PDFData(object):
       obj_infos = [(obj.size, 0, '', obj)]
       for image_data in images[obj_num]:
         #print ('GG', len(obj_infos), obj.Get('BitsPerComponent'), obj.Get('ColorSpace'), image_data.bpc)
-        new_obj = PDFObj(obj)
+        new_obj = PdfObj(obj)
         # !!! BUG: bad conversion (lost color) of page 2 of pts2ep.pdf
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
           print >>sys.stderr, (
@@ -1364,7 +1657,7 @@ class PDFData(object):
               (image_data.bpc, image_data.color_type, image_data.file_name,
                obj_num))
         else:
-          image_data.UpdatePDFObj(new_obj)
+          image_data.UpdatePdfObj(new_obj)
           # !! cmd_name instead of len(obj_infos); also for 0 above
           obj_infos.append(
               [new_obj.size, len(obj_infos), image_data.file_name, new_obj])

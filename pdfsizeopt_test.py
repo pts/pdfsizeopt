@@ -14,7 +14,7 @@ import pdfsizeopt
 
 class PdfSizeOptTest(unittest.TestCase):
   def testEscapeString(self):
-    e = pdfsizeopt.PDFObj.EscapeString
+    e = pdfsizeopt.PdfObj.EscapeString
     self.assertEqual('()', e(''))
     self.assertEqual('(Hello, World!)', e('Hello, World!'))
     self.assertEqual('(\\\\Hello, \\(World!)', e('\\Hello, (World!'))
@@ -26,8 +26,55 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('(((foo)) (\\(bar)d)', e('((foo)) ((bar)d'))
     self.assertEqual('((foo)\\) (bar))', e('(foo)) (bar)'))
 
-  #def testBar(self):
-  #  pass # !!print 'BAR'
+  def testRewriteParsable(self):
+    e = pdfsizeopt.PdfObj.RewriteParsable
+    self.assertEqual(' [ ]', e('[]'))
+    self.assertEqual(' [ ]', e('[]<<'))
+    self.assertEqual(' true', e('true '))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, 'hi ')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, 'true')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, 'hi')
+    eo = []
+    self.assertEqual(' false', e('\n\t\r \f\0false true ', end_ofs_out=eo))
+    self.assertEqual([11], eo)
+    self.assertEqual(' << true false null >>',
+                     e('% hi\r<<%\ntrue false null>>baz'))
+    self.assertEqual(' [ [ << [ << << >> >> ] >> ] ]',
+                     e('[[<<[<<<<>>>>]>>]]'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError,
+                      e, '[[<<[<<<<>>]>>>>]]')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '\t \n% foo')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, ' [\t')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '\n<\f')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '\t<<\n\r')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '[<<')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[<<]')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[>>]')
+    self.assertEqual(' <>', e('()'))
+    self.assertEqual(' <>', e('<>'))
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '(foo')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '(foo\\)bar')
+    self.assertEqual(' <face654389210b7d>', e('< f\nAc\tE\r654389210B7d\f>'))
+    self.assertEqual(' <48656c6c6f2c20576f726c6421>', e('(Hello, World!)'))
+    self.assertEqual(' <2828666f6f29295c296261725c>', e('(((foo))\\)bar\\\\)'))
+    self.assertEqual(' <face422829>', e('(\xfa\xCE\x42())'))
+    self.assertEqual(' 0', e('00000 '))
+    self.assertEqual(' 0', e('+00000 '))
+    self.assertEqual(' 0', e('-00000 '))
+    self.assertEqual(' 0', e('00000.000 '))
+    self.assertEqual(' 0', e('+00000.000 '))
+    self.assertEqual(' 0', e('-00000.000 '))
+    self.assertEqual(' 12', e('00012 '))
+    self.assertEqual(' 12', e('+00012 '))
+    self.assertEqual(' -12', e('-00012 '))
+    self.assertEqual(' 12', e('00012.000 '))
+    self.assertEqual(' 12', e('+00012.000 '))
+    self.assertEqual(' -12', e('-00012.000 '))
+    self.assertEqual(' 12.34', e('00012.340 '))
+    self.assertEqual(' 12.34', e('+00012.340 '))
+    self.assertEqual(' -12.34', e('-00012.340 '))
+    # TODO(pts): More tests, especially strings.
+
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
