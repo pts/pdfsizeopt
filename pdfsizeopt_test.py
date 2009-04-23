@@ -74,6 +74,31 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' 12.34', e('+00012.340 '))
     self.assertEqual(' -12.34', e('-00012.340 '))
     # TODO(pts): More tests, especially strings.
+    # Unit test:
+    #die unless pdf_rewrite("hello \n\t world\n\t") eq " hello world";
+    #die unless pdf_rewrite('(hel\)lo\n\bw(or)ld)') eq ' (hel\051lo\012\010w\050or\051ld)';
+    #die unless pdf_rewrite('(hel\)lo\n\bw(orld)') eq '';
+    #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld)>>') eq ' [ (hel\051lo\012\010w\050or\051ld) >>';
+    #die unless pdf_rewrite('>') eq "";
+    #die unless pdf_rewrite('<') eq "";
+    #die unless pdf_rewrite('< ') eq "";
+    #die unless !defined pdf_rewrite('< <');
+    #die unless !defined pdf_rewrite('> >');
+    #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld) <') eq "";
+    #die unless pdf_rewrite("<\n3\t1\r4f5C5 >]") eq ' (1O\134P) ]';
+    #die unless pdf_rewrite("<\n3\t1\r4f5C5") eq "";
+    #die unless !defined pdf_rewrite("<\n3\t1\r4f5C5]>");
+    #die unless pdf_rewrite("% he te\n<\n3\t1\r4f5C5 >]endobj<<") eq ' (1O\134P) ] endobj';
+    #die unless pdf_rewrite("") eq "";
+    #die unless pdf_rewrite("<<") eq " <<";
+    #die unless pdf_rewrite('%hello') eq '';
+    #die unless pdf_rewrite("alma\n%korte\n42") eq ' alma 42';
+    #die unless pdf_rewrite('/Size 42') eq ' /Size 42';
+
+  def testGetParseableHead(self):
+    self.assertEqual(
+        '<<\n/DecodeParms <</Predictor 15 /Columns 640>>\n/Width 640\n/ColorSpace /DeviceGray\n/Height 480\n/Filter /FlateDecode\n/Subtype /Image\n/Length 6638\n/BitsPerComponent 8\n>>',
+        PdfObj.GetParseableHead('<</Subtype/Image\n/ColorSpace/DeviceGray\n/Width 640\n/Height 480\n/BitsPerComponent 8\n/Filter/FlateDecode\n/DecodeParms <</Predictor 15\n/Columns 640>>/Length 6638>>'))
 
 
 if __name__ == '__main__':

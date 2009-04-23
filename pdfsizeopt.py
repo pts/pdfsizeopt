@@ -133,18 +133,20 @@ class PdfObj(object):
     else:
       return len(self.head) + len(self.stream) + 32
 
-  def GetParseableHead(self):
-    """Make self.head parseable for Get and Set, return the new head."""
+  @classmethod
+  def GetParseableHead(cls, head):
+    """Make head parseable for Get and Set, return the new head."""
     # !! stupid code here
-    assert self.head.startswith('<<')
-    assert self.head.endswith('>>')
-    if not self.head.startswith('<<\n'):
+    assert head.startswith('<<')
+    assert head.endswith('>>')
+    if not head.startswith('<<\n'):
       # !! avoid code duplication with self.Get()
       h = {}
       rest = re.sub(
-          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|\S[^/]*)',
-          lambda match: h.__setitem__(match.group(1), match.group(2).rstrip()),
-          self.head[:-2])  # Without `>>'
+          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|<<.*?>>|\S[^/]*)',
+          lambda match: h.__setitem__(match.group(1),
+              re.sub('[\n\r]+', ' ', match.group(2).rstrip())),
+          head[:-2])  # Without `>>'
       rest = rest.strip()
       assert re.match(r'<<\s*\Z', rest), (
           'could not parse PDF obj, left %r' % rest)
@@ -153,7 +155,7 @@ class PdfObj(object):
           ['/%s %s\n' % (key, value)
            for key, value in h.items()])  # TODO(pts): sorted
     else:
-      return self.head
+      return head
 
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
@@ -198,7 +200,7 @@ class PdfObj(object):
     # !! proper PDF object parsing
     # !! doc: slow because of string concatenation
     if not self.head.endswith('\n>>'):
-      self.head = self.GetParseableHead()
+      self.head = self.GetParseableHead(self.head)
     assert self.head.endswith('\n>>'), 'bad head: %r' % self.head
     assert self.head.startswith('<<')
     if isinstance(value, bool):
@@ -522,27 +524,6 @@ class PdfObj(object):
     if end_ofs_out is not None:
       end_ofs_out.append(i)
     return output_data
-
-  # Unit test:
-  #die unless pdf_rewrite("hello \n\t world\n\t") eq " hello world";
-  #die unless pdf_rewrite('(hel\)lo\n\bw(or)ld)') eq ' (hel\051lo\012\010w\050or\051ld)';
-  #die unless pdf_rewrite('(hel\)lo\n\bw(orld)') eq '';
-  #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld)>>') eq ' [ (hel\051lo\012\010w\050or\051ld) >>';
-  #die unless pdf_rewrite('>') eq "";
-  #die unless pdf_rewrite('<') eq "";
-  #die unless pdf_rewrite('< ') eq "";
-  #die unless !defined pdf_rewrite('< <');
-  #die unless !defined pdf_rewrite('> >');
-  #die unless pdf_rewrite('[ (hel\)lo\n\bw(or)ld) <') eq "";
-  #die unless pdf_rewrite("<\n3\t1\r4f5C5 >]") eq ' (1O\134P) ]';
-  #die unless pdf_rewrite("<\n3\t1\r4f5C5") eq "";
-  #die unless !defined pdf_rewrite("<\n3\t1\r4f5C5]>");
-  #die unless pdf_rewrite("% he te\n<\n3\t1\r4f5C5 >]endobj<<") eq ' (1O\134P) ] endobj';
-  #die unless pdf_rewrite("") eq "";
-  #die unless pdf_rewrite("<<") eq " <<";
-  #die unless pdf_rewrite('%hello') eq '';
-  #die unless pdf_rewrite("alma\n%korte\n42") eq ' alma 42';
-  #die unless pdf_rewrite('/Size 42') eq ' /Size 42';
 
   # !! def OptimizeSource()
 
