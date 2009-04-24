@@ -140,13 +140,13 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '')
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '%hello')
 
-  def testGetParseableHead(self):
+  def testGetParsableHead(self):
     self.assertEqual(
         '<<\n/DecodeParms <</Predictor 15 /Columns 640>>\n'
         '/Width 640\n/ColorSpace /DeviceGray\n/Height 480\n'
         '/Filter /FlateDecode\n/Subtype /Image\n/Length 6638\n'
         '/BitsPerComponent 8\n>>',
-        pdfsizeopt.PdfObj.GetParseableHead(
+        pdfsizeopt.PdfObj.GetParsableHead(
             '<</Subtype/Image\n/ColorSpace/DeviceGray\n/Width 640\n'
             '/Height 480\n/BitsPerComponent 8\n/Filter/FlateDecode\n'
             '/DecodeParms <</Predictor 15\n/Columns 640>>/Length 6638>>'))

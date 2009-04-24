@@ -134,8 +134,8 @@ class PdfObj(object):
       return len(self.head) + len(self.stream) + 32
 
   @classmethod
-  def GetParseableHead(cls, head):
-    """Make head parseable for Get and Set, return the new head."""
+  def GetParsableHead(cls, head):
+    """Make head parsable for Get and Set, return the new head."""
     # !! stupid code here
     assert head.startswith('<<')
     assert head.endswith('>>')
@@ -200,7 +200,7 @@ class PdfObj(object):
     # !! proper PDF object parsing
     # !! doc: slow because of string concatenation
     if not self.head.endswith('\n>>'):
-      self.head = self.GetParseableHead(self.head)
+      self.head = self.GetParsableHead(self.head)
     assert self.head.endswith('\n>>'), 'bad head: %r' % self.head
     assert self.head.startswith('<<')
     if isinstance(value, bool):
