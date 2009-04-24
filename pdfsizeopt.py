@@ -40,6 +40,13 @@ def ShellQuote(string):
     return "'%s'" % string.replace("'", "'\\''")
 
 
+def ShellQuoteFileName(string):
+  # TODO(pts): Make it work on non-Unix systems.
+  if string.startswith('-') and len(string) > 1:
+    string = './' + string
+  return ShellQuote(string)
+
+
 def FormatPercent(num, den):
   return '%d%%' % int((num * 100 + (den / 2)) // den)
 
@@ -576,6 +583,30 @@ class ImageData(object):
   __slots__ = ['width', 'height', 'bpc', 'color_type', 'is_interlaced',
                'idat', 'plte', 'compression', 'file_name']
 
+  SAMPLES_PER_PIXEL_DICT = {
+      'gray': 1,
+      'rgb': 3,
+      'indexed-rgb': 1,
+      'gray-alpha': 2,
+      'rgb-alpha': 4,
+  }
+  """Map a .color_type value to the number of samples per pixel."""
+  
+  COMPRESSION_TO_PREDICTOR = {
+      'zip-tiff': 2,
+      'zip-png': 10,
+  }
+  """Map a .compression value with preditor to the PDF predictor number."""
+  
+  COLOR_TYPE_PARSE_DICT = {
+     0: 'gray',
+     2: 'rgb',
+     3: 'indexed-rgb',
+     4: 'gray-alpha',
+     6: 'rgb-alpha',
+  }
+  """Map a PNG color type byte value to a color_type string."""
+
   def __init__(self, other=None):
     """Initialize from other.
 
@@ -624,30 +655,6 @@ class ImageData(object):
                 self.color_type in ('gray', 'rgb', 'indexed-rgb') and
                 not self.is_interlaced)
 
-  SAMPLES_PER_PIXEL_DICT = {
-      'gray': 1,
-      'rgb': 3,
-      'indexed-rgb': 1,
-      'gray-alpha': 2,
-      'rgb-alpha': 4,
-  }
-  """Map a .color_type value to the number of samples per pixel."""
-  
-  COMPRESSION_TO_PREDICTOR = {
-      'zip-tiff': 2,
-      'zip-png': 10,
-  }
-  """Map a .compression value with preditor to the PDF predictor number."""
-  
-  COLOR_TYPE_PARSE_DICT = {
-     0: 'gray',
-     2: 'rgb',
-     3: 'indexed-rgb',
-     4: 'gray-alpha',
-     6: 'rgb-alpha',
-  }
-  """Map a PNG color type byte value to a color_type string."""
-
   @property
   def samples_per_pixel(self):
     assert self.color_type
@@ -671,7 +678,7 @@ class ImageData(object):
 
   def GetPDFImageData(self):
     """Return a dictinary useful as a PDF image."""
-    assert self.CanBePDFImage()
+    assert self.CanBePDFImage()  # asserts not interlaced
     pdf_image_data = {
         'Width': self.width,
         'Height': self.height,
@@ -723,11 +730,6 @@ class ImageData(object):
       pdf_obj.Set('Width', pdf_image_data['Width'])
       pdf_obj.Set('Height', pdf_image_data['Height'])
     if pdf_obj.Get('ImageMask'):
-      # !! PNGOUT converts an ImageMask to a non-imagemask. Can we convert it
-      # back without modifying the content stream?
-      #z = dict(pdf_image_data)
-      #del z['.stream']
-      #print (z, pdf_obj.head)
       assert self.CanUpdateImageMask()
       assert pdf_image_data['BitsPerComponent'] == 1
       assert pdf_image_data['ColorSpace'] == '/DeviceGray'
@@ -757,6 +759,51 @@ class ImageData(object):
     # Don't pdf_obj.Set('Decode', ...): it is goot as is.
     pdf_obj.stream = pdf_image_data['.stream']
 
+  def SavePng(self, file_name, do_force_gray=False):
+    """Save in PNG format to specified file, update file_name."""
+    print >>sys.stderr, 'info: saving PNG to %s' % (file_name,)
+    assert self
+    assert self.compression == 'zip-png'
+    output = ['\x89PNG\r\n\x1A\n']  # PNG signature.
+
+    def AppendChunk(chunk_type, chunk_data):
+      output.append(struct.pack('>L', len(chunk_data)))
+      # This wastes memory on the string concatenation.
+      # TODO(pts): Optimize memory use.
+      chunk_type += chunk_data
+      output.append(chunk_type)
+      output.append(struct.pack('>L', zlib.crc32(chunk_type)))
+
+    if do_force_gray:
+      assert (self.color_type.startswith('indexed-') or
+              self.color_type == 'gray')
+      color_type_to_find = 'gray'
+    else:
+      color_type_to_find = self.color_type
+    color_type_found = None
+    for color_type in self.COLOR_TYPE_PARSE_DICT:
+      if self.COLOR_TYPE_PARSE_DICT[color_type] == color_type_to_find:
+        color_type_found = color_type
+    assert color_type_found is not None
+
+    AppendChunk(
+        'IHDR', struct.pack(
+            '>LL5B', self.width, self.height, self.bpc, color_type_found,
+            0, 0, int(self.is_interlaced)))
+    if self.plte is not None and color_type_to_find.startswith('indexed-'):
+      AppendChunk('PLTE', self.plte)
+    AppendChunk('IDAT', self.idat)
+    AppendChunk('IEND', '')
+
+    output_data = ''.join(output)
+    f = open(file_name, 'wb')
+    try:
+      f.write(output_data)
+    finally:
+      f.close()
+    print >>sys.stderr, 'info: written %s bytes to PNG' % len(output_data)
+    self.file_name = file_name
+
   def Load(self, file_name):
     """Load (parts of) a PNG file to self, return self.
 
@@ -777,9 +824,9 @@ class ImageData(object):
       signature = f.read(8)
       f.seek(0, 0)
       if signature.startswith('%PDF-1.'):
-        self.LoadPDF(f)
+        self.LoadPdf(f)
       elif signature.startswith('\x89PNG\r\n\x1A\n'):
-        self.LoadPNG(f)
+        self.LoadPng(f)
       else:
         assert 0, 'bad PNG/PDF signature in file'
     finally:
@@ -797,13 +844,13 @@ class ImageData(object):
     assert self.idat, 'image data empty'
     return self
 
-  def LoadPDF(self, f):
+  def LoadPdf(self, f):
     """Load image data from single ZIP-compressed image in PDF.
 
     The features of this method is rather limited: it can load the output of
     `sam2p -c zip' and alike, but not much more.
     """
-    pdf = PDFData().Load(f)
+    pdf = PdfData().Load(f)
     # !! proper PDF object parsing
     image_obj_nums = [
         obj_num for obj_num in sorted(pdf.objs)
@@ -921,8 +968,8 @@ class ImageData(object):
     self.plte = palette
     self.compression = compression
     self.idat = str(obj.stream)
-    
-  def LoadPNG(self, f):
+
+  def LoadPng(self, f):
     signature = f.read(8)
     assert signature == '\x89PNG\r\n\x1A\n', 'bad PNG/PDF signature in file'
     self.Clear()
@@ -947,7 +994,6 @@ class ImageData(object):
         except IOError:
           # Can't seek => read.
           left = chunk_data_size + 4  # 4: length of CRC
-          # !! use zlib.crc32(string) to verify
           while left > 0:
             to_read = min(left, 65536)
             assert to_read == len(f.read(to_read))
@@ -957,6 +1003,9 @@ class ImageData(object):
         assert len(chunk_data) == chunk_data_size
         chunk_crc = f.read(4)
         assert len(chunk_crc) == 4
+        computed_crc = struct.pack('>L', zlib.crc32(chunk_type + chunk_data))
+        assert chunk_crc == computed_crc, (
+            'chunk %r checksum mismatch' % chunk_type)
         if chunk_type == 'IHDR':
           assert self.width is None, 'duplicate IHDR chunk'
           # struct.unpack checks for len(chunk_data) == 5
@@ -990,7 +1039,7 @@ class ImageData(object):
     self.compression = 'zip-png'
 
 
-class PDFData(object):
+class PdfData(object):
 
   __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size']
 
@@ -1361,7 +1410,7 @@ class PDFData(object):
           pdf_tmp_file_name)
       assert 0, 'Type1CConverter failed (no output)'
     os.remove(ps_tmp_file_name)
-    pdf = PDFData().Load(pdf_tmp_file_name)
+    pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
     type1c_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
     assert sorted(type1c_objs) == sorted(objs), 'font obj number list mismatch'
@@ -1556,8 +1605,8 @@ class PDFData(object):
     if not isinstance(targetfn, str): raise TypeError
     if not isinstance(cmd_pattern, str): raise TypeError
     if not isinstance(cmd_name, str): raise TypeError
-    sourcefnq = ShellQuote(sourcefn)
-    targetfnq = ShellQuote(targetfn)
+    sourcefnq = ShellQuoteFileName(sourcefn)
+    targetfnq = ShellQuoteFileName(targetfn)
     cmd = cmd_pattern % locals()
     EnsureRemoved(targetfn)
     assert os.path.isfile(sourcefn)
@@ -1579,7 +1628,7 @@ class PDFData(object):
     else:
       return ImageData().Load(targetfn)
 
-  def OptimizeImages(self, use_pngout=True):
+  def OptimizeImages(self, use_pngout=True, use_jbig2=True):
     """Optimize image XObjects in the PDF."""
     # !! implement according to the plan in info.txt
     rgb_objs = {}
@@ -1659,13 +1708,16 @@ class PDFData(object):
           targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
           cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
           cmd_name='sam2p_predictor_cmd'))
-      if obj_images[-1].bpc == 1 and obj_images[-1].color_type == 'gray':
+      if (use_jbig2 and obj_images[-1].bpc == 1 and
+          obj_images[-1].color_type in ('gray', 'indexed-rgb')):
         # !! autoconvert 1-bit indexed PNG to gray
-        # !!! make it work with colorful PNG palette etc.
-        # !! handle errors, dump command etc.
         obj_images.append(ImageData(obj_images[-1]))
+        if obj_images[-1].color_type != 'gray':
+          # This changes obj_images[-1].file_name as well.
+          obj_images[-1].SavePng(file_name='type1cconv-%d.gray.png' % obj_num,
+                                 do_force_gray=True)
         obj_images[-1].idat = self.ConvertImage(
-            sourcefn='type1cconv-%d.sam2p-pr.png' % obj_num,
+            sourcefn=obj_images[-1].file_name,
             targetfn='type1cconv-%d.jbig2' % obj_num,
             cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
             cmd_name='jbig2', do_just_read=True)
@@ -1674,10 +1726,8 @@ class PDFData(object):
       # !! add /FlateEncode to all obj_images to find the smallest
       #    (maybe to UpdatePdfObj)
       # !! rename type1cconv and .type1c in temporary filenames
-      # TODO(pts): Check pngout and jbig2 filename escaping (./)
-      # !! TODO(pts): Find better pngout binary.
+      # !! TODO(pts): Find better pngout binary file name.
       # TODO(pts): Try optipng as well (-o5?)
-      # TODO(pts): Silently skip pngout if not found (in command line)
       if use_pngout:
         images[obj_num].append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
@@ -1730,7 +1780,7 @@ class PDFData(object):
     # !! unify identical images (don't even recompress them?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
-    # !! os.remove(images[obj_num][...]), also .jbig2
+    # !! os.remove(images[obj_num][...]), also *.jbig2 and *.gray.png
     return self
 
 
@@ -1740,12 +1790,17 @@ def main(argv):
       os.path.dirname(os.path.abspath(argv[0])), os.getenv('PATH', ''))
 
   use_pngout = True
+  use_jbig2 = True
   # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
-  opts, args = getopt.gnu_getopt(argv[1:], '+', ['use-pngout='])
+  opts, args = getopt.gnu_getopt(argv[1:], '+', [
+      'use-pngout=', 'use-jbig2='])
   for key, value in opts:
     if key == '--use-pngout':
       # !! add =auto (detect binary on path)
       use_pngout = {'true': True, 'false': False}[value.lower()]
+    if key == '--use-jbig2':
+      # !! add =auto (detect binary on path)
+      use_jbig2 = {'true': True, 'false': False}[value.lower()]
   if not args:
     print >>sys.stderr, 'error: missing filename in command-line\n'
     sys.exit(1)
@@ -1762,9 +1817,9 @@ def main(argv):
     print >>sys.stderr, 'error: too many command-line args\n'
     sys.exit(1)
 
-  (PDFData().Load(file_name)
+  (PdfData().Load(file_name)
    .ConvertType1FontsToType1C()
-   .OptimizeImages(use_pngout=use_pngout)
+   .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .Save(output_file_name))
 
 if __name__ == '__main__':
