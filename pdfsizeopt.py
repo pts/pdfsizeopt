@@ -565,15 +565,16 @@ class ImageData(object):
       IDAT chunk), or None
     plte: binary string (R0, G0, B0, R1, G1, B1) containing the PLTE chunk,
       or none
-    predictor: integer predictor specification, 1 if no predictor, >= 10 for
-      PNG predictors.
+    compression: 'none', 'zip', 'zip-tiff' (ZIP compression with TIFF
+      predictor), 'zip-png' (ZIP compression with PNG predictor),
+      'jbig2'.
     file_name: name of the file originally loaded
 
   TODO(pts): Make this a more generic image object; possibly store /Filter
     and predictor.
   """
   __slots__ = ['width', 'height', 'bpc', 'color_type', 'is_interlaced',
-               'idat', 'plte', 'predictor', 'file_name']
+               'idat', 'plte', 'compression', 'file_name']
 
   def __init__(self, other=None):
     """Initialize from other.
@@ -590,23 +591,33 @@ class ImageData(object):
       self.is_interlaced = other.is_interlaced
       self.idat = other.idat
       self.plte = other.plte
-      self.predictor = other.predictor
+      self.compression = other.compression
       self.file_name = other.file_name
     else:
       self.Clear()
 
   def Clear(self):
     self.width = self.height = self.bpc = self.color_type = None
-    self.is_interlaced = self.idat = self.plte = self.predictor = None
+    self.is_interlaced = self.idat = self.plte = self.compression = None
     self.file_name = None
 
   def __nonzero__(self):
     """Return true iff this object contains a valid image."""
-    return bool(self.width and self.height and self.bpc and self.color_type and
-                self.predictor and
-                self.is_interlaced is not None and self.idat and (
-                not self.color_type.startswith('indexed-') or (
-                isinstance(self.plte, str) and len(self.plte) % 3 == 0)))
+    return bool(isinstance(self.width, int) and self.width > 0 and
+                isinstance(self.height, int) and self.height > 0 and
+                isinstance(self.bpc, int) and
+                self.bpc in (1, 2, 4, 8, 12, 16) and
+                self.color_type in ('gray', 'rgb', 'indexed-rgb', 'gray-alpha',
+                                    'rgb-alpha') and
+                self.compression in ('none', 'zip', 'zip-tiff', 'zip-png',
+                                     'jbig2') and
+                isinstance(self.is_interlaced, bool) and
+                self.is_interlaced in (True, False) and
+                (self.color_type.startswith('indexed-') or
+                 self.plte is None) and
+                isinstance(self.idat, str) and self.idat and
+                (not self.color_type.startswith('indexed-') or (
+                 isinstance(self.plte, str) and len(self.plte) % 3 == 0)))
 
   def CanBePDFImage(self):
     return bool(self and self.bpc in (1, 2, 4, 8) and
@@ -620,6 +631,22 @@ class ImageData(object):
       'gray-alpha': 2,
       'rgb-alpha': 4,
   }
+  """Map a .color_type value to the number of samples per pixel."""
+  
+  COMPRESSION_TO_PREDICTOR = {
+      'zip-tiff': 2,
+      'zip-png': 10,
+  }
+  """Map a .compression value with preditor to the PDF predictor number."""
+  
+  COLOR_TYPE_PARSE_DICT = {
+     0: 'gray',
+     2: 'rgb',
+     3: 'indexed-rgb',
+     4: 'gray-alpha',
+     6: 'rgb-alpha',
+  }
+  """Map a PNG color type byte value to a color_type string."""
 
   @property
   def samples_per_pixel(self):
@@ -649,14 +676,21 @@ class ImageData(object):
         'Width': self.width,
         'Height': self.height,
         'BitsPerComponent': self.bpc,
-        'Filter': '/FlateDecode',
         'ColorSpace': self.GetPDFColorSpace(),
         '.stream': self.idat,
     }
-    if self.predictor >= 10:
+    if self.compression == 'none':
+      pass
+    elif self.compression == 'zip':
+      pdf_image_data['Filter'] = '/FlateDecode'
+    elif self.compression in ('zip-tiff', 'zip-png'):
+      pdf_image_data['Filter'] = '/FlateDecode'
       pdf_image_data['DecodeParms'] = (
-          '<</BitsPerComponent %d/Columns %d/Colors %d/Predictor 10>>' %
-          (self.bpc, self.width, self.samples_per_pixel))
+          '<</BitsPerComponent %d/Columns %d/Colors %d/Predictor %d>>' %
+          (self.bpc, self.width, self.samples_per_pixel,
+           self.COMPRESSION_TO_PREDICTOR[self.compression]))
+    elif self.compression == 'jbig2':
+      pdf_image_data['Filter'] = '/JBIG2Decode'
     if self.bpc == 1 and self.color_type == 'indexed-rgb':
       # Such images are emitted by PNGOUT.
       if self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0'):
@@ -722,15 +756,6 @@ class ImageData(object):
     pdf_obj.Set('Length', len(pdf_image_data['.stream']))
     # Don't pdf_obj.Set('Decode', ...): it is goot as is.
     pdf_obj.stream = pdf_image_data['.stream']
-
-  COLOR_TYPE_PARSE_DICT = {
-     0: 'gray',
-     2: 'rgb',
-     3: 'indexed-rgb',
-     4: 'gray-alpha',
-     6: 'rgb-alpha',
-  }
-  """Map a PNG color type byte value to a color_type string."""
 
   def Load(self, file_name):
     """Load (parts of) a PNG file to self, return self.
@@ -852,15 +877,22 @@ class ImageData(object):
     # being an array.
     decodeparms = PdfObj(None)
     decodeparms.head = obj.Get('DecodeParms') or '<<\n>>'
-    predictor = decodeparms.Get('Predictor')
     if obj.Get('Decode') is not None:
       raise NotImplementederror('parsing PDF /Decode not implemented')
+
+    predictor = decodeparms.Get('Predictor')
     assert predictor is None or isinstance(predictor, int), (
         'expected integer predictor, got %r' % predictor)
-    if predictor and predictor != 1:
+    if not predictor or predictor == 1:
+      compression = 'zip'
+    elif predictor == 2:
+      compression = 'zip-tiff'
+    elif 10 <= predictor <= 19:
       # TODO(pts): Test this.
-      assert (predictor == 2 or 10 <= predictor <= 19), (
-          'expected valid predictor, got %r' % predictor)
+      compression = 'zip-png'
+    else:
+      assert 0, 'expected valid predictor, got %r' % predictor
+    if compression in ('zip-tiff', 'zip-png'):
       assert decodeparms.Get('BitsPerComponent') == obj.Get('BitsPerComponent')
       assert decodeparms.Get('Columns') == obj.Get('Width')
       if colorspace == '/DeviceRGB':
@@ -868,8 +900,6 @@ class ImageData(object):
       else:
         colors = 1
       assert decodeparms.Get('Colors') == colors
-    else:
-      predictor = 1
 
     self.Clear()
     self.width = width
@@ -889,7 +919,7 @@ class ImageData(object):
       assert 0, 'bad colorspace %r' % colorspace
     self.is_interlaced = False
     self.plte = palette
-    self.predictor = predictor
+    self.compression = compression
     self.idat = str(obj.stream)
     
   def LoadPNG(self, f):
@@ -957,7 +987,7 @@ class ImageData(object):
           assert 0, 'not ignored chunk of type %r' % chunk_type
     self.idat = ''.join(idats)
     assert not need_plte, 'missing PLTE chunk'
-    self.predictor = 10
+    self.compression = 'zip-png'
 
 
 class PDFData(object):
@@ -1454,7 +1484,7 @@ class PDFData(object):
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
       if not os.path.exists(png_tmp_file_name): break
-      os.remove(png_tmp_file_name)
+      EnsureRemoved(png_tmp_file_name)
       assert not os.path.exists(png_tmp_file_name)
 
     gs_cmd = (
@@ -1519,7 +1549,8 @@ class PDFData(object):
     return self
 
   @classmethod
-  def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name):
+  def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
+                   do_just_read=False):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
     if not isinstance(sourcefn, str): raise TypeError
     if not isinstance(targetfn, str): raise TypeError
@@ -1539,7 +1570,14 @@ class PDFData(object):
       assert 0, '%s failed (status)' % cmd_name
     assert os.path.exists(targetfn), (
         '%s has not created the output image %r' % (cmd_name, targetfn))
-    return ImageData().Load(targetfn)
+    if do_just_read:
+      f = open(targetfn)
+      try:
+        return f.read()
+      finally:
+        f.close()
+    else:
+      return ImageData().Load(targetfn)
 
   def OptimizeImages(self, use_pngout=True):
     """Optimize image XObjects in the PDF."""
@@ -1603,10 +1641,10 @@ class PDFData(object):
     for obj_num in sorted(rendered_images):
       rendered_image_file_name = rendered_images[obj_num]
       # !! TODO(pts): Don't load all images to memory (maximum 2).
-      images[obj_num] = []
+      images[obj_num] = obj_images = []
       # TODO(pts): use KZIP or something to further optimize the ZIP stream
-      images[obj_num].append(ImageData().Load(rendered_image_file_name))
-      images[obj_num].append(self.ConvertImage(
+      obj_images.append(ImageData().Load(rendered_image_file_name))
+      obj_images.append(self.ConvertImage(
           sourcefn=rendered_image_file_name,
           targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
           # We specify -s here to explicitly exclue SF_Opaque for single-color
@@ -1616,13 +1654,27 @@ class PDFData(object):
           # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
           cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- %(sourcefnq)s %(targetfnq)s',
           cmd_name='sam2p_nopredictor_cmd'))
-      images[obj_num].append(self.ConvertImage(
+      obj_images.append(self.ConvertImage(
           sourcefn=rendered_image_file_name,
           targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
           cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
           cmd_name='sam2p_predictor_cmd'))
-      print 'SSSSSS', (images[obj_num][-1].bpc, images[obj_num][-1].color_type)
-      # TODO(pts): Check pngout filename escaping
+      if obj_images[-1].bpc == 1 and obj_images[-1].color_type == 'gray':
+        # !! autoconvert 1-bit indexed PNG to gray
+        # !!! make it work with colorful PNG palette etc.
+        # !! handle errors, dump command etc.
+        obj_images.append(ImageData(obj_images[-1]))
+        obj_images[-1].idat = self.ConvertImage(
+            sourcefn='type1cconv-%d.sam2p-pr.png' % obj_num,
+            targetfn='type1cconv-%d.jbig2' % obj_num,
+            cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
+            cmd_name='jbig2', do_just_read=True)
+        obj_images[-1].compression = 'jbig2'
+        obj_images[-1].file_name = 'type1cconv-%d.jbig2' % obj_num
+      # !! add /FlateEncode to all obj_images to find the smallest
+      #    (maybe to UpdatePdfObj)
+      # !! rename type1cconv and .type1c in temporary filenames
+      # TODO(pts): Check pngout and jbig2 filename escaping (./)
       # !! TODO(pts): Find better pngout binary.
       # TODO(pts): Try optipng as well (-o5?)
       # TODO(pts): Silently skip pngout if not found (in command line)
@@ -1678,7 +1730,7 @@ class PDFData(object):
     # !! unify identical images (don't even recompress them?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
-    # !! os.remove(images[obj_num][...])
+    # !! os.remove(images[obj_num][...]), also .jbig2
     return self
 
 
