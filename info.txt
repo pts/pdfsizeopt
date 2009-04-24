@@ -326,5 +326,23 @@ additional compression may be possible with:
     /BlueScale, /BlueShift, /ForceBold
   * use pdftops to convert /Type1C output of gs back to Type1.
 * TODO: unify identical images
+  * not much gain with pdftex's output since pdflatex \includegraphics does
+    this automatically
+  * Multivalent unifies byte-to-byte identical images (``dups''), but
+    doesn't bother finding indentically looking images.
+  * Multivalent seems to find and eliminate identical subtrees (or just
+    content streams??)
+    $ java -cp Multivalent.jar tool.pdf.Compress -mon eurotex2006.final.mul5.pdf 
+    file:/home/kat/pdfsizeopt/trunk/eurotex2006.final.mul5.pdf, 42027405 bytes
+    PDF 1.4, producer=pdfeTeX-1.21a, creator=TeX
+    11172 objects / 630 pages pre955 pre1311 pre955 pre1311 pre955 pre1311
+    pre955 pre1311 pre955 pre1311, 1540 LZW, 435 /Length IRef, 70 raw samples =
+    46374K, 875 embedded Type 1 = 0K, liftPageTree, inline 468, 4881 dups + 1440
+    + 1332 + 500 + 124 + 40 + 20
+    (divides final file size by 5)
+    TODO: what do thos ``embedded Type 1'', ``inline'' etc. mean?
+    TODO: what about bookmarks?
 * TODO: doc: ghostscript to-/Type1C conversion eliminates subrs; usually no
   problem because /A and /Aacute are nearby, /FlateEncode catches it
+* /Filter [ /ASCIIHexDecode /JBIG2Decode ]
+  /DecodeParms [ null << /JBIG2Globals 6 0 R >> ]

@@ -300,6 +300,9 @@ class PdfObj(object):
 
     This method doesn't check the type of dict keys, the evenness of dict
     item size etc.
+    
+    Please don't change ``parsable'' to ``parseable'', see
+    http://en.wiktionary.org/wiki/parsable .
 
     Args:
       data: String containing a PDF token sequence.
@@ -307,8 +310,9 @@ class PdfObj(object):
       end_ofs_out: None or a list for the first output byte
         (which is unparsed) offset to be appended. Terminating whitespace is not included, except for
         a single withespace is only after the `stream'.
-      do_terminate_obj: Boolean indicating whether to include the `stream' or
-        `endobj'. at the end of the returned data.
+      do_terminate_obj: Boolean indicating whether look for and include the
+        `stream' or `endobj' plus one whitespace (or \\r\\n) at end_ofs_out
+        (and in the string). Any terminating name is accepted.
     Returns:
       Nonempty string containing a PDF token sequence which is easier to
       parse with regexps, because it has additional whitespace, it has no
@@ -332,7 +336,7 @@ class PdfObj(object):
     while stack:
       if i >= data_size:
         raise PdfTokenTruncated('structures open: %r' % stack)
-    
+
       # TODO(pts): Faster parsing (skipping whitespace?) by regexp search.
       o = cls.PDF_CLASSIFY[ord(data[i])]
       if o == 0:  # whitespace
@@ -366,7 +370,7 @@ class PdfObj(object):
           raise PdfTokenTruncated
         token = re.sub(
             r'#([0-9a-f-A-F]{2})',
-            lambda match: chr(int(match.group(0))), data[j : i])
+            lambda match: chr(int(match.group(1), 16)), data[j : i])
         if token[0] == '/' and data[j] != '/':
           raise PdfTokenParseError('bad slash-name token')
 
@@ -405,15 +409,14 @@ class PdfObj(object):
             raise PdfTokenParseError(
                 'invalid name %r with stack %r' % (token, stack))
           stack.pop()
-          if token == 'stream':
-            if data[i] == '\r':
+          if data[i] == '\r':
+            i += 1
+            if i == data_size:
+              raise PdfTokenTruncated
+            if data[i] == '\n':  # Skip over \r\n.
               i += 1
-              if i == data_size:
-                raise PdfTokenTruncated
-              if data[i] == '\n':  # Skip over \r\n.
-                i += 1
-            elif cls.PDF_CLASSIFY[ord(data[i])] == 0:
-              i += 1  # Skip over whitespace.
+          elif cls.PDF_CLASSIFY[ord(data[i])] == 0:
+            i += 1  # Skip over whitespace.
       elif o == 11:  # >
         i += 1
         if i == data_size:
@@ -444,8 +447,10 @@ class PdfObj(object):
           hex_data = re.sub(r'[\0\t\n\r \014]+', '', hex_data)
           if not re.match('[0-9a-fA-F]*\Z', hex_data):
             raise PdfTokenParseError('invalid hex data')
-          if j < 0 or len(hex_data) % 2 != 0:
+          if j < 0:
             raise PdfTokenTruncated
+          if len(hex_data) % 2 != 0:
+            hex_data += '0'  # <def> --> <def0>
           i = j + 1
           output.append(' <%s>' % hex_data.lower())
           if stack[-1] == '-':
@@ -486,11 +491,8 @@ class PdfObj(object):
               if j + 1 == data_size:
                 raise PdfTokenTruncated
               c = data[j + 1]
-              if c in '0123nrtbf':
-                string_output.append(data[i : j])
-                string_output.append('\\' + c)
+              if c in '0123nrtbf"\\\'':
                 j += 2
-                i = j
               elif c in '4567':
                 string_output.append(data[i : j])
                 string_output.append('\\00' + c)
@@ -498,8 +500,19 @@ class PdfObj(object):
                 i = j
               else:
                 string_output.append(data[i : j])
-                i = j
+                string_output.append(c)  # without the backslash
                 j += 2
+                i = j
+            elif c == '\0':
+              string_output.append(data[i : j])
+              string_output.append('\\000')  # for eval() below
+              j += 1
+              i = j
+            elif c == '\n':
+              string_output.append(data[i : j])
+              string_output.append('\\n')  # for eval() below
+              j += 1
+              i = j
             else:
               j += 1
           string_output.append("'")
