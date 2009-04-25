@@ -70,6 +70,10 @@ class PdfTokenNotString(Exception):
   """Raised if a PDF token sequence is not a single string."""
 
 
+class FormatUnsupported(Exception):
+  """Raised when a file/data to be loaded is valid, but not supported."""
+
+
 class PdfObj(object):
   """Contents of a PDF object.
 
@@ -98,8 +102,8 @@ class PdfObj(object):
       match = re.match(r'(?s)\d+\s+0\s+obj\b\s*', other)
       assert match
       skip_obj_number_idx = len(match.group(0))
-      match = re.search(r'\b(stream(?:\r\n|\s)|endobj(?:\s|\Z))', other)
-      assert match
+      match = re.search(r'\b(stream(?:\r\n|\s)|endobj(?:[\s/]|\Z))', other)
+      assert match, 'endobj/stream not found from ofs=%s' % file_ofs
       self.head = other[skip_obj_number_idx : match.start(0)].rstrip()
       if match.group(1).startswith('endobj'):
         self.stream = None
@@ -108,16 +112,20 @@ class PdfObj(object):
         # TODO(pts): Proper parsing.
         #print repr(self.head), repr(match.group(1))
         stream_start_idx = match.end(1)
-        match = re.search(r'/Length\s+(\d+)(?:\s+0\s+(R)\b)?', self.head)
+        match = re.search(r'/Length\s+(\d+\b)(?:\s+0\s+(R)\b)?', self.head)
         assert match
         if match.group(2) is None:
           stream_end_idx = stream_start_idx + int(match.group(1))
         else:
-          stream_end_idx = stream_start_idx + int(
-              objs[int(match.group(1))].head)
+          stream_length = int(objs[int(match.group(1))].head)
+          stream_end_idx = stream_start_idx + stream_length
+          # Inline the reference to /Length
+          self.head = '%s/Length %d%s' % (
+              self.head[:match.start(0)], stream_length,
+              self.head[match.end(0):]) 
         endstream_str = other[stream_end_idx : stream_end_idx + 30]
         assert re.match(
-            r'\s*endstream\s+endobj(?:\s|\Z)', endstream_str), (
+            r'\s*endstream\s+endobj(?:[\s/]|\Z)', endstream_str), (
             'expected endstream+endobj in %r at %s' %
             (endstream_str, file_ofs + stream_end_idx))
         self.stream = other[stream_start_idx : stream_end_idx]
@@ -144,6 +152,13 @@ class PdfObj(object):
     else:
       return len(self.head) + len(self.stream) + 32
 
+  FIX_RE = re.compile(
+      r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|'
+      r'\([^\\()]*\)|'
+      r'<<[^<>]*>>|<<(?:[^<>]*|<<(?:[^<>]*|<<.*?>>)*>>)*>>|'
+      #r'<</XObject<<.*?>>.*?>>|'
+      r'<<.*?>>|\S[^/]*)')
+
   @classmethod
   def GetParsableHead(cls, head):
     """Make head parsable for Get and Set, return the new head."""
@@ -154,19 +169,27 @@ class PdfObj(object):
       # !! avoid code duplication with self.Get()
       h = {}
       rest = re.sub(
-          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|<<.*?>>|\S[^/]*)',
+          cls.FIX_RE,
           lambda match: h.__setitem__(match.group(1),
               re.sub('[\n\r]+', ' ', match.group(2).rstrip())),
           head[:-2])  # Without `>>'
       rest = rest.strip()
       assert re.match(r'<<\s*\Z', rest), (
-          'could not parse PDF obj, left %r' % rest)
+          'could not parse PDF obj, left %r from %r' % (rest, head))
       if not h: return '<<\n>>'
       return '<<\n%s>>' % ''.join(
           ['/%s %s\n' % (key, value)
            for key, value in h.items()])  # TODO(pts): sorted
     else:
       return head
+
+  @classmethod
+  def GetBadNumbersFixed(cls, data):
+    if data == '.':
+      return '0'
+    # Just convert `.' to 0 in an array.
+    return re.sub(
+        r'([\s\[])[.](?=[\s\]])', lambda match: match.group(1) + '0', data)
 
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
@@ -186,12 +209,12 @@ class PdfObj(object):
       # !! avoid code duplication
       h = {}
       rest = re.sub(
-          r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|<</XObject<<.*?>>.*?>>|\S[^/]*)',
+          self.FIX_RE,
           lambda match: h.__setitem__(match.group(1), match.group(2).rstrip()),
           self.head[:-2])  # Without `>>'
       rest = rest.strip()
       assert re.match(r'<<\s*\Z', rest), (
-          'could not parse PDF obj, left %r' % rest)
+          'could not parse PDF obj, left %r from %r' % (rest, self.head))
       value = h.get(key)
       if value is None: return None
           
@@ -294,6 +317,20 @@ class PdfObj(object):
         return False  # non-gray color in the palette
       i += 3
     return True
+
+  @classmethod
+  def IsIndexedRgbColorSpace(cls, colorspace):
+    return colorspace and re.match(
+        r'\[\s*/Indexed\s*/DeviceRGB\s+\d', colorspace)
+
+  @classmethod
+  def ParseRgbPalette(cls, colorspace):
+    match = re.match(r'\[\s*/Indexed\s*/DeviceRGB\s+\d+\s*([<(](?s).*)\]\Z',
+                     colorspace)
+    assert match, 'syntax error in /ColorSpace %r' % colorspace
+    palette = cls.ParseString(match.group(1))
+    assert len(palette) % 3 == 0
+    return palette
 
   @classmethod
   def ParseString(cls, pdf_data):
@@ -427,7 +464,8 @@ class PdfObj(object):
         if token[0] == '/' and data[j] != '/':
           raise PdfTokenParseError('bad slash-name token')
 
-        number_match = re.match(r'(?:([-])|[+]?)0*(\d+(?:[.]\d+)?)\Z', token)
+        # `42.' is a valid float in both Python and PDF.
+        number_match = re.match(r'(?:([-])|[+]?)0*(\d+(?:[.]\d*)?)\Z', token)
         if number_match:
           # From the PDF reference: Note: PDF does not support the PostScript
           # syntax for numbers with nondecimal radices (such as 16#FFFE) or in
@@ -539,7 +577,10 @@ class PdfObj(object):
                 break
               j += 1
             elif c == "'":
+              string_output.append(data[i : j])
               string_output.append("\\'")
+              j += 1
+              i = j
             elif c == '\\':
               if j + 1 == data_size:
                 raise PdfTokenTruncated
@@ -594,7 +635,7 @@ class PdfObj(object):
   # !! def OptimizeSource()
 
   def GetDecompressedStream(self):
-    if self.stream is None: return None
+    assert self.stream is not None
     filter = self.Get('Filter')
     if filter is None: return self.stream
     if filter != '/FlateDecode':
@@ -716,9 +757,8 @@ class ImageData(object):
     elif self.color_type == 'indexed-rgb':
       assert self.plte
       assert len(self.plte) % 3 == 0
-      palette_dump = PdfObj.EscapeString(self.plte)
       return '[/Indexed/DeviceRGB %d%s]' % (
-          len(self.plte) / 3 - 1, palette_dump)
+          len(self.plte) / 3 - 1, PdfObj.EscapeString(self.plte))
     else:
       assert 0, 'cannot convert to PDF color space'
 
@@ -916,6 +956,8 @@ class ImageData(object):
     width = int(obj.Get('Width'))
     height = int(obj.Get('Height'))
     palette = None
+    colorspace = obj.Get('ColorSpace')
+    assert colorspace or obj.Get('ImageMask')
     if obj.Get('ImageMask'):
       colorspace = None
       # Convert imagemask generated by sam2p to indexed1
@@ -950,22 +992,17 @@ class ImageData(object):
             palette = color2 + color1
           else:
             palette = color1 + color2
-          colorspace = '.indexed'
+          colorspace = '[/Indexed/DeviceRGB %d%s]' % (
+              len(palette) / 3 - 1, PdfObj.EscapeString(palette))
       assert colorspace is not None, 'unrecognized sam2p /ImageMask'
+    elif colorspace in ('/DeviceRGB', '/DeviceGray'):
+      pass
+    elif obj.IsIndexedRgbColorSpace(colorspace):
+      # Testing info: this code is run in `1591 0 obj' eurotex2006.final.pdf
+      palette = obj.ParseRgbPalette(colorspace)
     else:
-      colorspace = obj.Get('ColorSpace')
-      # !! gracefully fail if cannot parse
-      # !! parse palette in full binary syntax
-      match = re.match(r'\[\s*/Indexed\s*/DeviceRGB\s*\d+\s*<([\s0-9a-fA-F]*)>\s*\]\Z', colorspace)
-      if match:
-        # !! document error in `.decode'
-        palette = re.sub(r'\s+', '', match.group(1)).decode('hex')
-        assert palette
-        assert len(palette) % 3 == 0
-        colorspace = '.indexed'
-      else:
-        assert colorspace in ('/DeviceRGB', '/DeviceGray'), (
-            'unrecognized ColorSpace %r' % colorspace)
+      raise FormatUnsupported('unsupported ColorSpace %r' % colorspace)
+
     # Since we support only /FlateDecode, we don't have to support DecodeParms
     # being an array.
     decodeparms = PdfObj(None)
@@ -1004,16 +1041,15 @@ class ImageData(object):
     elif colorspace == '/DeviceGray':
       assert palette is None
       self.color_type = 'gray'
-    elif colorspace == '.indexed':
-      self.color_type = 'indexed-rgb'
-      assert isinstance(palette, str)
-      assert len(palette) % 3 == 0
     else:
-      assert 0, 'bad colorspace %r' % colorspace
+      assert isinstance(palette, str)
+      self.color_type = 'indexed-rgb'
+      assert len(palette) % 3 == 0
     self.is_interlaced = False
     self.plte = palette
     self.compression = compression
     self.idat = str(obj.stream)
+    assert self, 'could not load valid PDF image'
 
   def LoadPng(self, f):
     signature = f.read(8)
@@ -1083,6 +1119,7 @@ class ImageData(object):
     self.idat = ''.join(idats)
     assert not need_plte, 'missing PLTE chunk'
     self.compression = 'zip-png'
+    assert self, 'could not load valid PNG image'
 
 
 class PdfData(object):
@@ -1131,6 +1168,7 @@ class PdfData(object):
 
     for match in re.finditer(r'\n(?:(\d+)\s+(\d+)\s+obj|trailer)\s', data):
       if prev_obj_num is not None:
+        assert prev_obj_num not in obj_data, 'duplicate obj ' + prev_obj_num
         obj_data[prev_obj_num] = data[prev_obj_start_idx : match.start(0)]
       if match.group(1) is not None:
         prev_obj_num = int(match.group(1))
@@ -1140,6 +1178,7 @@ class PdfData(object):
       # Skip over '\n'
       obj_start[prev_obj_num] = prev_obj_start_idx = match.start(0) + 1
     if prev_obj_num is not None:
+      assert prev_obj_num not in obj_data, 'duplicate obj ' + prev_obj_num
       obj_data[prev_obj_num] = data[prev_obj_start_idx : ]
 
     # SUXX: no trailer in  pdf_reference_1-7-o.pdf
@@ -1488,7 +1527,9 @@ class PdfData(object):
     ( width=) print dup /Width get =only
     ( height=) print dup /Height get =only
     ( bpc=) print dup /BitsPerComponent get =only
-    ( colorspace=) print dup /ColorSpace get ===only
+    ( colorspace=) print dup /ColorSpace get
+       % Show [/Indexed /DeviceRGB] instead of longer array.
+       dup type /arraytype eq {dup length 2 gt {0 2 getinterval}if }if ===only
     ( filter=) print dup /Filter .knownget not {null} if ===only
     ( decodeparms=) print dup /DecodeParms .knownget not {null} if ===only
     ( device=) print currentpagedevice
@@ -1706,8 +1747,11 @@ class PdfData(object):
           not re.match(r'\[\s*\]\Z', mask)):
         continue
 
+      obj0 = obj
+
       if obj.Get('ImageMask'):
-        obj = PdfObj(obj)
+        if obj is obj0:
+          obj = PdfObj(obj)
         obj.Set('ImageMask', None)
         obj.Set('Decode', None)
         obj.Set('ColorSpace', '/DeviceGray')
@@ -1723,14 +1767,19 @@ class PdfData(object):
       if '(' not in colorspace and '<' not in colorspace:
         # TODO(pts): Inline this to reduce PDF size.
         # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R] 
-        colorspace2 = re.sub(
-            r'\b(\d+)\s+0\s+R\b',
+        # !! generic resolver
+        colorspace0 = colorspace
+        match = re.match(r'(\d+)\s+0\s+R\Z', colorspace)
+        if match:
+          colorspace = self.objs[int(match.group(1))].head
+        colorspace = re.sub(
+            r'\b(\d+)\s+0\s+R\s*(?=\]\Z)',
             (lambda match:
-             PdfObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
+             obj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
             colorspace)
-        if colorspace2 != colorspace:
-          colorspace = colorspace2
-          obj = PdfObj(obj)
+        if colorspace != colorspace0:
+          if obj is obj0:
+            obj = PdfObj(obj)
           obj.Set('ColorSpace', colorspace)
       colorspace_short = re.sub(r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
                          '/Indexed/\\1', colorspace)
@@ -1756,6 +1805,7 @@ class PdfData(object):
       if not PdfObj.IsGrayColorSpace(colorspace):
         gs_device = 'png16m'
       elif bpc > 1 or colorspace != '/DeviceGray':
+        # TODO(pts): Make it work for 1-bit grayscale palette.
         gs_device = 'pnggray'
       else:
         gs_device = 'pngmono'
@@ -1770,6 +1820,7 @@ class PdfData(object):
           (obj_num, obj.Get('Width'), obj.Get('Height'),
            colorspace_short, bpc, obj.Get('Filter'),
            int(bool(obj.Get('DecodeParms'))), obj.size, gs_device))
+      # !! assert no external `R' (once we have proper object parsing)
       device_image_objs[gs_device][obj_num] = obj
     if not image_count: return self # No images => no conversion.
     print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
@@ -1865,13 +1916,26 @@ class PdfData(object):
           # !! cmd_name instead of len(obj_infos); also for 0 above
           obj_infos.append(
               [new_obj.size, len(obj_infos), image_data.file_name, new_obj])
-      replacement_sizes = dict(
-          [(obj_info[1], obj_info[0]) for obj_info in obj_infos[1:]])
-      best_obj_info = min(obj_infos)  # Never empty.
+      method_sizes = dict(
+          [(obj_info[1], obj_info[0]) for obj_info in obj_infos])
+
+      # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
+      # properly ([0] first)) if one of them is an object. So we find the
+      # size minimum by hand.
+      best_obj_info = obj_infos[0]
+      for obj_info in obj_infos[1:]:
+        if (obj_info[0] < best_obj_info[0] or
+            (obj_info[0] == best_obj_info[0] and  # fall back to name
+             obj_info[1] < best_obj_info[1])):
+          best_obj_info = obj_info
+
       if best_obj_info[-1] is obj:
+        # TODO(pts): Diagnose this: why can't we generate a smaller image?
+        # !! Originals in eurotex2006.final.pdf tend to be smaller here because
+        #    they have ColorSpace in a separate XObject.
         print >>sys.stderr, (
             'info: keeping original image XObject %s, replacements too large (%r >= %s bytes)' %
-            (obj_num, replacement_sizes, obj.size))
+            (obj_num, method_sizes, obj.size))
       else:
         print >>sys.stderr, (
             'info: optimized image XObject %s best_method=%s file_name=%s '
@@ -1880,12 +1944,29 @@ class PdfData(object):
              best_obj_info[0], FormatPercent(best_obj_info[0], obj.size))) 
         print >>sys.stderr, (
             'info: replacements are %r <= %s bytes' %
-            (replacement_sizes, obj.size))
+            (method_sizes, obj.size))
         self.objs[obj_num] = best_obj_info[-1]
     # !! unify identical images (don't even recompress them?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
     # !! os.remove(images[obj_num][...]), also *.jbig2 and *.gray.png
+    return self
+
+  def FixAllBadNumbers(self):
+    # buggy pdfTeX-1.21a generated
+    # /Matrix[1. . . 1. . .]/BBox[. . 612. 792.]
+    # in eurotex2006.final.bad.pdf . Fix: convert `.' to 0.
+    for obj_num in sorted(self.objs):
+      obj = self.objs[obj_num]
+      if (obj.head.startswith('<<') and
+          re.search(r'/Subtype\s*/Form\b', obj.head) and
+          obj.Get('Subtype') == '/Form'):
+        matrix = obj.Get('Matrix')
+        if isinstance(matrix, str):
+          obj.Set('Matrix', obj.GetBadNumbersFixed(matrix))
+        bbox = obj.Get('BBox')
+        if isinstance(bbox, str):
+          obj.Set('BBox', obj.GetBadNumbersFixed(bbox))
     return self
 
 
@@ -1923,6 +2004,7 @@ def main(argv):
     sys.exit(1)
 
   (PdfData().Load(file_name)
+   .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .Save(output_file_name))
