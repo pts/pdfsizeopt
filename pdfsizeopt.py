@@ -741,17 +741,29 @@ class ImageData(object):
                 (not self.color_type.startswith('indexed-') or (
                  isinstance(self.plte, str) and len(self.plte) % 3 == 0)))
 
-  def CanBePDFImage(self):
+  def CanBePdfImage(self):
     return bool(self and self.bpc in (1, 2, 4, 8) and
                 self.color_type in ('gray', 'rgb', 'indexed-rgb') and
                 not self.is_interlaced)
+
+  def CanBePngImage(self, do_ignore_compression=False):
+    # It's OK to have self.is_interlaced == True.
+    return bool(self and self.bpc in (1, 2, 4, 8) and
+                self.color_type in ('gray', 'rgb', 'indexed-rgb') and
+                (self.color_type != 'rgb' or self.bpc == 8) and
+                (do_ignore_compression or self.compression == 'zip-png'))
 
   @property
   def samples_per_pixel(self):
     assert self.color_type
     return self.SAMPLES_PER_PIXEL_DICT[self.color_type]
 
-  def GetPDFColorSpace(self):
+  @property
+  def bytes_per_row(self):
+    """Return the number of bytes per uncompressed, unpredicted row."""
+    return (self.width * self.samples_per_pixel * self.bpc + 7) >> 3
+
+  def GetPdfColorSpace(self):
     assert self.color_type
     assert not self.color_type.startswith('indexed-') or self.plte
     if self.color_type == 'gray':
@@ -766,14 +778,14 @@ class ImageData(object):
     else:
       assert 0, 'cannot convert to PDF color space'
 
-  def GetPDFImageData(self):
+  def GetPdfImageData(self):
     """Return a dictinary useful as a PDF image."""
-    assert self.CanBePDFImage()  # asserts not interlaced
+    assert self.CanBePdfImage()  # asserts not interlaced
     pdf_image_data = {
         'Width': self.width,
         'Height': self.height,
         'BitsPerComponent': self.bpc,
-        'ColorSpace': self.GetPDFColorSpace(),
+        'ColorSpace': self.GetPdfColorSpace(),
         '.stream': self.idat,
     }
     if self.compression == 'none':
@@ -819,7 +831,7 @@ class ImageData(object):
   def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
     if not isinstance(pdf_obj, PdfObj): raise TypeError
-    pdf_image_data = self.GetPDFImageData()
+    pdf_image_data = self.GetPdfImageData()
     # !! parse pdf_obj., implement PdfObj.Get (with references?), .Set with None
     if do_check_dimensions:
       assert pdf_obj.Get('Width') == pdf_image_data['Width']
@@ -857,11 +869,44 @@ class ImageData(object):
     # Don't pdf_obj.Set('Decode', ...): it is goot as is.
     pdf_obj.stream = pdf_image_data['.stream']
 
+  def CompressToZipPng(self):
+    """Compress self.idat to self.compresson = 'zip-png'."""
+    assert self
+    if self.compression == 'zip-png':
+      # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
+      return self
+    elif self.compression == 'zip':
+      idat = zlib.decompress(self.idat)
+    elif self.compression == 'none':
+      idat = self.idat
+    else:
+      # 'zip-tiff' is too complicated now, especially for self.bpc != 8, where
+      # we have fetch previous samples with bitwise operations.
+      raise FormatUnsupported(
+          'cannot compress %s to zip-png' % self.compression)
+
+    # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
+    bytes_per_row = self.bytes_per_row
+    assert len(idat) % bytes_per_row == 0
+    output = []
+    for i in xrange(0, len(idat), bytes_per_row):
+      # We don't want to optimize here (like how libpng does) by picking the
+      # best predictor, i.e. the one which probably yields the smallest output.
+      # PdfData.OptimizeImages has much better and faster algorithms for that.
+      output.append('\1')  # Select PNG None predictor for this row.
+      output.append(idat[i : i + bytes_per_row])
+
+    # TODO(pts): Maybe use a smaller effort? We're not optimizing anyway.
+    self.idat = zlib.compress(''.join(output), 6)
+    self.compression = 'zip-png'
+    assert self
+
+    return self
+
   def SavePng(self, file_name, do_force_gray=False):
     """Save in PNG format to specified file, update file_name."""
     print >>sys.stderr, 'info: saving PNG to %s' % (file_name,)
-    assert self
-    assert self.compression == 'zip-png'
+    assert self.CanBePngImage()
     output = ['\x89PNG\r\n\x1A\n']  # PNG signature.
 
     def AppendChunk(chunk_type, chunk_data):
@@ -901,6 +946,7 @@ class ImageData(object):
       f.close()
     print >>sys.stderr, 'info: written %s bytes to PNG' % len(output_data)
     self.file_name = file_name
+    return self
 
   def Load(self, file_name):
     """Load (parts of) a PNG file to self, return self.
@@ -1085,6 +1131,7 @@ class ImageData(object):
     self.compression = compression
     self.idat = idat
     assert self, 'could not load valid PDF image'
+    return self
 
   def LoadPng(self, f):
     signature = f.read(8)
@@ -1155,6 +1202,7 @@ class ImageData(object):
     assert not need_plte, 'missing PLTE chunk'
     self.compression = 'zip-png'
     assert self, 'could not load valid PNG image'
+    return self
 
 
 class PdfData(object):
@@ -1760,8 +1808,7 @@ class PdfData(object):
     device_image_objs = {'png16m': {}, 'pnggray': {}, 'pngmono': {}}
     image_count = 0
     image_total_size = 0
-    # Dictionary mapping object numbers to /Image PdfObj{}s.
-    rendered_images = {}
+    images = {}
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! proper PDF object parsing, everywhere
@@ -1856,6 +1903,7 @@ class PdfData(object):
 
       image_count += 1
       image_total_size += obj.size
+      images[obj_num] = []
       # TODO(pts): More accurate /DecodeParms reporting (remove if no
       # predictor).
       print >>sys.stderr, (
@@ -1865,36 +1913,61 @@ class PdfData(object):
            colorspace_short, bpc, obj.Get('Filter'),
            int(bool(obj.Get('DecodeParms'))), obj.size, gs_device))
 
-      # !!! try to convert some images to unoptimized PNG without Ghostscript,
-      #    e.g.  uncompressed, /FlateDecode without predictor or with the
-      #    appropriate PNG predictor
-      #ImageData().LoadPdfImageObj(obj=obj, do_zip=False)  # !! except FormatUnsupported
+      # Try to convert to PNG in-process. If we can't, schedule rendering with
+      # Ghostscript. 
+      try:
+        # Both LoadPdfImageObj and CompressToZipPng an raise FormatUnsupported.
+        image1 = ImageData().LoadPdfImageObj(obj=obj, do_zip=False)
+        if not image1.CanBePngImage(do_ignore_compression=True):
+          raise FormatUnsupported('cannot save to PNG')
+        image2 = ImageData(image1).CompressToZipPng()
+      except FormatUnsupported:
+        image1 = image2 = None
 
-      # !! assert no external `R' (once we have proper object parsing)
-      device_image_objs[gs_device][obj_num] = obj
-    if not image_count: return self # No images => no conversion.
+      if image1 is None:
+        device_image_objs[gs_device][obj_num] = obj
+      else:
+        images[obj_num].append(('parse', (image2.SavePng(
+            file_name='type1cconv-%d.parse.png' % obj_num))))
+        if image1.compression == 'none':
+          image1.idat = zlib.compress(image1.idat, 9)
+          image1.compression = 'zip'
+        if len(image1.idat) < len(image2.idat):
+          # TODO(pts): Test this.
+          assert 0
+          # Hack to use the smaller image1 as the 'parse' image, but let
+          # other images (generated below) be generated from the image2 PNG.
+          images[obj_num][-1][1] = image1
+          image1.file_name = image2.file_name
+  
+    if not images: return self # No images => no conversion.
     print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
         image_count, image_total_size)
 
+    # Render images.
     for gs_device in sorted(device_image_objs):
       ps_tmp_file_name = 'type1cconv.%s.tmp.ps' % gs_device
       objs = device_image_objs[gs_device]
       if objs:
-        rendered_images.update(self.RenderImages(
+        # Dictionary mapping object numbers to /Image PdfObj{}s.
+        rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern='type1cconv-%%04d.%s.tmp.png' % gs_device))
+            png_tmp_file_pattern='type1cconv-%%04d.%s.tmp.png' % gs_device)
         os.remove(ps_tmp_file_name)
+        for obj_num in sorted(rendered_images):
+          images[obj_num].append(
+              ('gs', ImageData().Load(file_name=rendered_images[obj_num])))
 
-    # !! shortcut for sam2p (don't need pngtopnm)
-    #    (add basic support for reading PNG to sam2p? -- just what GS produces)
-    #    (or just add .gz support?)
-    images = {}
-    for obj_num in sorted(rendered_images):
-      rendered_image_file_name = rendered_images[obj_num]
+    # Optimize images.
+    bytes_saved = 0
+    for obj_num in sorted(images):
       # !! TODO(pts): Don't load all images to memory (maximum 2).
-      images[obj_num] = obj_images = []
+      obj_images = images[obj_num]
+      rendered_image_file_name = obj_images[-1][1].file_name
       # TODO(pts): use KZIP or something to further optimize the ZIP stream
-      obj_images.append(('gs', ImageData().Load(rendered_image_file_name)))
+      # !! shortcut for sam2p (don't need pngtopnm)
+      #    (add basic support for reading PNG to sam2p? -- just what GS produces)
+      #    (or just add .gz support?)
       obj_images.append(self.ConvertImage(
           sourcefn=rendered_image_file_name,
           targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
@@ -1910,22 +1983,22 @@ class PdfData(object):
           targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
           cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
           cmd_name='sam2p_pr'))
-      if (use_jbig2 and obj_images[-1].bpc == 1 and
-          obj_images[-1].color_type in ('gray', 'indexed-rgb')):
+      if (use_jbig2 and obj_images[-1][1].bpc == 1 and
+          obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
         # !! autoconvert 1-bit indexed PNG to gray
-        obj_images.append(ImageData(obj_images[-1]))
-        if obj_images[-1].color_type != 'gray':
+        obj_images.append(('jbig', ImageData(obj_images[-1][1])))
+        if obj_images[-1][1].color_type != 'gray':
           # This changes obj_images[-1].file_name as well.
-          obj_images[-1].SavePng(file_name='type1cconv-%d.gray.png' % obj_num,
-                                 do_force_gray=True)
-        obj_images[-1].idat = self.ConvertImage(
-            sourcefn=obj_images[-1].file_name,
+          obj_images[-1][1].SavePng(
+              file_name='type1cconv-%d.gray.png' % obj_num, do_force_gray=True)
+        obj_images[-1][1].idat = self.ConvertImage(
+            sourcefn=obj_images[-1][1].file_name,
             targetfn='type1cconv-%d.jbig2' % obj_num,
             cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
             cmd_name='jbig2', do_just_read=True)[1]
-        obj_images[-1].compression = 'jbig2'
-        obj_images[-1].file_name = 'type1cconv-%d.jbig2' % obj_num
-      # !! add /FlateEncode to all obj_images to find the smallest
+        obj_images[-1][1].compression = 'jbig2'
+        obj_images[-1][1].file_name = 'type1cconv-%d.jbig2' % obj_num
+      # !! add /FlateEncode again to all obj_images to find the smallest
       #    (maybe to UpdatePdfObj)
       # !! rename type1cconv and .type1c in temporary filenames
       # !! TODO(pts): Find better pngout binary file name.
@@ -1965,9 +2038,11 @@ class PdfData(object):
       # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
       # properly ([0] first)) if one of them is an object. So we implement
       # our own comparator.
+      def CompareStr(a, b):
+        return (a < b and -1) or (a > b and 1) or 0
       def CompareObjInfo(a, b):
         # Compare first by byte size, then by command name.
-        return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
+        return a[0].__cmp__(b[0]) or CompareStr(a[1], b[1])
 
       obj_infos.sort(CompareObjInfo)
       method_sizes = ','.join(
@@ -1987,8 +2062,12 @@ class PdfData(object):
             'size=%s (%s) methods=%s' %
             (obj_num, obj_infos[0][2], obj_infos[0][0],
              FormatPercent(obj_infos[0][0], obj.size), method_sizes)) 
+        bytes_saved += self.objs[obj_num].size - obj_infos[0][-1].size
+        
         self.objs[obj_num] = obj_infos[0][-1]
-    # !! unify identical images (don't even recompress them?)
+    print >>sys.stderr, 'info: saved %s bytes (%s) on images' % (
+        bytes_saved, FormatPercent(bytes_saved, image_total_size))
+    # !! unify identical images (unify identical objects first?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
     # !! os.remove(images[obj_num][...]), also *.jbig2 and *.gray.png
