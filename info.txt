@@ -183,11 +183,12 @@
   (pngout or optipng doesn't do it, optipng doesn't do it)
 * TODO: single-color image optimization
 * TODO: How to optimize a PDF image object
+  TODO: doc: dependencies: Ghostscript, sam2p, pngtopnm, pngout, jbig2
   0. Let the original PDF XImage object be orig.pdfimg .
   1. Create v0.pdfimg from orig.pdfimg by keeping only /Width, /Height,
      /ColorSpace, /BitsPerComponent, /Filter and /DecodeParms and the
      compressed stream. Convert ``/ImageMask true'' to /ColorSpace /DeviceGray.
-  2. If the /Filter contains /JBIG2Decode or /JPXDecode or /DCTDecode, then
+  2. If the /Filter contains /JPXDecode or /DCTDecode, then
      stop and use v0.pdfimg . (Imp: eliminate /ASCIIHexDecode and
      /ASCII85Decode, also later)
   3. If /ColorSpace is not /DeviceRGB, /DeviceGray or /Indexed of /DeviceRGB
@@ -209,7 +210,7 @@
      without an image XObject.
      sam2p by default does:
      * removing unused colors from the palette
-     * picking the smallest /ColorSpace and /BitsPerComonent (== SampleFormat)
+     * picking the smallest /ColorSpace and /BitsPerComponent (== SampleFormat)
      * using ZIP compression (/FlateDecode)
      (Imp: improve the /FlateDecode predictor selection algorithm of sam2p)
   8. Extract the image XObject from the PDF created by sam2p to v1.pdfimg .
@@ -230,14 +231,17 @@
       (Imp: experiment size reduction with /DecodeParms and image data being
       out of sync.) This operation is fast, because no recoding or
       recompression takes place.
-  13. Pick the smallest of v*.pdfimg created above.
-  14. If not v0.pdfimg was picked, then create the output by taking
+  13. If /BitsPerComponent is 1, create v3.pdfimg from sam2p's PNG output
+      and converting it to /JBIG2Decode using the open source `jbig2' tool.
+  14. Pick the smallest of v*.pdfimg created above.
+  15. If not v0.pdfimg was picked, then create the output by taking
       orig.pdfimg and replacing /ColorSpace, /BitsPerComponent,
       /DecodeParms, /Filter and the image stream. Verify that /Width and
-      /Height of orig.pdf and the v*.pdfimg picked match.
+      /Height of orig.pdf and the v*.pdfimg picked match. Pay attention to
+      changed /Decode values, and /ImageMask and palette conversions.
       (Imp: apply the /Mask color interval, if appropriate.)
-  +15. Find identical images in the PDF file, and unify them.
-  +16. Find identical palettes and move them to an object.
+  +16. Find identical images in the PDF file, and unify them.
+  +17. Find identical palettes and move them to an object.
 * TODO: prevent tool.pdf.Compress from decompressing, and/or recompressing
   the image XObjects we have created
 * doc: none of the tools optimize inline images (TODO?), so please don't use

@@ -151,6 +151,19 @@ class PdfSizeOptTest(unittest.TestCase):
             '/Height 480\n/BitsPerComponent 8\n/Filter/FlateDecode\n'
             '/DecodeParms <</Predictor 15\n/Columns 640>>/Length 6638>>'))
 
+  def testIsGrayColorSpace(self):
+    e = pdfsizeopt.PdfObj.IsGrayColorSpace
+    self.assertEqual(False, e('/DeviceRGB'))
+    self.assertEqual(False, e('/DeviceCMYK'))
+    self.assertEqual(False, e('/DeviceN'))
+    self.assertEqual(True, e('  /DeviceGray  \r'))
+    self.assertEqual(False, e('\t[ /Indexed /DeviceGray'))
+    self.assertEqual(True, e('\t[ /Indexed /DeviceGray 5 <]'))
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e,
+                      '\t[ /Indexed /DeviceRGB 5 (]')
+    self.assertEqual(True, e('\t[ /Indexed /DeviceRGB\f5 (A\101Azz\172)]'))
+    self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Bzz\172)]'))
+    self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Ayy\172)]'))
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

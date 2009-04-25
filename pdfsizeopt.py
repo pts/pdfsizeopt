@@ -66,6 +66,10 @@ class PdfTokenTruncated(Exception):
   """Raised if a string is only a prefix of a PDF token sequence."""
 
 
+class PdfTokenNotString(Exception):
+  """Raised if a PDF token sequence is not a single string."""
+
+
 class PdfObj(object):
   """Contents of a PDF object.
 
@@ -269,6 +273,48 @@ class PdfObj(object):
       assert depth == 0
       assert close_remaining == 0
       return ''.join(output)
+
+  @classmethod
+  def IsGrayColorSpace(cls, colorspace):
+    if not isinstance(colorspace, str): raise TypeError
+    colorspace = colorspace.strip()
+    if colorspace == '/DeviceGray':
+      return True
+    match = re.match(r'\[\s*/Indexed\s*(/DeviceRGB|/DeviceGray)'
+                     r'\s+\d+\s*(?s)([<(].*)]\Z', colorspace)
+    if not match:
+      return False
+    if match.group(1) == '/DeviceGray':
+      return True
+    palette = cls.ParseString(match.group(2))
+    assert len(palette) % 3 == 0
+    i = 0
+    while i < len(palette):
+      if palette[i] != palette[i + 1] or palette[i] != palette[i + 2]:
+        return False  # non-gray color in the palette
+      i += 3
+    return True
+
+  @classmethod
+  def ParseString(cls, pdf_data):
+    """Parse a PDF string data to a Python string.
+
+    Args:
+      pdf_data: `(...)' or `<...>' PDF string data
+    Returns:
+      Python string.
+    Raises:
+      PdfTokenParseError:
+      PdfTokenTruncated:
+      PdfTokenNotString:
+    """
+    end_ofs_out = []
+    pdf_data2 = cls.RewriteParsable(pdf_data, end_ofs_out=end_ofs_out)
+    if pdf_data[end_ofs_out[0]:].strip():
+      raise PdfTokenNotString
+    if not pdf_data2.startswith(' <') or not pdf_data2.endswith('>'):
+      raise PdfTokenNotString
+    return pdf_data2[2 : -1].decode('hex')
 
   PDF_CLASSIFY = [40] * 256
   """Mapping a 0..255 byte to a character type used by RewriteParsable.
@@ -1445,6 +1491,8 @@ class PdfData(object):
     ( colorspace=) print dup /ColorSpace get ===only
     ( filter=) print dup /Filter .knownget not {null} if ===only
     ( decodeparms=) print dup /DecodeParms .knownget not {null} if ===only
+    ( device=) print currentpagedevice
+      /OutputDevice get dup length string cvs print
     (\n) print flush
   pop
   
@@ -1630,25 +1678,33 @@ class PdfData(object):
 
   def OptimizeImages(self, use_pngout=True, use_jbig2=True):
     """Optimize image XObjects in the PDF."""
-    # !! implement according to the plan in info.txt
-    rgb_objs = {}
+    # TODO(pts): convert inline images to image XObject{}s.
+    # Dictionary mapping Ghostscript -sDEVICE= names to dictionaries mapping
+    # PDF object numbers to PdfObj instances.
+    device_image_objs = {'png16m': {}, 'pnggray': {}, 'pngmono': {}}
+    image_count = 0
+    image_total_size = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! proper PDF object parsing, everywhere
       if (not re.search(r'/Subtype\s*/Image\b', obj.head) or
           not obj.stream is not None): continue
-      filter = obj.Get('Filter')
-      if ('/JBIG2Decode' in filter or '/JPXDecode' in filter or
-          '/DCTDecode' in filter): continue
-      # !! more checks
-        
-      # !! check type of Width, Height
-      # !! select pnggray and pngmono based on /ColorSpace
-      print >>sys.stderr, (
-          'info: will optimize image XObject %s; orig width=%s height=%s '
-          'filter=%s size=%s' %
-          (obj_num, obj.Get('Width'), obj.Get('Height'),
-           obj.Get('Filter'), obj.size))
+      filter = (obj.Get('Filter') or '').replace(']', ' ]') + ' '
+
+      # Don't touch lossy-compressed images.
+      # TODO(pts): Read lossy-compressed images, maybe a small, uncompressed
+      # representation would be smaller.
+      if ('/JPXDecode ' in filter or '/DCTDecode ' in filter):
+        continue
+
+      # TODO(pts): Support color key mask for /DeviceRGB and /DeviceGray:
+      # convert the /Mask to RGB8, remove it, and add it back (properly
+      # converted back) to the final PDF; pay attention to /Decode
+      # differences as well.
+      mask = obj.Get('Mask')
+      if (isinstance(mask, str) and '[' in mask and
+          not re.match(r'\[\s*\]\Z', mask)):
+        continue
 
       if obj.Get('ImageMask'):
         obj = PdfObj(obj)
@@ -1656,32 +1712,81 @@ class PdfData(object):
         obj.Set('Decode', None)
         obj.Set('ColorSpace', '/DeviceGray')
         obj.Set('BitsPerComponent', 1)
-      
+
+      bpc = obj.Get('BitsPerComponent')
+      if bpc not in (1, 2, 4, 8):
+        continue
+
       colorspace = obj.Get('ColorSpace')
+      assert isinstance(colorspace, str)
       # !! proper PDF object parsing
       if '(' not in colorspace and '<' not in colorspace:
         # TODO(pts): Inline this to reduce PDF size.
-        # pdftex emits: /ColorSpace [/Indexed /ImageRGB <n> <obj_num> 0 R] 
+        # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R] 
         colorspace2 = re.sub(
             r'\b(\d+)\s+0\s+R\b',
             (lambda match:
              PdfObj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
             colorspace)
         if colorspace2 != colorspace:
+          colorspace = colorspace2
           obj = PdfObj(obj)
-          obj.Set('ColorSpace', colorspace2)
-      rgb_objs[obj_num] = obj
-    if not rgb_objs: return self # No images => no conversion.
+          obj.Set('ColorSpace', colorspace)
+      colorspace_short = re.sub(r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
+                         '/Indexed/\\1', colorspace)
+      if re.search(r'[^/\w]', colorspace_short):
+        colorspace_short = '?'
 
+      # Ignore images with exotic color spaces (e.g. DeviceCMYK, CalGray,
+      # DeviceN).
+      # TODO(pts): Support more color spaces. DeviceCMYK would be tricky,
+      # because neither PNG nor sam2p supports it. We can convert it to
+      # RGB, though.
+      if not re.match(r'(?:/Device(?:RGB|Gray)\Z|\[\s*/Indexed\s*'
+                      r'/Device(?:RGB|Gray)\s)', colorspace):
+        continue
+
+      width = obj.Get('Width')
+      assert isinstance(width, int)
+      assert width > 0
+      height = obj.Get('Height')
+      assert isinstance(height, int)
+      assert height > 0
+
+      if not PdfObj.IsGrayColorSpace(colorspace):
+        gs_device = 'png16m'
+      elif bpc > 1 or colorspace != '/DeviceGray':
+        gs_device = 'pnggray'
+      else:
+        gs_device = 'pngmono'
+
+      image_count += 1
+      image_total_size += obj.size
+      # TODO(pts): More accurate /DecodeParms reporting (remove if no
+      # predictor).
+      print >>sys.stderr, (
+          'info: will optimize image XObject %s; orig width=%s height=%s '
+          'colorspace=%s bpc=%s filter=%s dp=%s size=%s gs_device=%s' %
+          (obj_num, obj.Get('Width'), obj.Get('Height'),
+           colorspace_short, bpc, obj.Get('Filter'),
+           int(bool(obj.Get('DecodeParms'))), obj.size, gs_device))
+      device_image_objs[gs_device][obj_num] = obj
+    if not image_count: return self # No images => no conversion.
+    print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
+        image_count, image_total_size)
+
+    # !! try to convert some images to unoptimized PNG without Ghostscript,
+    #    e.g.  uncompressed, /FlateDecode without predictor or with the
+    #    appropriate PNG predictor
     rendered_images = {}
-    # !! try to convert some images to unoptimized PNG without Ghostscript, e.g
-    #    uncompressed, /FlateDecode without predictor or with appropriate
-    #    PNG predictor; use zlib.decompress() etc.
-    rendered_images.update(self.RenderImages(
-        rgb_objs, 'type1cconv.rgb.tmp.ps', 'type1cconv-%04d.rgb.tmp.png',
-        gs_device='png16m'))
-    # !! use different gs_device gs_device='png256' as well
-    os.remove('type1cconv.rgb.tmp.ps')
+    for gs_device in sorted(device_image_objs):
+      ps_tmp_file_name = 'type1cconv.%s.tmp.ps' % gs_device
+      objs = device_image_objs[gs_device]
+      if objs:
+        rendered_images.update(self.RenderImages(
+            objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
+            png_tmp_file_pattern='type1cconv-%%04d.%s.tmp.png' % gs_device))
+        os.remove(ps_tmp_file_name)
 
     # !! shortcut for sam2p (don't need pngtopnm)
     #    (add basic support for reading PNG to sam2p? -- just what GS produces)
@@ -1770,7 +1875,7 @@ class PdfData(object):
       else:
         print >>sys.stderr, (
             'info: optimized image XObject %s best_method=%s file_name=%s '
-            ' size=%s (%s)' %
+            'size=%s (%s)' %
             (obj_num, best_obj_info[1], best_obj_info[2],
              best_obj_info[0], FormatPercent(best_obj_info[0], obj.size))) 
         print >>sys.stderr, (
