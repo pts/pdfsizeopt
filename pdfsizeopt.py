@@ -1240,7 +1240,7 @@ class PdfData(object):
     self.file_size = len(data)
     match = re.match(r'^%PDF-(1[.]\d)\s', data)
     assert match, 'uncrecognized PDF signature'
-    version = match.group(1)
+    self.version = match.group(1)
     self.objs = {}
     self.trailer = ''
     # None, an int or 'trailer'.
@@ -2062,7 +2062,9 @@ class PdfData(object):
             (obj_num, obj_infos[0][2], obj_infos[0][0],
              FormatPercent(obj_infos[0][0], obj.size), method_sizes)) 
         bytes_saved += self.objs[obj_num].size - obj_infos[0][-1].size
-        
+        if ('/JBIG2Decode' in (obj_infos[0][-1].Get('Filter') or '') and
+            self.version < '1.4'):
+          self.version = '1.4'
         self.objs[obj_num] = obj_infos[0][-1]
     print >>sys.stderr, 'info: saved %s bytes (%s) on images' % (
         bytes_saved, FormatPercent(bytes_saved, image_total_size))
