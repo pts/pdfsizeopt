@@ -1934,7 +1934,6 @@ class PdfData(object):
           image1.compression = 'zip'
         if len(image1.idat) < len(image2.idat):
           # TODO(pts): Test this.
-          assert 0
           # Hack to use the smaller image1 as the 'parse' image, but let
           # other images (generated below) be generated from the image2 PNG.
           images[obj_num][-1][1] = image1
