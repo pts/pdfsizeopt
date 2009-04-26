@@ -350,3 +350,6 @@ additional compression may be possible with:
   problem because /A and /Aacute are nearby, /FlateEncode catches it
 * /Filter [ /ASCIIHexDecode /JBIG2Decode ]
   /DecodeParms [ null << /JBIG2Globals 6 0 R >> ]
+* when should we /FlateEncode?
+  if(fcompress_ && dict.get("Filter") == null && dict.get("Length")
+  == null && abyte0.length > FLATE_OVERHEAD + 25)
