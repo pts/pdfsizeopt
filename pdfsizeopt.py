@@ -73,6 +73,9 @@ class PdfTokenNotString(Exception):
 class FormatUnsupported(Exception):
   """Raised when a file/data to be loaded is valid, but not supported."""
 
+class PdfXrefError(Exception):
+  """Raised when the PDF file doesn't contain a valid cross-reference table."""
+
 
 class PdfObj(object):
   """Contents of a PDF object.
@@ -99,6 +102,7 @@ class PdfObj(object):
     elif isinstance(other, str):
       # !! TODO(pts): what if endobj is part of a string in the obj? --
       # parse properly
+      assert other, 'empty PDF obj to parse'
       match = re.match(r'(?s)\d+\s+0\s+obj\b\s*', other)
       assert match
       skip_obj_number_idx = len(match.group(0))
@@ -893,7 +897,8 @@ class ImageData(object):
       # We don't want to optimize here (like how libpng does) by picking the
       # best predictor, i.e. the one which probably yields the smallest output.
       # PdfData.OptimizeImages has much better and faster algorithms for that.
-      output.append('\1')  # Select PNG None predictor for this row.
+      # For testing \0 vs \1: ./pdfsizeopt.py --use-pngout=false pts3.pdf
+      output.append('\0')  # Select PNG None predictor for this row.
       output.append(idat[i : i + bytes_per_row])
 
     # TODO(pts): Maybe use a smaller effort? We're not optimizing anyway.
@@ -1243,57 +1248,184 @@ class PdfData(object):
     self.version = match.group(1)
     self.objs = {}
     self.trailer = ''
-    # None, an int or 'trailer'.
-    prev_obj_num = None
-    prev_obj_start_idx = None
-    obj_data = {}
-    obj_start = {}
 
-    for match in re.finditer(r'\n(?:(\d+)\s+(\d+)\s+obj|trailer)\s', data):
-      if prev_obj_num is not None:
-        assert prev_obj_num not in obj_data, 'duplicate obj ' + prev_obj_num
-        obj_data[prev_obj_num] = data[prev_obj_start_idx : match.start(0)]
-      if match.group(1) is not None:
-        prev_obj_num = int(match.group(1))
-        assert 0 == int(match.group(2))
-      else:
-        prev_obj_num = 'trailer'
-      # Skip over '\n'
-      obj_start[prev_obj_num] = prev_obj_start_idx = match.start(0) + 1
-    if prev_obj_num is not None:
-      assert prev_obj_num not in obj_data, 'duplicate obj ' + prev_obj_num
-      obj_data[prev_obj_num] = data[prev_obj_start_idx : ]
+    try:
+      obj_starts = self.ParseUsingXref(data)
+    except PdfXrefError, exc:
+      print >>sys.stderr, (
+          'warning: problem with xref, parsing anyway: %s' % exc)
+      assert 0  # !!
+      obj_starts = self.ParseWithoutXref(data)
 
-    # SUXX: no trailer in  pdf_reference_1-7-o.pdf
-    # TODO(pts): Learn to parse that as well.
-    assert prev_obj_num == 'trailer'
-    trailer_data = obj_data.pop('trailer')
-    print >>sys.stderr, 'info: separated to %s objs' % len(obj_data)
-    assert obj_data
-
+    assert 'trailer' in obj_starts, 'no PDF trailer'
+    assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
+    print >>sys.stderr, 'info: separated to %s objs' % (len(obj_starts) - 1)
+    last_ofs = trailer_ofs = obj_starts.pop('trailer')
+    trailer_data = data[trailer_ofs: trailer_ofs + 8192]
     match = re.match('(?s)trailer\s+(<<.*?>>)\s*startxref\s', trailer_data)
-    assert match
-    self.trailer = match.group(1)
+    assert match, 'bad trailer data: %r' % trailer_data
+    self.trailer = re.sub('/(?:Prev|XRefStm)\s+\d+', '', match.group(1))
+    if 'xref' in obj_starts:
+      last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
+
+    def PairCmp(a, b):
+      return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
+
+    obj_items = sorted(
+        [(obj_starts[obj_num], obj_num) for obj_num in obj_starts], PairCmp)
+    if last_ofs <= obj_items[-1][0]:
+      last_ofs = len(data)
+    obj_items.append((last_ofs, 'last'))
+    # Dictionary mapping object numbers to strings of format ``X Y obj ...
+    # endobj' (+ junk).
+    obj_data = dict([(obj_items[i - 1][1],
+                     data[obj_items[i - 1][0] : obj_items[i][0]])
+                     for i in xrange(1, len(obj_items))])
+    # !! we get this for pdf_reference_1-7.pdf
+    assert '' not in obj_data.values(), 'duplicate object start offset'
 
     # Get numbers first, so later we can resolve '/Length 42 0 R'.
     # TODO(pts): Add proper parsing, so this first pass is not needed.
     for obj_num in obj_data:
       this_obj_data = obj_data[obj_num]
-      if 'endstream' not in this_obj_data and '<<' not in this_obj_data:
+      if ('endstream' not in this_obj_data and
+          '<' not in this_obj_data and
+          '(' not in this_obj_data):
         self.objs[obj_num] = PdfObj(obj_data[obj_num],
-                                    file_ofs=obj_start[obj_num], )
+                                    file_ofs=obj_starts[obj_num], )
 
     # Second pass once we have all length numbers.
     for obj_num in obj_data:
       if obj_num not in self.objs:
         self.objs[obj_num] = PdfObj(obj_data[obj_num], objs=self.objs,
-                                    file_ofs=obj_start[obj_num])
+                                    file_ofs=obj_starts[obj_num])
 
     return self
 
+  @classmethod
+  def ParseUsingXref(cls, data):
+    """Parse a PDF file using the cross-reference table.
+    
+    This method doesn't consult the cross-reference table (`xref'): it just
+    searches for objects looking at '\nX Y obj' strings in `data'. 
+
+    Args:
+      data: String containing the PDF file.
+    Returns:
+      obj_starts dicitionary, which maps object numbers (and the string
+      'trailer', possibly also 'xref') to their start offsets within a file.
+    Raises:
+      PdfXrefError: If the cross-reference table is corrupt, but there is
+        a chance to parse the file without it.
+      AssertionError: If the PDF file us totally unparsable.
+      NotImplementedError: If the PDF file needs parsing code not implemented.
+    """
+    match = re.search(r'[>\s]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z', data[-128:])
+    if not match:
+      raise PdfXrefError('startxref+%%EOF not found')
+    xref_ofs = int(match.group(1))
+    xref_head = data[xref_ofs : xref_ofs + 128]
+    match = re.match(r'(\d+)\s+(\d+)\s+obj\b', xref_head)
+    if match:
+      raise NotImplementedError(
+          'PDF-1.5 cross reference streams not implemented')
+    obj_starts = {'xref': xref_ofs}
+    obj_starts_rev = {}
+    while True:
+      xref_head = data[xref_ofs : xref_ofs + 128]
+      # Maybe PDF doesn't allow multiple consecutive `xref's,
+      # but we accept that.
+      match = re.match(r'(xref\s+)\d+\s+\d+\s+', xref_head)
+      if not match:
+        raise PdfXrefError('xref table not found at %s' % xref_ofs)
+      xref_ofs += match.end(1)
+      while True:
+        xref_head = data[xref_ofs : xref_ofs + 128]
+        # Start a new subsection.
+        match = re.match(r'(\d+)\s+([1-9]\d*)\s+|(xref|trailer)\s',
+            xref_head)
+        if not match:
+          raise PdfXrefError('xref subsection syntax error')
+        if match.group(3) is not None:
+          break
+        obj_num = int(match.group(1))
+        obj_count = int(match.group(2))
+        xref_ofs = xref_ofs + match.end(0)
+        while obj_count > 0:
+          match = re.match(
+              r'(\d{10})\s\d{5}\s([nf])\s\s', data[xref_ofs : xref_ofs + 20])
+          if not match:
+            raise PdfXrefError('syntax error in xref entry at %s' % xref_ofs)
+          if match.group(2) == 'n':
+            if obj_num in obj_starts:
+              raise PdfXrefError('duplicate obj %s' % obj_num)
+            obj_ofs = int(match.group(1))
+            if obj_ofs in obj_starts_rev:
+              raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
+                                 (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
+            obj_starts_rev[obj_ofs] = obj_num
+            obj_starts[obj_num] = obj_ofs
+          obj_num += 1
+          obj_count -= 1
+          xref_ofs += 20
+      if match.group(2) == 'xref':
+        # TODO(pts): Test this.
+        raise NotImplementedError(
+            'multiple xref sections (with generation numbers) not implemented')
+      # Keep only the very first trailer.
+      obj_starts.setdefault('trailer', xref_ofs)
+
+      trailer_data = data[xref_ofs: xref_ofs + 8192]
+      match = re.match('(?s)trailer\s+(<<.*?>>)\s*startxref\s', trailer_data)
+      assert match, 'bad trailer data: %r' % trailer_data
+      match = re.search('/Prev\s+(\d+)', match.group(1))
+      if not match: break
+      xref_ofs = int(match.group(1))
+    return obj_starts
+
+  @classmethod
+  def ParseWithoutXref(cls, data):
+    """Parse a PDF file without having a look at the cross-reference table.
+    
+    This method doesn't consult the cross-reference table (`xref'): it just
+    searches for objects looking at '\nX Y obj' strings in `data'. 
+
+    Args:
+      data: String containing the PDF file.
+    Returns:
+      obj_starts dicitionary, which maps object numbers (and the string
+      'trailer', possibly also 'xref') to their start offsets within a file.
+    """
+    # None, an int or 'trailer'.
+    prev_obj_num = None
+    obj_starts = {}
+
+    for match in re.finditer(
+        r'\n(?:(\d+)\s+(\d+)\s+obj\b|trailer(?=\s)', data):
+      if match.group(1) is not None:
+        prev_obj_num = int(match.group(1))
+        assert 0 == int(match.group(2))
+      else:
+        prev_obj_num = 'trailer'
+      assert prev_obj_num not in obj_starts, 'duplicate obj ' + prev_obj_num
+      # Skip over '\n'
+      obj_starts[prev_obj_num] = match.start(0) + 1
+
+    # TODO(pts): Learn to parse no trailer in PDF-1.5
+    # (e.g. pdf_reference_1-7-o.pdf)
+    assert prev_obj_num == 'trailer'
+    return obj_starts
+
   def Save(self, file_name):
     """Save this PDf to file_name, return self."""
-    print >>sys.stderr, 'info: saving PDF to: %s' % (file_name,)
+    obj_count = len(self.objs)
+    print >>sys.stderr, 'info: saving PDF with %s objs to: %s' % (
+        obj_count, file_name)
+    assert obj_count
+    trailer = self.trailer.strip()
+    assert trailer.startswith('<<')
+    assert trailer.endswith('>>')
+    trailer = re.sub('/(?:Size|Prev|XRefStm)\s+\d+', '', trailer)
     f = open(file_name, 'wb')
     try:
       # Emit header.
@@ -1313,27 +1445,44 @@ class PdfData(object):
 
       # Emit objs.
       obj_numbers = sorted(self.objs)
+      assert obj_count == len(obj_numbers)
       # Number of objects including missing ones.
-      obj_size = obj_numbers[-1] + 1
       for obj_num in obj_numbers:
         obj_ofs[obj_num] = GetOutputSize()
         self.objs[obj_num].AppendTo(output, obj_num)
 
+      # !! no double newline before endstream in content streams if not compressed
       # Emit xref.
       xref_ofs = GetOutputSize()
-      output.append('xref\n0 %s\n' % obj_size)
-      # TODO(pts): Compress spares obj_numbers list.
-      for obj_num in xrange(obj_size):
-        if obj_num in obj_ofs:
-          output.append('%010d 00000 n \n' % obj_ofs[obj_num])
-        else:
-          output.append('0000000000 65535 f \n')
+      if obj_numbers[0] == 1:
+        i = 0
+        j = i + 1
+        while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
+          j += 1
+        output.append('xref\n0 %s\n0000000000 65535 f \n' % (j + 1))
+        while i < j:
+          output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
+          i += 1
+      else:
+        output.append('xref\n0 1\n0000000000 65535 f \n')
+        i = 0
+
+      # Add subsequent xref subsections.
+      while i < obj_count:
+        j = i + 1
+        while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
+          j += 1
+        output.append('%s %s\n' % (obj_numbers[i], j - i))
+        while i < j:
+          output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
+          i += 1
 
       # Emit trailer etc.
-      output.append('trailer\n')
-      output.append(self.trailer)
-      output.append('\nstartxref\n%s\n' % xref_ofs)
-      output.append('%%EOF\n')
+      assert trailer.endswith('>>')
+      output.append('trailer\n%s/Size %d>>\n' %
+                    (trailer[:-2], obj_numbers[-1] + 1))
+      output.append('startxref\n%d\n' % xref_ofs)
+      output.append('%%EOF\n')  # Avoid doubling % in printf().
       print >>sys.stderr, 'info: generated %s bytes (%s)' % (
           GetOutputSize(), FormatPercent(GetOutputSize(), self.file_size))
 
