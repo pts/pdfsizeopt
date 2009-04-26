@@ -353,3 +353,29 @@ additional compression may be possible with:
 * when should we /FlateEncode?
   if(fcompress_ && dict.get("Filter") == null && dict.get("Length")
   == null && abyte0.length > FLATE_OVERHEAD + 25)
+* JVM .class file format
+  http://java.sun.com/docs/books/jvms/second_edition/html/Instructions.doc.html
+  http://java.sun.com/docs/books/jvms/second_edition/html/ClassFile.doc.html
+  http://java.sun.com/docs/books/jvms/second_edition/html/VMSpecTOC.doc.html
+  Javassist to mangle the .class file
+  cmp -l myload/Foo.class.{privatewho,publicwho}
+  229   private:2   public:1
+  292 invokespecial:267 invokevirtual:266
+* !! why is Comprepp better than Compress on some images (not on
+  pts2ep.type1c.pdf anymore?)
+* how to edit java code
+  * how to disassemble (without offsets)
+    javap -c -private tool/pdf/Compress | less
+  * how to public recodeImage()
+    private --> public: \x00\x02\x02\x79 --> \x00\x01\x02\x79
+        (private is \x00\x02)
+    invokespecial --> invokevirtual: \x2b\x2c\xb7 --> \x2b\x2c\xb6
+        (aload_1 is \x2b, aload_2 is \x2c, invokespecial is \xb7)
+  * how to public compress()
+    invokespecial --> invokevirtual:
+        \xb7\x00\x2e\xb7\x00\x2f --> \xb7\x00\x2e\xb6\x00\x2f
+        (invokespecial is \xb7, but we change only the 2nd one (``compress''))
+    private --> public:
+      ../jdisasm.py tool/pdf/Compress.class private compress
+  * how to fix pdfr_;
+    private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
