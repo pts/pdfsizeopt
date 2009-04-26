@@ -2085,10 +2085,10 @@ class PdfData(object):
           image1.idat = zlib.compress(image1.idat, 9)
           image1.compression = 'zip'
         if len(image1.idat) < len(image2.idat):
-          # TODO(pts): Test this.
+          # For testing: ./pdfsizeopt.py -use-pngout=false PLRM.pdf
           # Hack to use the smaller image1 as the 'parse' image, but let
           # other images (generated below) be generated from the image2 PNG.
-          images[obj_num][-1][1] = image1
+          images[obj_num][-1] = ('parse', image1)
           image1.file_name = image2.file_name
   
     if not images: return self # No images => no conversion.
