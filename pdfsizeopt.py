@@ -141,13 +141,18 @@ class PdfObj(object):
   def AppendTo(self, output, obj_num):
     """Append serialized self to output list, using obj_num."""
     output.append('%s 0 obj\n' % int(obj_num))
-    output.append(self.head.strip())  # Implicit \s .
+    head = self.head.strip()
+    output.append(head)  # Implicit \s .
+    space = ' ' * int(head[-1] not in '>])')
     if self.stream is not None:
-      output.append('\nstream\n')
+      assert '/Length' in self.head  # !! better parsing, check value
+      output.append('%sstream\n' % space)
       output.append(self.stream)
-      output.append('\nendstream\nendobj\n')
+      # TODO(pts): Do we need '\nendstream' after a non-compressed content
+      # stream?
+      output.append('endstream endobj\n')
     else:
-      output.append('\nendobj\n')
+      output.append('%sendobj\n' % space)
 
   @property
   def size(self):
@@ -1253,8 +1258,7 @@ class PdfData(object):
       obj_starts = self.ParseUsingXref(data)
     except PdfXrefError, exc:
       print >>sys.stderr, (
-          'warning: problem with xref, parsing anyway: %s' % exc)
-      assert 0  # !!
+          'warning: problem with xref table, finding objs anyway: %s' % exc)
       obj_starts = self.ParseWithoutXref(data)
 
     assert 'trailer' in obj_starts, 'no PDF trailer'
@@ -1451,7 +1455,6 @@ class PdfData(object):
         obj_ofs[obj_num] = GetOutputSize()
         self.objs[obj_num].AppendTo(output, obj_num)
 
-      # !! no double newline before endstream in content streams if not compressed
       # Emit xref.
       xref_ofs = GetOutputSize()
       if obj_numbers[0] == 1:
