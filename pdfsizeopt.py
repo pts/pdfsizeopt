@@ -34,6 +34,8 @@ import zlib
 class Error(Exception):
   """Comon base class for exceptions defined in this file."""
 
+PDF_WHITESPACE_CHARS = '\0\t\n\r\f '
+
 def ShellQuote(string):
   # TODO(pts): Make it work on non-Unix systems.
   string = str(string)
@@ -113,12 +115,13 @@ class PdfObj(object):
       skip_obj_number_idx = len(match.group(0))
       match = re.search(r'\b(stream(?:\r\n|\s)|endobj(?:[\s/]|\Z))', other)
       assert match, 'endobj/stream not found from ofs=%s' % file_ofs
-      self.head = other[skip_obj_number_idx : match.start(0)].rstrip()
+      self.head = other[skip_obj_number_idx : match.start(0)].rstrip(
+          PDF_WHITESPACE_CHARS)
       if match.group(1).startswith('endobj'):
         self.stream = None
         # Implicit \s here. TODO(pts): Do with less copy.
       else:  # has 'stream'
-        # TODO(pts): Proper parsing.
+        # !! TODO(pts): proper PDF token sequence parsing
         #print repr(self.head), repr(match.group(1))
         stream_start_idx = match.end(1)
         match = re.search(r'/Length\s+(\d+\b)(?:\s+0\s+(R)\b)?', self.head)
@@ -146,11 +149,13 @@ class PdfObj(object):
   def AppendTo(self, output, obj_num):
     """Append serialized self to output list, using obj_num."""
     output.append('%s 0 obj\n' % int(obj_num))
-    head = self.head.strip()
+    head = self.head.strip(PDF_WHITESPACE_CHARS)
     output.append(head)  # Implicit \s .
     space = ' ' * int(head[-1] not in '>])')
     if self.stream is not None:
-      assert '/Length' in self.head  # !! better parsing, check value
+      # !! TODO(pts): proper PDF token sequence parsing
+      # !! check value of /Length == len(self.stream)
+      assert '/Length' in self.head
       output.append('%sstream\n' % space)
       output.append(self.stream)
       # TODO(pts): Do we need '\nendstream' after a non-compressed content
@@ -184,9 +189,10 @@ class PdfObj(object):
       rest = re.sub(
           cls.FIX_RE,
           lambda match: h.__setitem__(match.group(1),
-              re.sub('[\n\r]+', ' ', match.group(2).rstrip())),
+              re.sub('[\n\r]+', ' ',
+              match.group(2).rstrip(PDF_WHITESPACE_CHARS))),
           head[:-2])  # Without `>>'
-      rest = rest.strip()
+      rest = rest.strip(PDF_WHITESPACE_CHARS)
       assert re.match(r'<<\s*\Z', rest), (
           'could not parse PDF obj, left %r from %r' % (rest, head))
       if not h: return '<<\n>>'
@@ -206,8 +212,10 @@ class PdfObj(object):
 
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
-    # !! autoresolve refs
-    # !! proper PDF object parsing
+    # !! implement GetComposite: !! even with R resolving
+    # pdf_obj.GetStruct('ColorSpace', objs=...).GetStruct(4)
+    # !! extra argument to autoresolve refs
+    # !! TODO(pts): proper PDF token sequence parsing
     assert self.head.startswith('<<')
     assert self.head.endswith('>>')
     value = self
@@ -216,7 +224,7 @@ class PdfObj(object):
       if i < 0: return None
       i += len(key) + 3
       j = self.head.find('\n', i)
-      value = self.head[i : j].strip()
+      value = self.head[i : j].strip(PDF_WHITESPACE_CHARS)
       if value in ('<<', '['):
         value = self  # parse the hard way 
 
@@ -227,9 +235,10 @@ class PdfObj(object):
       h = {}
       rest = re.sub(
           self.FIX_RE,
-          lambda match: h.__setitem__(match.group(1), match.group(2).rstrip()),
+          lambda match: h.__setitem__(
+          match.group(1), match.group(2).rstrip(PDF_WHITESPACE_CHARS)),
           self.head[:-2])  # Without `>>'
-      rest = rest.strip()
+      rest = rest.strip(PDF_WHITESPACE_CHARS)
       assert re.match(r'<<\s*\Z', rest), (
           'could not parse PDF obj, left %r from %r' % (rest, self.head))
       # !! cache `h' for later retrievals
@@ -238,9 +247,13 @@ class PdfObj(object):
     return self.ParseSimpleValue(value)
 
   def Set(self, key, value):
-    """Set value to key or remove key if value is None."""
-    # !! proper PDF object parsing
+    """Set value to key or remove key if value is None.
+    
+    To set key to `null', specify value='null'.
+    """
+    # !! TODO(pts): proper PDF token sequence parsing
     # !! doc: slow because of string concatenation
+    # !! argument to convert value=None to value='null'
     if not self.head.endswith('\n>>'):
       self.head = self.GetParsableHead(self.head)
     assert self.head.endswith('\n>>'), 'bad head: %r' % self.head
@@ -291,9 +304,6 @@ class PdfObj(object):
 
   PDF_WHITESPACE_RE = re.compile(r'[\0\t\n\r\f ]+')
   """Matches whitespace (1 or more) at end of string."""
-
-  #!!PDF_COMPLICATED_CHAR_RE = re.compile(r'[\[<(%#]')
-  #"""Matches a PDF data character which complicates parsing."""
 
   PDF_INVALID_NAME_CHAR_RE = re.compile(r'[^-A-Za-z0-9_.]')
   """Matches a PDF data character which is not valid in a plain name."""
@@ -346,7 +356,7 @@ class PdfObj(object):
           data, 1, len(data) - 1).search():
         end_ofs_out = []
         data2 = cls.RewriteToParsable(data, end_ofs_out=end_ofs_out)
-        if data[end_ofs_out[0]:].strip():
+        if data[end_ofs_out[0]:].strip(PDF_WHITESPACE_CHARS):
           raise PdfTokenParseError('bad string %r' % data)
         assert data2.startswith(' <') and data2.endswith('>')
         return data2[1:]
@@ -385,6 +395,8 @@ class PdfObj(object):
     Please note that this method doesn't implement a validating parser: it
     happily accepts some invalid PDF constructs.
 
+    For duplicate keys, only the last key--value pair is kept.
+
     Args:
       data: String containing a PDF token sequence for a dict, like '<<...>>'.
     Returns:
@@ -397,7 +409,7 @@ class PdfObj(object):
     assert data.startswith('<<')
     assert data.endswith('>>')
     start = 2
-    end = len(data) - 2    
+    end = len(data) - 2
     dict_obj = {}
     scanner = cls.PDF_SIMPLEST_KEY_VALUE_RE.scanner(data, start, end)
     while True:
@@ -414,7 +426,7 @@ class PdfObj(object):
   def ParseDict(cls, data):
     """Parse any PDF token sequence to a dict mapping strings to values.
 
-    This method returns a PDF token sequence without comments (%).
+    This method returns values without comments (%).
 
     Parsing of dict values is not recursive (i.e. if the value is composite,
     it is left as is as a string).
@@ -424,6 +436,11 @@ class PdfObj(object):
 
     Please note that this method involves a ParseSimplestDict call, to parse
     the simplest PDF token sequences the fastest way possible.
+
+    For duplicate keys, only the last key--value pair is kept.
+    
+    Whitespace is not stripped from the inner sides of [...] or <<...>>, to
+    remain compatible with ParseSimplestDict.
 
     Args:
       data: String containing a PDF token sequence for a dict, like '<<...>>'.
@@ -448,7 +465,6 @@ class PdfObj(object):
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
 
     if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
-      key = None
       scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
       match = scanner.match()
       if not match or match.group(1)[0] != '/':
@@ -456,136 +472,183 @@ class PdfObj(object):
         # token. Restart from the beginning to match everything properly.
         # TODO(pts): Cancel only the last key.
         dict_obj.clear()
-        start = 2
-        scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-        match = scanner.match()
-      while match:
-        start = match.end()
-        value = match.group(1)
-        kind = value[0]
-        if kind == '%':
-          pass
-        else:
-          if kind == '/':
-            # It's OK that we don't apply this normalization recursively to
-            # [/?Foo] etc.
-            if '#' in value:
-              value = cls.PDF_NAME_HASHMARK_HEX_RE.sub(
-                  lambda match: chr(int(match.group(1), 16)), value)
-              if '#' in value:
-                raise PdfTokenParseError(
-                    'hex error in literal name %r at %d' %
-                    (value, match.start(1)))
-            if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
-              value = '/' + cls.PDF_INVALID_NAME_CHAR_RE.sub(
-                  lambda match: '#%02X' % ord(match.group(0)), value[1:])
-          elif kind == '(':
-            if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
-                value, 1, len(value) - 1).search():
-              # Parse the string in a slow way.
-              end_ofs_out = []
-              value1 = data[match.start(1):]  # Add more chars if needed.
-              try:
-                value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
-              except PdfTokenTruncated, exc:
-                raise PdfTokenParseError(
-                    'truncated string literal at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              except PdfTokenParseError, exc:
-                raise PdfTokenParseError(
-                    'bad string literal at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              assert value2.startswith(' <') and value2.endswith('>')
-              value = value2[1:]
-              start = match.start(1) + end_ofs_out[0]
-              scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-              match = None
-            else:
-              value = cls.ParseSimpleValue(value)
-          elif kind == '[':
-            if '%' in value or '[' in value or '(' in value:
-              # !! TODO(pts): Implement a faster solution if no % or (
-              end_ofs_out = []
-              value1 = data[match.start(1):]  # Add more chars if needed.
-              try:
-                value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
-              except PdfTokenTruncated, exc:
-                raise PdfTokenParseError(
-                    'truncated array at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              except PdfTokenParseError, exc:
-                raise PdfTokenParseError(
-                    'bad array at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              assert value2.startswith(' [') and value2.endswith(']')
-              start = match.start(1) + end_ofs_out[0]
-              # If we had `value = value2[1:] instead of the following
-              # assignment, we would get the clean, pre-parsed value.
-              # But we don't want that because that would be inconsistent with
-              # the ('[' in value) above.
-              if '%' in value:
-                value = cls.CompressParsable(value2[1:])
-              else:
-                value = data[match.start(1) : start]
-              scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-              match = None
-          elif value.startswith('<<'):
-            if '%' in value or '<' in value or '(' in value:
-              # !! TODO(pts): Implement a faster solution if no % or (
-              end_ofs_out = []
-              value1 = data[match.start(1):]  # Add more chars if needed.
-              try:
-                value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
-              except PdfTokenTruncated, exc:
-                raise PdfTokenParseError(
-                    'truncated array at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              except PdfTokenParseError, exc:
-                raise PdfTokenParseError(
-                    'bad array at %d, got %r...: %s' %
-                    (match.start(1), value1[0 : 16], exc))
-              assert value2.startswith(' <<') and value2.endswith('>>')
-              start = match.start(1) + end_ofs_out[0]
-              if '%' in value:
-                value = cls.CompressParsable(value2[1:])
-              else:
-                value = data[match.start(1) : start]
-              scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-              match = None
-          elif kind == '<':  # '<<' is handled above
-            value = cls.ParseSimpleValue(value)
-          else:
-            match0 = match
-            if value.endswith('R'):
-              match = cls.PDF_REF_AT_EOS_RE.match(value)
-              if match:
-                value = '%d %d R' % (int(match.group(1)), int(match.group(2)))
-            else:
-              match = None
-            if not match:
-              if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
-                raise PdfTokenParseError(
-                    'syntax error in non-literal name %r at %d' %
-                    (value, match0.start(1)))
-              value = cls.ParseSimpleValue(value)
-          if key is None:
-            if kind != '/':
-              raise PdfTokenParseError(
-                  'dict key expected at %d, got %r... ' %
-                  (match.start(1), value[0 : 16]))
-            key = value[1:]
-          else:
-            dict_obj[key] = value
-            key = None
-        match = scanner.match()
-      if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
-        # TODO(pts): Be more specific, e.g. if we get this in a truncated
-        # string literal `(foo'.
-        raise PdfTokenParseError(
-            'parse error at %d, got %r' % (start, data[start : start + 16]))
-      if key is not None:
+        list_obj = cls._ParseArrayContents(data=data, start=2, end=end)
+      else:
+        list_obj = cls._ParseArrayContents(
+            data=data, start=start, end=end, scanner=scanner, match=match)
+      if 0 != (len(list_obj) & 1):
         raise PdfTokenParseError('odd item count in dict')
+      for i in xrange(0, len(list_obj), 2):
+        if not list_obj[i].startswith('/'):
+          # TODO(pts): Report the offset as well.
+          raise PdfTokenParseError(
+              'dict key expected, got %r... ' %
+              (list_obj[i][0 : 16]))
+        dict_obj[list_obj[i][1:]] = list_obj[i + 1]
+
     return dict_obj    
+
+  @classmethod
+  def ParseArray(cls, data):
+    """Parse any PDF array token sequence to a Python list.
+
+    This method returns values without comments (%).
+
+    Parsing of values is not recursive (i.e. if the value is composite,
+    it is left as is as a string).
+
+    Please note that this method doesn't implement a validating parser: it
+    happily accepts some invalid PDF constructs.
+
+    There is no corresponding super fast ParseSimplestArray call implemented,
+    because parsing arrays is not a common operation.
+
+    For duplicate keys, only the last key--value pair is kept.
+
+    Whitespace is not stripped from the inner sides of [...] or <<...>>, to
+    remain compatible with ParseSimplestDict.
+
+    Args:
+      data: String containing a PDF token sequence for a dict, like '<<...>>'.
+        There must be no leading or trailing whitespace.
+    Returns:
+      A dict mapping strings to values (usually strings).
+    Raises:
+      PdfTokenParseError:
+    """
+    assert data.startswith('[')
+    assert data.endswith(']')
+    start = 1
+    end = len(data) - 1
+    return cls._ParseArrayContents(data, start, end)
+
+  @classmethod
+  def _ParseArrayContents(cls, data, start, end, scanner=None, match=None):
+    """Helper method to scan token list in data[start : end]."""
+    list_obj = []
+    if scanner is None:
+      scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
+    if match is None:
+      match = scanner.match()
+    while match:
+      start = match.end()
+      value = match.group(1)
+      kind = value[0]
+      if kind == '%':
+        match = scanner.match()
+        continue
+      if kind == '/':
+        # It's OK that we don't apply this normalization recursively to
+        # [/?Foo] etc.
+        if '#' in value:
+          value = cls.PDF_NAME_HASHMARK_HEX_RE.sub(
+              lambda match: chr(int(match.group(1), 16)), value)
+          if '#' in value:
+            raise PdfTokenParseError(
+                'hex error in literal name %r at %d' %
+                (value, match.start(1)))
+        if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
+          value = '/' + cls.PDF_INVALID_NAME_CHAR_RE.sub(
+              lambda match: '#%02X' % ord(match.group(0)), value[1:])
+      elif kind == '(':
+        if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
+            value, 1, len(value) - 1).search():
+          # Parse the string in a slow way.
+          end_ofs_out = []
+          value1 = data[match.start(1):]  # Add more chars if needed.
+          try:
+            value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
+          except PdfTokenTruncated, exc:
+            raise PdfTokenParseError(
+                'truncated string literal at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          except PdfTokenParseError, exc:
+            raise PdfTokenParseError(
+                'bad string literal at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          assert value2.startswith(' <') and value2.endswith('>')
+          value = value2[1:]
+          start = match.start(1) + end_ofs_out[0]
+          scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
+          match = None
+        else:
+          value = cls.ParseSimpleValue(value)
+      elif kind == '[':
+        value1 = value[1 : -1]
+        if '%' in value1 or '[' in value1 or '(' in value1:
+          # !! TODO(pts): Implement a faster solution if no % or (
+          end_ofs_out = []
+          value1 = data[match.start(1):]  # Add more chars if needed.
+          try:
+            value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
+          except PdfTokenTruncated, exc:
+            raise PdfTokenParseError(
+                'truncated array at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          except PdfTokenParseError, exc:
+            raise PdfTokenParseError(
+                'bad array at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          assert value2.startswith(' [') and value2.endswith(']')
+          start = match.start(1) + end_ofs_out[0]
+          # If we had `value = value2[1:] instead of the following
+          # assignment, we would get the clean, pre-parsed value.
+          # But we don't want that because that would be inconsistent with
+          # the ('[' in value) above.
+          if '%' in value:
+            value = cls.CompressParsable(value2[1:])
+          else:
+            value = data[match.start(1) : start]
+          scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
+          match = None
+      elif value.startswith('<<'):
+        value1 = value[2 : -2]
+        if '%' in value1 or '<' in value1 or '(' in value1:
+          # !! TODO(pts): Implement a faster solution if no % or (
+          end_ofs_out = []
+          value1 = data[match.start(1):]  # Add more chars if needed.
+          try:
+            value2 = cls.RewriteToParsable(value1, end_ofs_out=end_ofs_out)
+          except PdfTokenTruncated, exc:
+            raise PdfTokenParseError(
+                'truncated array at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          except PdfTokenParseError, exc:
+            raise PdfTokenParseError(
+                'bad array at %d, got %r...: %s' %
+                (match.start(1), value1[0 : 16], exc))
+          assert value2.startswith(' <<') and value2.endswith('>>')
+          start = match.start(1) + end_ofs_out[0]
+          if '%' in value:
+            value = cls.CompressParsable(value2[1:])
+          else:
+            value = data[match.start(1) : start]
+          scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
+          match = None
+      elif kind == '<':  # '<<' is handled above
+        value = cls.ParseSimpleValue(value)
+      else:
+        match0 = match
+        if value.endswith('R'):
+          match = cls.PDF_REF_AT_EOS_RE.match(value)
+          if match:
+            value = '%d %d R' % (int(match.group(1)), int(match.group(2)))
+        else:
+          match = None
+        if not match:
+          if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
+            raise PdfTokenParseError(
+                'syntax error in non-literal name %r at %d' %
+                (value, match0.start(1)))
+          value = cls.ParseSimpleValue(value)
+      list_obj.append(value)
+      match = scanner.match()
+    if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
+      # TODO(pts): Be more specific, e.g. if we get this in a truncated
+      # string literal `(foo'.
+      raise PdfTokenParseError(
+          'parse error at %d, got %r' % (start, data[start : start + 16]))
+    return list_obj
 
   @classmethod
   def CompressParsable(cls, data):
@@ -661,7 +724,7 @@ class PdfObj(object):
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
     if not isinstance(colorspace, str): raise TypeError
-    colorspace = colorspace.strip()
+    colorspace = colorspace.strip(PDF_WHITESPACE_CHARS)
     if colorspace == '/DeviceGray':
       return True
     match = re.match(r'\[\s*/Indexed\s*(/DeviceRGB|/DeviceGray)'
@@ -739,6 +802,9 @@ class PdfObj(object):
       end_ofs_out=None, do_terminate_obj=False):
     """Rewrite PDF token sequence so it will be easier to parse by regexps.
 
+    Please note that this method is very slow. Use ParseSimpleValue or
+    ParseDict (or Get) to get faster results most of the time.
+
     Parsing stops at `stream', `endobj' or `startxref', which will also
     be returned at the end of the string.
 
@@ -787,7 +853,6 @@ class PdfObj(object):
       if i >= data_size:
         raise PdfTokenTruncated('structures open: %r' % stack)
 
-      # TODO(pts): Faster parsing (skipping whitespace?) by regexp search.
       o = cls.PDF_CLASSIFY[ord(data[i])]
       if o == 0:  # whitespace
         i += 1
@@ -1354,7 +1419,7 @@ class ImageData(object):
     `sam2p -c zip' and alike, but not much more.
     """
     pdf = PdfData().Load(f)
-    # !! proper PDF object parsing
+    # !! TODO(pts): proper PDF token sequence parsing
     image_obj_nums = [
         obj_num for obj_num in sorted(pdf.objs)
         if re.search(r'/Subtype\s*/Image\b', pdf.objs[obj_num].head)]
@@ -1374,7 +1439,8 @@ class ImageData(object):
       assert match
       content_obj = pdf.objs[int(match.group(1))]
       content_stream = content_obj.GetDecompressedStream()
-      content_stream = ' '.join(content_stream.strip().split())
+      content_stream = ' '.join(
+          content_stream.strip(PDF_WHITESPACE_CHARS).split())
       number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
       width = obj.Get('Width')
       height = obj.Get('Height')
@@ -1638,7 +1704,9 @@ class PdfData(object):
     assert '' not in obj_data.values(), 'duplicate object start offset'
 
     # Get numbers first, so later we can resolve '/Length 42 0 R'.
+    # !! TODO(pts): proper PDF token sequence parsing
     # TODO(pts): Add proper parsing, so this first pass is not needed.
+    # !!
     for obj_num in obj_data:
       this_obj_data = obj_data[obj_num]
       if ('endstream' not in this_obj_data and
@@ -1775,7 +1843,7 @@ class PdfData(object):
     print >>sys.stderr, 'info: saving PDF with %s objs to: %s' % (
         obj_count, file_name)
     assert obj_count
-    trailer = self.trailer.strip()
+    trailer = self.trailer.strip(PDF_WHITESPACE_CHARS)
     assert trailer.startswith('<<')
     assert trailer.endswith('>>')
     trailer = re.sub('/(?:Size|Prev|XRefStm)\s+\d+', '', trailer)
@@ -2013,7 +2081,7 @@ class PdfData(object):
     font_count = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
-      # TODO(pts): Proper parsing.
+      # !! TODO(pts): proper PDF token sequence parsing
       if (re.search(r'/Type\s*/FontDescriptor\b', obj.head) and
           re.search(r'/FontName\s*/', obj.head)):
         # Type1C fonts have /FontFile3 instead of /FontFile.
@@ -2318,7 +2386,7 @@ class PdfData(object):
     images = {}
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
-      # !! proper PDF object parsing, everywhere
+      # !! TODO(pts): proper PDF token sequence parsing
       if (not re.search(r'/Subtype\s*/Image\b', obj.head) or
           not obj.stream is not None): continue
       filter = (obj.Get('Filter') or '').replace(']', ' ]') + ' '
@@ -2354,7 +2422,8 @@ class PdfData(object):
 
       colorspace = obj.Get('ColorSpace')
       assert isinstance(colorspace, str)
-      # !! proper PDF object parsing
+      # !! TODO(pts): proper PDF token sequence parsing
+      # !! Implement ParseArray
       if '(' not in colorspace and '<' not in colorspace:
         # TODO(pts): Inline this to reduce PDF size.
         # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R] 
@@ -2389,7 +2458,8 @@ class PdfData(object):
 
       obj = PdfObj(obj)
       obj.head = obj.GetParsableHead(obj.head)
-      # !! proper parsing, ignore string `(5 6 R)'
+      # !! TODO(pts): proper PDF token sequence parsing
+      # !! add resolving of references
       if re.match(r'\b\d+\s+\d+\s+R\b', obj.head):
         continue
 
@@ -2519,11 +2589,6 @@ class PdfData(object):
 
     for obj_num in sorted(images):
       obj = self.objs[obj_num]
-      # !! proper PDF object parsing
-      obj.head = re.sub(
-          r'(?sm)^/(\S+)[ \t]*<<(.*?)>>',
-          lambda match: '/%s <<%s>>' % (match.group(1), match.group(2).strip().replace('\n', '')),
-          obj.head)
       obj_infos = [(obj.size, '#orig', '', obj)]
       image_idx = 0
       for cmd_name, image_data in images[obj_num]:
@@ -2588,6 +2653,7 @@ class PdfData(object):
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       if (obj.head.startswith('<<') and
+          # !! TODO(pts): proper PDF token sequence parsing
           re.search(r'/Subtype\s*/Form\b', obj.head) and
           obj.Get('Subtype') == '/Form'):
         matrix = obj.Get('Matrix')

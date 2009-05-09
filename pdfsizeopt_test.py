@@ -243,10 +243,12 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'S': '<282929285c>', 'T': 8},
                      e('<</S(()\\)\\(\\\\)/T 8>>'))
     self.assertEqual({'A': '[\f()]'}, e('<</A[\f()]>>'))
+    self.assertEqual({'A': '[\t5 \r6\f]'}, e('<</A[\t5 \r6\f]>>'))
     self.assertEqual({'A': '[12 34]'}, e('<</A[12%\n34]>>'))
     # \t removed because there was a comment in the array
     self.assertEqual({'A': '[]'}, e('<</A[\t%()\n]>>'))
-    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A(())/B[<<]>>')
+    self.assertEqual({'A': '<2829>', 'B': '[<<]'}, e('<</A(())/B[<<]>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A(())/B[()<<]>>')
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A[[>>]]>>')
     self.assertEqual({'A': '[[/hi 5]/lah]'}, e('<</A[[/hi%x\t]z\r5] /lah]>>'))
     self.assertEqual({'D': '<<()\t<>>>'}, e('<</D<<()\t<>>>>>'))
@@ -254,6 +256,13 @@ class PdfSizeOptTest(unittest.TestCase):
     # \t and \f removed because there was a comment in the dict
     self.assertEqual({'D': '<</E<<>>>>'}, e('<</D<</E\t\f<<%>>\n>>>>>>'))
     self.assertEqual({'A': '[[]]', 'q': '56 78 R'}, e('<</A[[]]/q\t56\r78 R>>'))
+
+  def testParseArray(self):
+    e = pdfsizeopt.PdfObj.ParseArray
+    self.assertEqual(['/Indexed', '/DeviceRGB', 42, '43 44 R'],
+                     e('[\t/Indexed/DeviceRGB\f\r42\00043\t44\0R\n]')) 
+    self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>'],
+                     e('[[ ] [\t[\f]] <<\t [\f[ >>]'))
 
   def testCompressParsable(self):
     e = pdfsizeopt.PdfObj.CompressParsable
