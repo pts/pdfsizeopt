@@ -26,8 +26,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('(((foo)) (\\(bar)d)', e('((foo)) ((bar)d'))
     self.assertEqual('((foo)\\) (bar))', e('(foo)) (bar)'))
 
-  def testRewriteParsable(self):
-    e = pdfsizeopt.PdfObj.RewriteParsable
+  def testRewriteToParsable(self):
+    e = pdfsizeopt.PdfObj.RewriteToParsable
     self.assertEqual(' [ ]', e('[]'))
     self.assertEqual(' [ ]', e('[]<<'))
     self.assertEqual(' true', e('true '))
@@ -163,16 +163,105 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(True, e('  /DeviceGray  \r'))
     self.assertEqual(False, e('\t[ /Indexed /DeviceGray'))
     self.assertEqual(True, e('\t[ /Indexed /DeviceGray 5 <]'))
-    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e,
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e,
                       '\t[ /Indexed /DeviceRGB 5 (]')
     self.assertEqual(True, e('\t[ /Indexed /DeviceRGB\f5 (A\101Azz\172)]'))
     self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Bzz\172)]'))
     self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Ayy\172)]'))
 
-  def testAddNewlinesToSimpleDict(self):
-    e = pdfsizeopt.PdfObj.AddNewlinesToSimpleDict
-    e('<</One/Two/Three[/Four]/Five/Six>>')
+  def testParseSimpleValue(self):
+    e = pdfsizeopt.PdfObj.ParseSimpleValue
+    self.assertEqual(True, e('true'))
+    self.assertEqual(False, e('false'))
+    self.assertEqual('true ', e('true '))
+    self.assertEqual('\nfalse', e('\nfalse'))
+    self.assertEqual(None, e('null'))
+    self.assertEqual('', e(''))
+    self.assertEqual(0, e('0'))
+    self.assertEqual(42, e('42'))
+    self.assertEqual(42, e('00042'))
+    self.assertEqual(-137, e('-0137'))
+    self.assertEqual('3.14', e('3.14'))
+    self.assertEqual('5e6', e('5e6'))
+    self.assertEqual('<48493f>', e('(HI?)'))
+    self.assertEqual('<28295c>', e('(()\\\\)'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(()\\\\)x')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(()\\\\')
+    self.assertEqual('<deadface>', e('<dea dF aCe>'))
+    self.assertEqual('<deadfac0>', e('<\fdeadFaC\r>'))
 
+  def DoTestParseSimplestDict(self, e):
+    # e is either ParseSimplestDict or ParseDict, so (because the latter)
+    # this method should not test for PdfTokenNotSimplest.
+    self.assertEqual({}, e('<<\t\0>>'))
+    self.assertEqual({}, e('<<\n>>'))
+    self.assertEqual({'One': '/Two'}, e('<< /One/Two>>'))
+    self.assertEqual({'One': 'Two'}, e('<</One Two>>'))
+    self.assertEqual({'One': 234}, e('<</One 234>>'))
+    self.assertEqual({'Five': '/Six', 'Three': 'Four', 'One': '/Two'},
+                     e('<</One/Two/Three Four/Five/Six>>'))
+    self.assertEqual({'A': True, 'C': None, 'B': False, 'E': '42.5', 'D': 42},
+                     e('<<\n\r/A true/B\f\0false/C null/D\t42/E 42.5\r>>'))
+    self.assertEqual({'Data': '42 137 R'}, e('<</Data 42 137 R >>'))
+    self.assertEqual({'S': '<68656c6c6f2c20776f726c6421>'},
+                     e('<</S(hello, world!)>>'))
+    self.assertEqual({'S': '<>'}, e('<</S()>>'))
+    self.assertEqual({'S': '<0a>'}, e('<</S\r(\n)>>'))
+    self.assertEqual({'S': '<3c3c5d3e3e5b>'}, e('<</S  (<<]>>[)\n>>'))
+    self.assertEqual({'S': '<deadface50>'}, e('<</S<dEA Dfa CE5>>>'))
+    self.assertEqual({'A': '[42 \t?Foo>><<]'}, e('<</A[42 \t?Foo>><<]>>'))
+    self.assertEqual({'D': '<<]42[\f\t?Foo>>'}, e('<<\n/D\n<<]42[\f\t?Foo>>>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</S<%\n>>>')
+
+  def testParseSimplestDict(self):
+    e = pdfsizeopt.PdfObj.ParseSimplestDict
+    self.DoTestParseSimplestDict(e=e)
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest,
+                      e, '<</Three[/Four()]>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</S\r(\\n)>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</A[()]>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</A[%\n]>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</D<<()>>>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</D<<%\n>>>>')
+    self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</?Answer! 42>>')
+  
+  def testParseDict(self):
+    e = pdfsizeopt.PdfObj.ParseDict
+    self.DoTestParseSimplestDict(e=e)
+    self.assertEqual({}, e('<<\0\r>>'))
+    self.assertEqual({}, e('<<\n>>'))
+    self.assertEqual({'N': 5}, e('<</N%\n5>>'))
+    self.assertEqual({'Five': '/Six', 'Three': '[/Four]', 'One': '/Two'},
+                     e('<</One/Two/Three[/Four]/Five/Six>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</Foo bar#3F>>')
+    self.assertEqual({'#3FAnswer#21#20#0D': 42}, e('<</?Answer!#20#0d 42>>'))
+    self.assertEqual({'S': '<0a>'}, e('<</S\r(\\n)>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</S\r(foo\\)>>')
+    self.assertEqual({'S': '<666f6f29626172>'}, e('<</S(foo\\)bar)>>'))
+    self.assertEqual({'S': '<2829>', 'T': '<42cab0>'}, e('<</S(())/T<42c Ab>>>'))
+    self.assertEqual({'S': '<282929285c>', 'T': 8},
+                     e('<</S(()\\)\\(\\\\)/T 8>>'))
+    self.assertEqual({'A': '[\f()]'}, e('<</A[\f()]>>'))
+    self.assertEqual({'A': '[12 34]'}, e('<</A[12%\n34]>>'))
+    # \t removed because there was a comment in the array
+    self.assertEqual({'A': '[]'}, e('<</A[\t%()\n]>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A(())/B[<<]>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A[[>>]]>>')
+    self.assertEqual({'A': '[[/hi 5]/lah]'}, e('<</A[[/hi%x\t]z\r5] /lah]>>'))
+    self.assertEqual({'D': '<<()\t<>>>'}, e('<</D<<()\t<>>>>>'))
+    self.assertEqual({'D': '<<>>', 'S': '<>'}, e('<</D<<%\n>>/S()>>'))
+    # \t and \f removed because there was a comment in the dict
+    self.assertEqual({'D': '<</E<<>>>>'}, e('<</D<</E\t\f<<%>>\n>>>>>>'))
+
+  def testCompressParsable(self):
+    e = pdfsizeopt.PdfObj.CompressParsable
+    self.assertEqual('', e('\t\f\0\r \n'))
+    self.assertEqual('foo bar', e('   foo\n\t  bar\f'))
+    self.assertEqual(']foo/bar(\xba\xd0)>>', e(' ]  foo\n\t  /bar\f <bAd>>>'))
+    self.assertEqual('<<bAd CAFE>>', e('<<bAd CAFE>>'))
+    self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
+    self.assertEqual('(())', e(' <2829>\t'))
+    self.assertEqual('(\\)\\()', e(' <2928>\t'))
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
