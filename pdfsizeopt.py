@@ -1932,7 +1932,10 @@ class PdfData(object):
   % stack: <decompressed-file> (containing a Type1 font program)
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
-  9 dict begin dup mark exch cvx exec cleartomark cleartomark closefile end
+  count /_Count exch def  % remember stack depth instead of mark depth
+  9 dict begin dup mark exch cvx exec end
+  count -1 _Count 1 add {pop pop}for  % more reliable than cleartomark
+  closefile
   systemdict /FontDirectory get
   dup length 0 eq {/invalidfileaccess /NoFontDefined signalerror} if
   dup length 1 gt {/invalidfileaccess /MultipleFontsDefined signalerror} if
@@ -2021,7 +2024,8 @@ class PdfData(object):
           if do_obj_num_from_font_name:
             match = re.search(r'/FontName\s*/([#-.\w]+)', obj.head)
             assert match
-            assert re.match(r'Obj(\d+)\Z', match.group(1))
+            assert re.match(r'Obj(\d+)\Z', match.group(1)), (
+                'GS generated non-Obj FontName: %s' % match.group(1))
             objs[int(match.group(1)[3:])] = self.objs[font_obj_num]
           else:
             objs[obj_num] = self.objs[font_obj_num]
@@ -2046,7 +2050,7 @@ class PdfData(object):
     for obj_num in sorted(objs):
       type1_size += objs[obj_num].size
       objs[obj_num].AppendTo(output, obj_num)
-    output.append(r'(Type1CConverter: all OK\n) print flush')
+    output.append('(Type1CConverter: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing Type1CConverter (%s font bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
@@ -2190,7 +2194,7 @@ class PdfData(object):
     for obj_num in sorted_objs:
       image_size += objs[obj_num].size
       objs[obj_num].AppendTo(output, obj_num)
-    output.append(r'(ImageRenderer: all OK\n) print flush')
+    output.append('(ImageRenderer: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing ImageRenderer (%s image bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
