@@ -281,7 +281,6 @@ class PdfObj(object):
   PDF_SIMPLE_VALUE_RE = re.compile(
       r'(?s)[\0\t\n\r\f ]*('
       r'\[.*?\]|<<.*?>>|<[^>]*>|\(.*?\)|%[^\n\r]*|'
-      r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+R|'
       r'/?[^\[\]()<>{}/\0\t\n\r\f %]+)')
   """Matches a single PDF token or comment in a simplistic way.
 
@@ -374,6 +373,7 @@ class PdfObj(object):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
       if match:
         return '%d %d R' % (int(match.group(1)), int(match.group(2))) 
+      return data
     # Don't parse floats, we usually don't need them parsed.
     else:
       return data
@@ -536,6 +536,9 @@ class PdfObj(object):
       value = match.group(1)
       kind = value[0]
       if kind == '%':
+        if start >= end:
+          raise PdfTokenParseError(
+              'unterminated comment %r at %d' % (value, start))
         match = scanner.match()
         continue
       if kind == '/':
@@ -642,7 +645,17 @@ class PdfObj(object):
                 'syntax error in non-literal name %r at %d' %
                 (value, match0.start(1)))
           value = cls.ParseSimpleValue(value)
-      list_obj.append(value)
+      if value == 'R':
+        if (len(list_obj) < 2 or
+            not isinstance(list_obj[-1], int) or list_obj[-1] < 0 or
+            not isinstance(list_obj[-2], int) or list_obj[-2] <= 0):
+          raise PdfTokenParseError(
+              'bad indirect ref at %d, got %r after %r' %
+              (start, data[start : start + 16], list_obj))
+        list_obj[-2] = '%d %d R' % (list_obj[-2], list_obj[-1])
+        list_obj.pop()
+      else:
+        list_obj.append(value)
       match = scanner.match()
     if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
       # TODO(pts): Be more specific, e.g. if we get this in a truncated

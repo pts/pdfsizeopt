@@ -257,12 +257,15 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'D': '<<>>', 'S': '<>'}, e('<</D<<%\n>>/S()>>'))
     # \t and \f removed because there was a comment in the dict
     self.assertEqual({'D': '<</E<<>>>>'}, e('<</D<</E\t\f<<%>>\n>>>>>>'))
-    self.assertEqual({'A': '[[]]', 'q': '56 78 R'}, e('<</A[[]]/q\t56\r78 R>>'))
+    self.assertEqual({'A': '[[]]', 'q': '56 78 R'},
+                     e('<</A[[]]/q\t56\r78%q\rR>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<\r%>>')
 
   def testParseArray(self):
     e = pdfsizeopt.PdfObj.ParseArray
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[%]')
     self.assertEqual(['/Indexed', '/DeviceRGB', 42, '43 44 R'],
-                     e('[\t/Indexed/DeviceRGB\f\r42\00043\t44\0R\n]')) 
+                     e('[\t/Indexed/DeviceRGB\f\r42\00043%42\n44\0R\n]')) 
     self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>', True, False, None],
                      e('[[ ] [\t[\f]] <<\t [\f[ >> true%\nfalse\fnull]'))
 
