@@ -39,6 +39,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual([11], eo)
     self.assertEqual(' << true false null >>',
                      e('% hi\r<<%\ntrue false null>>baz'))
+    self.assertEqual(' << true >>',
+                     e('<<true>>baz'))
     self.assertEqual(' [ [ << [ << << >> >> ] >> ] ]',
                      e('[[<<[<<<<>>>>]>>]]'))
     self.assertRaises(pdfsizeopt.PdfTokenParseError,
@@ -166,6 +168,11 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(True, e('\t[ /Indexed /DeviceRGB\f5 (A\101Azz\172)]'))
     self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Bzz\172)]'))
     self.assertEqual(False, e('\t[ /Indexed\n/DeviceRGB 5 (A\101Ayy\172)]'))
+
+  def testAddNewlinesToSimpleDict(self):
+    e = pdfsizeopt.PdfObj.AddNewlinesToSimpleDict
+    e('<</One/Two/Three[/Four]/Five/Six>>')
+
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

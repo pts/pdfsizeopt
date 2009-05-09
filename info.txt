@@ -379,3 +379,4 @@ additional compression may be possible with:
       ../jdisasm.py tool/pdf/Compress.class private compress
   * how to fix pdfr_;
     private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
+* \cite http://websiteoptimization.com/speed/tweak/pdf/

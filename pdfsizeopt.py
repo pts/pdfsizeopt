@@ -271,14 +271,57 @@ class PdfObj(object):
         self.head = '%s/%s %s\n>>' % (self.head[:-2], key, value)
 
   @classmethod
+  def AddNewlinesToSimpleDict(cls, data):
+    """Insert '\\n' in front of top-level keys.
+
+    Args:
+      data: String containing a PDF dict, line '<<...>>'. It should not
+        contain '(' or '%' (not verified).
+    Returns:
+      New data, with newlines inserted.
+    """
+    assert data.startswith('<<')
+    assert data.endswith('>>')
+    assert '(' not in data
+    assert '%' not in data
+    # !! do we need a parse-to-dict instead?
+    # !! quick regexp (self.FIX_RE) to cover the non-deep cases
+    stack = ['.']
+    count = 0
+    # !! implement this
+    for match in re.finditer(r'\[|\]|<<|>>|(?s)<.*>|/?[^\[\]</\s]*', data):
+      token = match.group(0)
+      if stack[-1] == '<<' and len(stack) == 3 and (count & 1) == 0:
+        print repr('\n')
+      print repr(token)
+      count += 1
+      if token in ('<<', '['):
+        stack.append(count)
+        stack.append(token)
+        count = 0
+      elif token == ']':
+        assert stack[-1] == '['
+        stack.pop()
+        count = stack.pop()
+      elif token == '>>':
+        assert stack[-1] == '<<'
+        stack.pop()
+        count = stack.pop()
+
+  @classmethod
   def EscapeString(cls, data):
     """Escape a string to the shortest possible PDF string literal."""
     if not isinstance(data, str): raise TypeError
     # We never emit hex strings (e.g. <face>), because they cannot ever be
     # shorter than the literal binary string.
-    if '(' not in data or ')' not in data:
+    no_open = '(' not in data
+    no_close = ')' not in data
+    if no_open or no_close:
       # No way to match parens.
-      return '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
+      if no_open and no_close:
+        return '(%s)' % data.replace('\\', '\\\\')
+      else:
+        return '(%s)' % re.sub(r'([()\\])', r'\\\1', data)
     else:
       close_remaining = 0
       for c in data:
@@ -402,7 +445,7 @@ class PdfObj(object):
     easier to read than Perl.
 
     This method doesn't check the type of dict keys, the evenness of dict
-    item size etc.
+    item size (i.e. it accepts dicts of odd length, e.g. `<<42>>') etc.
     
     Please don't change ``parsable'' to ``parseable'', see
     http://en.wiktionary.org/wiki/parsable .
@@ -420,12 +463,14 @@ class PdfObj(object):
       Nonempty string containing a PDF token sequence which is easier to
       parse with regexps, because it has additional whitespace, it has no
       funny characters, and it has strings escaped as hex. The returned string
-      starts with a single space.
+      starts with a single space. An extra \\n is inserted in front of each
+      name key of a top-level dict.
     Raises:
       PdfTokenParseError: TODO(pts): Report the error offset as well.
       PdfTokenTruncated:
     """
-    # !! inline regexps here
+    # !! precompile regexps in this method (although sre._compile uses cache,
+    # but if flushes the cache after 100 regexps)
     data_size = len(data)
     i = start_ofs
     if data_size <= start_ofs:
