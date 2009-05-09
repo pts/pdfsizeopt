@@ -1944,13 +1944,15 @@ class PdfData(object):
   % stack: <fontname>
   findfont dup length dict copy
   % Let the font name be /Obj68 etc.
-  % We have to unset /OrigFont here, because otherwise Ghostscript would put
-  % the /FontName defined there to the PDF object /Type/FontDescriptor , thus
-  % preventing us from identifying the output font by input object number.
   dup /FontName _ObjNumber 10 string cvs (Obj) exch concatstrings cvn put
   dup /FullName _ObjNumber 10 string cvs (Obj) exch concatstrings put
   %dup /FID undef  % undef not needed.
-  dup /OrigFont undef  % This is OK eeven if /OrigFont doesn't exist.
+  % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
+  % (for GhostScript 8.54) here, because otherwise Ghostscript would put
+  % the /FontName defined there to the PDF object /Type/FontDescriptor , thus
+  % preventing us from identifying the output font by input object number.
+  dup /OrigFont undef  % undef is OK even if /OrigFont doesn't exist
+  dup /.OrigFont undef  % undef is OK even if /.OrigFont doesn't exist
   dup /FontName get exch definefont
   % stack: <fake-font>
   (Type1CConverter: converting font /) print
