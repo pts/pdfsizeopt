@@ -248,6 +248,8 @@ class PdfSizeOptTest(unittest.TestCase):
     # \t removed because there was a comment in the array
     self.assertEqual({'A': '[]'}, e('<</A[\t%()\n]>>'))
     self.assertEqual({'A': '<2829>', 'B': '[<<]'}, e('<</A(())/B[<<]>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<5/A>>')
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A(())/B[()<<]>>')
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</A[[>>]]>>')
     self.assertEqual({'A': '[[/hi 5]/lah]'}, e('<</A[[/hi%x\t]z\r5] /lah]>>'))
@@ -261,8 +263,8 @@ class PdfSizeOptTest(unittest.TestCase):
     e = pdfsizeopt.PdfObj.ParseArray
     self.assertEqual(['/Indexed', '/DeviceRGB', 42, '43 44 R'],
                      e('[\t/Indexed/DeviceRGB\f\r42\00043\t44\0R\n]')) 
-    self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>'],
-                     e('[[ ] [\t[\f]] <<\t [\f[ >>]'))
+    self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>', True, False, None],
+                     e('[[ ] [\t[\f]] <<\t [\f[ >> true%\nfalse\fnull]'))
 
   def testCompressParsable(self):
     e = pdfsizeopt.PdfObj.CompressParsable

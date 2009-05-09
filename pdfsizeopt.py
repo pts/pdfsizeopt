@@ -479,12 +479,13 @@ class PdfObj(object):
       if 0 != (len(list_obj) & 1):
         raise PdfTokenParseError('odd item count in dict')
       for i in xrange(0, len(list_obj), 2):
-        if not list_obj[i].startswith('/'):
+        key = list_obj[i]
+        if not isinstance(key, str) or not key.startswith('/'):
           # TODO(pts): Report the offset as well.
           raise PdfTokenParseError(
               'dict key expected, got %r... ' %
-              (list_obj[i][0 : 16]))
-        dict_obj[list_obj[i][1:]] = list_obj[i + 1]
+              (str(key)[0 : 16]))
+        dict_obj[key[1:]] = list_obj[i + 1]
 
     return dict_obj    
 
