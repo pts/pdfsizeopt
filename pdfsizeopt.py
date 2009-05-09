@@ -268,6 +268,7 @@ class PdfObj(object):
   PDF_SIMPLE_VALUE_RE = re.compile(
       r'(?s)[\0\t\n\r\f ]*('
       r'\[.*?\]|<<.*?>>|<[^>]*>|\(.*?\)|%[^\n\r]*|'
+      r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+R|'
       r'/?[^\[\]()<>{}/\0\t\n\r\f %]+)')
   """Matches a single PDF token or comment in a simplistic way.
 
@@ -308,6 +309,9 @@ class PdfObj(object):
 
   PDF_HEX_STRING_LITERAL_RE = re.compile(r'<[\0\t\n\r\f 0-9a-fA-F]+>\Z')
   """Matches a PDF hex <...> string literal."""
+  
+  PDF_REF_AT_EOS_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\Z')
+  """Matches a PDF indirect reference at end-of-string."""
 
   COMPRESS_PARSABLE_RE = re.compile(
       r'([^\[\]()<>{}\0\t\n\r\f ])[\0\t\n\r\f ]+'
@@ -356,6 +360,10 @@ class PdfObj(object):
         return data[:-1] + '0>'
       else:
         return data
+    elif data.endswith('R'):
+      match = cls.PDF_REF_AT_EOS_RE.match(data)
+      if match:
+        return '%d %d R' % (int(match.group(1)), int(match.group(2))) 
     # Don't parse floats, we usually don't need them parsed.
     else:
       return data
@@ -492,6 +500,8 @@ class PdfObj(object):
               start = match.start(1) + end_ofs_out[0]
               scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
               match = None
+            else:
+              value = cls.ParseSimpleValue(value)
           elif kind == '[':
             if '%' in value or '[' in value or '(' in value:
               # !! TODO(pts): Implement a faster solution if no % or (
@@ -519,9 +529,8 @@ class PdfObj(object):
                 value = data[match.start(1) : start]
               scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
               match = None
-          elif kind == '<':
-            if (value.startswith('<<') and
-                ('%' in value or '<' in value or '(' in value)):
+          elif value.startswith('<<'):
+            if '%' in value or '<' in value or '(' in value:
               # !! TODO(pts): Implement a faster solution if no % or (
               end_ofs_out = []
               value1 = data[match.start(1):]  # Add more chars if needed.
@@ -543,11 +552,22 @@ class PdfObj(object):
                 value = data[match.start(1) : start]
               scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
               match = None
+          elif kind == '<':  # '<<' is handled above
+            value = cls.ParseSimpleValue(value)
           else:
-            if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
-              raise PdfTokenParseError(
-                  'syntax error in non-literal name %r at %d' %
-                  (value, match.start(1)))
+            match0 = match
+            if value.endswith('R'):
+              match = cls.PDF_REF_AT_EOS_RE.match(value)
+              if match:
+                value = '%d %d R' % (int(match.group(1)), int(match.group(2)))
+            else:
+              match = None
+            if not match:
+              if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
+                raise PdfTokenParseError(
+                    'syntax error in non-literal name %r at %d' %
+                    (value, match0.start(1)))
+              value = cls.ParseSimpleValue(value)
           if key is None:
             if kind != '/':
               raise PdfTokenParseError(
@@ -555,7 +575,6 @@ class PdfObj(object):
                   (match.start(1), value[0 : 16]))
             key = value[1:]
           else:
-            value = cls.ParseSimpleValue(value)
             dict_obj[key] = value
             key = None
         match = scanner.match()

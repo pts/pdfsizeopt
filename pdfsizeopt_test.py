@@ -189,6 +189,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(()\\\\')
     self.assertEqual('<deadface>', e('<dea dF aCe>'))
     self.assertEqual('<deadfac0>', e('<\fdeadFaC\r>'))
+    self.assertEqual('42 0 R', e('42\f\t0 \nR'))
 
   def DoTestParseSimplestDict(self, e):
     # e is either ParseSimplestDict or ParseDict, so (because the latter)
@@ -202,7 +203,7 @@ class PdfSizeOptTest(unittest.TestCase):
                      e('<</One/Two/Three Four/Five/Six>>'))
     self.assertEqual({'A': True, 'C': None, 'B': False, 'E': '42.5', 'D': 42},
                      e('<<\n\r/A true/B\f\0false/C null/D\t42/E 42.5\r>>'))
-    self.assertEqual({'Data': '42 137 R'}, e('<</Data 42 137 R >>'))
+    self.assertEqual({'Data': '42 137 R'}, e('<</Data 42\t\t137\nR >>'))
     self.assertEqual({'S': '<68656c6c6f2c20776f726c6421>'},
                      e('<</S(hello, world!)>>'))
     self.assertEqual({'S': '<>'}, e('<</S()>>'))
@@ -252,6 +253,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'D': '<<>>', 'S': '<>'}, e('<</D<<%\n>>/S()>>'))
     # \t and \f removed because there was a comment in the dict
     self.assertEqual({'D': '<</E<<>>>>'}, e('<</D<</E\t\f<<%>>\n>>>>>>'))
+    self.assertEqual({'A': '[[]]', 'q': '56 78 R'}, e('<</A[[]]/q\t56\r78 R>>'))
 
   def testCompressParsable(self):
     e = pdfsizeopt.PdfObj.CompressParsable
