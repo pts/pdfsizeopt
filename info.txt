@@ -380,3 +380,8 @@ additional compression may be possible with:
   * how to fix pdfr_;
     private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
 * \cite http://websiteoptimization.com/speed/tweak/pdf/
+* how to find embedded glyphs in PDF:
+  pdftops type1cconv.tmp.pdf - | perl -ne 'if (/^currentfile eexec$/) { die
+  if $N; $N=1 } elsif (/^cleartomark/) { $N=2 } elsif ($N==1) { print }' |
+  EexecDecode | perl -ne 'print"$1\n" if m@^(/\S+) \d+ RD @' | sort
+* Ghostscript load CFF Type1C font: /MY (t.bin) (r) file /FontSetInit /ProcSet findresource /MY findfont {pop ===} forall

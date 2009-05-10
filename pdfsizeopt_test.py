@@ -235,7 +235,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.DoTestParseSimplestDict(e=e)
     self.assertEqual({}, e('<<\0\r>>'))
     self.assertEqual({}, e('<<\n>>'))
-    self.assertEqual({'N': 5}, e('<</N%\n5>>'))
+    self.assertEqual({'I': 5}, e('<</I%\n5>>'))
+    self.assertEqual({'N': '/Foo-42+_'}, e('<</N/Foo-42+_>>'))
+    self.assertEqual({'N': '/Foo-42+_#2A'}, e('<</N/Foo-42+_*>>'))
+    self.assertEqual({'N': '/Foo-42+_#2Ab'}, e('<</N/Foo-42+_#2Ab>>'))
     self.assertEqual({'Five': '/Six', 'Three': '[/Four]', 'One': '/Two'},
                      e('<</One/Two/Three[/Four]/Five/Six>>'))
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</Foo bar#3F>>')

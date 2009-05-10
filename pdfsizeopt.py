@@ -17,8 +17,6 @@ This script is work in progress.
 
 This scripts needs a Unix system, with Ghostscript and pdftops (from xpdf),
 sam2p and pngout. Future versions may relax the system requirements.
-
-!!! BUGFIX: Test with tuzv.pdf, gs not showing .notdef substitutions
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
@@ -202,9 +200,17 @@ class PdfObj(object):
         r'([\s\[])[.](?=[\s\]])', lambda match: match.group(1) + '0', data)
 
   def Get(self, key):
-    """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
-    # !! extra argument to autoresolve refs
-    # !! TODO(pts): proper PDF token sequence parsing
+    """Get value for key if self.head is a PDF dict.
+    
+    Use PdfData.Resolve(obj.Get(...)) to resolve indirect refs.
+    TODO(pts): Implement PdfData.Resolve.
+    
+    Args:
+      key: A PDF name literal without a slash, e.g. 'ColorSpace'
+    Returns:
+      An str, bool, int, long or None value, as returned by
+      self.ParseSimpleValue.
+    """
     if key.startswith('/'):
       raise TypeError('slash in the key= argument')
     if self._cache is None:
@@ -226,10 +232,6 @@ class PdfObj(object):
 
     To remove key, specify value=None (and do_keep_null=False by default).
     """
-    # !! TODO(pts): proper PDF token sequence parsing
-    # !! doc: slow because of string concatenation
-    # !! argument to convert value=None to value='null'
-    # !!! change self.head to self._head
     if key.startswith('/'):
       raise TypeError('slash in the key= argument')
     if value is None:
@@ -268,11 +270,11 @@ class PdfObj(object):
   """
 
   PDF_SIMPLEST_KEY_VALUE_RE = re.compile(
-      r'[\0\t\n\r\f ]*/([-A-Za-z0-9_.]+)(?=[\0\t\n\r\f /\[(<])'
+      r'[\0\t\n\r\f ]*/([-+A-Za-z0-9_.]+)(?=[\0\t\n\r\f /\[(<])'
       r'[\0\t\n\r\f ]*('
       r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+R|'
       r'\([^()\\]*\)|(?s)<(?!<).*?>|'
-      r'\[[^%(\[\]]*\]|<<[^%(<>]*>>|/?[-A-Za-z0-9_.]+)')
+      r'\[[^%(\[\]]*\]|<<[^%(<>]*>>|/?[-+A-Za-z0-9_.]+)')
   """Matches a very simple PDF key--value pair, in a most simplistic way."""
   # TODO(pts): How to prevent backtracking if the regexp doesn't match?
   # TODO(pts): Replace \s with [\0...], because \0 is not in Python \s.
@@ -286,7 +288,7 @@ class PdfObj(object):
   PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
 
-  PDF_INVALID_NAME_CHAR_RE = re.compile(r'[^-A-Za-z0-9_.]')
+  PDF_INVALID_NAME_CHAR_RE = re.compile(r'[^-+A-Za-z0-9_.]')
   """Matches a PDF data character which is not valid in a plain name."""
 
   PDF_NAME_HASHMARK_HEX_RE = re.compile(r'#([0-9a-f-A-F]{2})')
@@ -954,12 +956,12 @@ class PdfObj(object):
         if token[0] == '/':
           # TODO(pts): test this
           output.append(
-              ' /' + re.sub(r'[^-A-Za-z0-9_.]',
+              ' /' + re.sub(r'[^-+A-Za-z0-9_.]',
                   lambda match: '#%02X' % ord(match.group(0)), token[1:]))
         else:
           # TODO(pts): test this
           output.append(
-              ' ' + re.sub(r'[^-A-Za-z0-9_.]',
+              ' ' + re.sub(r'[^-+A-Za-z0-9_.]',
                   lambda match: '#%02X' % ord(match.group(0)), token))
 
         if (number_match or token[0] == '/' or
@@ -2144,11 +2146,11 @@ class PdfData(object):
             match.group(1) == font_file_tag)):
           font_obj_num = int(match.group(2))
           if do_obj_num_from_font_name:
-            match = re.search(r'/FontName\s*/([#-.\w]+)', obj.head)
-            assert match
-            assert re.match(r'Obj(\d+)\Z', match.group(1)), (
-                'GS generated non-Obj FontName: %s' % match.group(1))
-            objs[int(match.group(1)[3:])] = self.objs[font_obj_num]
+            font_name = obj.Get('FontName')
+            assert font_name is not None
+            match = re.match(r'/(?:[A-Z]{6}[+])?Obj(\d+)\Z', font_name)
+            assert match, 'GS generated non-Obj FontName: %s' % font_name
+            objs[int(match.group(1))] = self.objs[font_obj_num]
           else:
             objs[obj_num] = self.objs[font_obj_num]
           font_count += 1
@@ -2185,6 +2187,9 @@ class PdfData(object):
     EnsureRemoved(pdf_tmp_file_name)
     gs_cmd = (
         'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        # Ghostscript 8.54 needs SubsetFonts this up here
+        # for Ghostscript 8.61, <</SubsetFonts ...>>setpagedevice is also OK.
+        '-dSubsetFonts=false '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -c "<</CompatibilityLevel 1.4 /EmbedAllFonts true '
         # Ghostscript removes all characters from fonts outside this range.
@@ -2215,6 +2220,7 @@ class PdfData(object):
       assert re.search(r'/Subtype\s*/Type1C\b', type1c_objs[obj_num].head), (
           'could not convert font %s to Type1C' % obj_num)
       type1c_size += type1c_objs[obj_num].size
+    # TODO(pts): Don't remove if command-line flag.
     os.remove(pdf_tmp_file_name)
     # TODO(pts): Undo if no reduction in size.
     print >>sys.stderr, (
