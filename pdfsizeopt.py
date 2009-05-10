@@ -142,7 +142,8 @@ class PdfObj(object):
             (endstream_str, file_ofs + stream_end_idx))
         self.stream = other[stream_start_idx : stream_end_idx]
     elif other is None:
-      pass
+      self.head = None
+      self.stream = None
     else:
       raise TypeError
 
@@ -212,6 +213,7 @@ class PdfObj(object):
 
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
+    #assert 0
     # !! implement GetComposite: !! even with R resolving
     # pdf_obj.GetStruct('ColorSpace', objs=...).GetStruct(4)
     # !! extra argument to autoresolve refs
@@ -1651,8 +1653,9 @@ class PdfData(object):
   def __init__(self):
     # Maps an object number to a PdfObj
     self.objs = {}
-    # Stripped string dict. Must contain /Size (max # objs) and /Root ref.
-    self.trailer = '<<>>'
+    # None or a PdfObj of type dict. Must contain /Size (max # objs) and
+    # /Root ref.
+    self.trailer = None
     # PDF version string.
     self.version = '1.0'
     self.file_name = None
@@ -1681,7 +1684,7 @@ class PdfData(object):
     assert match, 'uncrecognized PDF signature'
     self.version = match.group(1)
     self.objs = {}
-    self.trailer = ''
+    self.trailer = None
 
     try:
       obj_starts = self.ParseUsingXref(data)
@@ -1695,9 +1698,13 @@ class PdfData(object):
     print >>sys.stderr, 'info: separated to %s objs' % (len(obj_starts) - 1)
     last_ofs = trailer_ofs = obj_starts.pop('trailer')
     trailer_data = data[trailer_ofs: trailer_ofs + 8192]
-    match = re.match('(?s)trailer\s+(<<.*?>>)\s*startxref\s', trailer_data)
+    match = re.match('(?s)trailer\s+<<(.*?)>>\s*startxref\s', trailer_data)
     assert match, 'bad trailer data: %r' % trailer_data
-    self.trailer = re.sub('/(?:Prev|XRefStm)\s+\d+', '', match.group(1))
+    self.trailer = PdfObj(None)
+    # TODO(pts): No need to strip with proper PDF token sequence parsing
+    self.trailer.head = '<<%s>>' % match.group(1).strip(PDF_WHITESPACE_CHARS)
+    self.trailer.Set('Prev', None)
+    self.trailer.Set('XRefStm', None)
     if 'xref' in obj_starts:
       last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
 
@@ -1857,10 +1864,8 @@ class PdfData(object):
     print >>sys.stderr, 'info: saving PDF with %s objs to: %s' % (
         obj_count, file_name)
     assert obj_count
-    trailer = self.trailer.strip(PDF_WHITESPACE_CHARS)
-    assert trailer.startswith('<<')
-    assert trailer.endswith('>>')
-    trailer = re.sub('/(?:Size|Prev|XRefStm)\s+\d+', '', trailer)
+    assert self.trailer.head.startswith('<<')
+    assert self.trailer.head.endswith('>>')
     f = open(file_name, 'wb')
     try:
       # Emit header.
@@ -1912,9 +1917,13 @@ class PdfData(object):
           i += 1
 
       # Emit trailer etc.
-      assert trailer.endswith('>>')
-      output.append('trailer\n%s/Size %d>>\n' %
-                    (trailer[:-2], obj_numbers[-1] + 1))
+      trailer_obj = PdfObj(self.trailer)
+      trailer_obj.Set('Size', obj_numbers[-1] + 1)
+      trailer_obj.Set('Prev', None)
+      trailer_obj.Set('XRefStm', None)
+      assert trailer_obj.head.startswith('<<')
+      assert trailer_obj.head.endswith('>>')
+      output.append('trailer\n%s\n' % trailer_obj.head)
       output.append('startxref\n%d\n' % xref_ofs)
       output.append('%%EOF\n')  # Avoid doubling % in printf().
       print >>sys.stderr, 'info: generated %s bytes (%s)' % (
@@ -2576,7 +2585,7 @@ class PdfData(object):
       if (use_jbig2 and obj_images[-1][1].bpc == 1 and
           obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
         # !! autoconvert 1-bit indexed PNG to gray
-        obj_images.append(('jbig', ImageData(obj_images[-1][1])))
+        obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
         if obj_images[-1][1].color_type != 'gray':
           # This changes obj_images[-1].file_name as well.
           obj_images[-1][1].SavePng(
