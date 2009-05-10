@@ -157,6 +157,9 @@ class PdfSizeOptTest(unittest.TestCase):
     eo = []
     self.assertEqual(' 442 43 R', e('\t442%foo\r43\fR   ', end_ofs_out=eo))
     self.assertEqual(13, eo[0])  # spaces not included
+    eo = []
+    self.assertEqual(' 442 43 R', e('\t442%foo\r43\fR/', end_ofs_out=eo))
+    self.assertEqual(13, eo[0])  # spaces not included
     self.assertRaises(pdfsizeopt.PdfTokenParseError,
                       e, '<</Pages 333 -1 R\n>>')
     self.assertRaises(pdfsizeopt.PdfTokenParseError,
@@ -303,6 +306,27 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
     self.assertEqual('(())', e(' <2829>\t'))
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
+
+  def testPdfObjParse(self):
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj<</Length  3>>stream\r\nABC endstream endobj')
+    self.assertEqual('<</Length  3>>', obj.head)
+    self.assertEqual('ABC', obj.stream)
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj<</Length  4>>stream\r\nABC endstream endobj')
+    self.assertRaises(
+        pdfsizeopt.PdfTokenParseError, pdfsizeopt.PdfObj,
+        '42 0 obj<</Length 99>>stream\r\nABC endstream endobj')
+    self.assertEqual('<</Length  4>>', obj.head)
+    self.assertEqual('ABC ', obj.stream)
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj<</Length  4>>endobj')
+    self.assertEqual('<</Length  4>>', obj.head)
+    self.assertEqual(None, obj.stream)
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj<</T[/Length 99]/Length  3>>stream\r\nABC endstream endobj')
+    self.assertEqual('ABC', obj.stream)
+    # TODO(pts): Add more tests.
 
   def testPdfObjGetSet(self):
     obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj junk stream\r\n')

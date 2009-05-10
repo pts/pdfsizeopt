@@ -109,17 +109,31 @@ class PdfObj(object):
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches stream or endobj in a PDF obj."""
 
-  REST_OF_R_RE_STR = (
+  REST_OF_R_RE = re.compile(
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f %<>\[\](])')
-  REST_OF_R_RE = re.compile(REST_OF_R_RE_STR)
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f /%<>\[\](])')
   """Matches the generation number and the 'R'."""
+
+  LENGTH_OF_STREAM_RE = re.compile(
+      r'/Length(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'(?=[\0\t\n\r\f /%(<>\[\]])(?:'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R'
+      r'(?=[\0\t\n\r\f /%(<>\[\]]))?')
+  """Matches `/Length <x>' or `/Length <x> <y> R'."""
 
   def __init__(self, other, objs=None, file_ofs=0):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
     start parsing it from `X 0 obj' (ignoring the number) till endobj.
+
+    This method is optimized, because it is called for each PDF object read.
+    (Some PDF files have 100000 objects.) Most of the time we try a simple
+    parser first (using a regexp), and if it cannot parse the object, then
+    we revert to a generic, but slower parser.
+
+    This method doesn't implement a validating PDF parser.
 
     Args:
       other: PdfObj or string (with full obj, stream, endstream, endobj +
@@ -132,8 +146,6 @@ class PdfObj(object):
       self._head = other.head
       self.stream = other.stream
     elif isinstance(other, str):
-      # !! TODO(pts): what if endobj is part of a string in the obj? --
-      # parse properly
       assert other, 'empty PDF obj to parse'
       match = re.match(
           r'(?s)\d+[\0\t\n\r\f ]+0[\0\t\n\r\f ]+obj\b[\0\t\n\r\f ]*', other)
@@ -182,27 +194,52 @@ class PdfObj(object):
         if not head.startswith('<<') and head.endswith('>>'):
           raise PdfTokenParseError(
               'stream must have a dict head at ofs=%s' % file_ofs)
-        # !! TODO(pts): proper PDF token sequence parsing
-        match = re.search(
-            r'/Length[\0\t\n\r\f ]+(\d+)\b'
-            r'(?:[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b)?', self.head)
-        assert match
+        scanner = self.LENGTH_OF_STREAM_RE.scanner(head)
+        match = scanner.search()
+        if not match:
+          # We happlily accept the invalid PDF obj
+          # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
+          # we don't implement a validating PDF parser.
+          raise PdfTokenParseError(
+              'stream /Length not found at ofs=%s' % file_ofs)
+        if scanner.search():
+          # Duplicate /Length found. We need a full parsing to figure out
+          # which one we need.
+          stream_length = self.Get('Length')
+          if stream_length is None:
+            raise PdfTokenParseError(
+                'proper stream /Length not found at ofs=%s' % file_ofs)
+          match = self.LENGTH_OF_STREAM_RE.match('/Length %s ' % stream_length)
+          assert match
         if match.group(2) is None:
           stream_end_idx = stream_start_idx + int(match.group(1))
         else:
-          # !!! negative
+          # For testing: lme_v6.pdf
           if int(match.group(2)) != 0:
             raise NotImplementedError('generation refs not implemented')
-          stream_length = int(objs[int(match.group(1))].head)
+          obj_num = int(match.group(1))
+          if obj_num <= 0:
+            raise PdfTokenParseError(
+                'obj num %d >= 0 expected for indirect /Length at ofs=%s' %
+                (obj_num, file_ofs))
+          try:
+            stream_length = int(objs[obj_num].head)
+          except KeyError:
+            raise PdfTokenParseError(
+                'indirect /Length not found at ofs=%s' % file_ofs)
+          except ValueError:
+            raise PdfTokenParseError(
+                'indirect /Length not an integer at ofs=%s' % file_ofs)
           stream_end_idx = stream_start_idx + stream_length
           # Inline the reference to /Length
           self._head = '%s/Length %d%s' % (
               self._head[:match.start(0)], stream_length,
               self._head[match.end(0):]) 
         endstream_str = other[stream_end_idx : stream_end_idx + 30]
-        assert re.match(
+        if not re.match(
             r'[\0\t\n\r\f ]*endstream[\0\t\n\r\f ]+endobj(?:[\s/]|\Z)',
-            endstream_str), (
+            endstream_str):
+          raise PdfTokenParseError(
             'expected endstream+endobj in %r at %s' %
             (endstream_str, file_ofs + stream_end_idx))
         self.stream = other[stream_start_idx : stream_end_idx]
@@ -219,7 +256,6 @@ class PdfObj(object):
     output.append(head)  # Implicit \s later .
     space = ' ' * int(head[-1] not in '>])}')
     if self.stream is not None:
-      # !! TODO(pts): proper PDF token sequence parsing
       if self._cache:
         assert self.Get('Length') == len(self.stream)
       else:
