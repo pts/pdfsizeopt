@@ -100,20 +100,20 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' 12.34', e('+00012.34 '))
     self.assertEqual(' -12.34', e('-12.340 '))
 
-    end_ofs_out=[]
+    end_ofs_out = []
     self.assertEqual(' 5', e(' 5 endobj\t', end_ofs_out=end_ofs_out))
     self.assertEqual([2], end_ofs_out)
-    end_ofs_out=[]
+    end_ofs_out = []
     self.assertEqual(' 5 endobz',
                      e(' 5 endobz\t',
                        end_ofs_out=end_ofs_out, do_terminate_obj=True))
     self.assertEqual([10], end_ofs_out)
-    end_ofs_out=[]
+    end_ofs_out = []
     self.assertEqual(' 5 STROZ',
                      e(' 5 STR#4FZ\r\n\t\t\t \t',
                        end_ofs_out=end_ofs_out, do_terminate_obj=True))
     self.assertEqual([12], end_ofs_out)
-    end_ofs_out=[]
+    end_ofs_out = []
     self.assertEqual(' /Size', e('/Size 42 ', end_ofs_out=end_ofs_out))
     self.assertEqual([5], end_ofs_out)
     self.assertEqual(' [ /Size 42 ]', e('[/Size 42]'))
@@ -143,6 +143,24 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, "<\n3\t1\r4f5C5]>")
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '')
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '%hello')
+    # 'stream\r' is truncated, we're waiting for 'stream\r\n'.
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e,
+                      '<<>>stream\r', do_terminate_obj=True)
+    self.assertEqual(' << >> blah', e('<<>>blah\r', do_terminate_obj=True))
+    self.assertEqual(' << >> stream', e('<<>>stream\n', do_terminate_obj=True))
+    self.assertEqual(' << >> stream',
+                     e('<<>>stream\r\n', do_terminate_obj=True))
+
+    self.assertEqual(' << /Type /Catalog /Pages 3 0 R >>',
+                     e('<</Type /Catalog /Pages 3 0 R\n>>'))
+    self.assertEqual(' 42', e(' 42 true R'))
+    eo = []
+    self.assertEqual(' 442 43 R', e('\t442%foo\r43\fR   ', end_ofs_out=eo))
+    self.assertEqual(13, eo[0])  # spaces not included
+    self.assertRaises(pdfsizeopt.PdfTokenParseError,
+                      e, '<</Pages 333 -1 R\n>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError,
+                      e, '<</Pages 0 55 R\n>>')
 
   def testSerializeDict(self):
     # Toplevel whitespace is removed, but the newline inside the /DecodeParms
@@ -287,7 +305,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
 
   def testPdfObjGetSet(self):
-    obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>endobj')
+    obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj ')
     self.assertEqual('<</Foo(hi)>>', obj._head)
     self.assertEqual(None, obj._cache)
     self.assertEqual('<</Foo(hi)>>', obj.head)
