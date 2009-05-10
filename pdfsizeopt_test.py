@@ -144,16 +144,17 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '')
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '%hello')
 
-  def testGetParsableHead(self):
+  def testSerializeDict(self):
+    # Toplevel whitespace is removed, but the newline inside the /DecodeParms
+    # value is kept.
     self.assertEqual(
-        '<<\n/DecodeParms <</Predictor 15 /Columns 640>>\n'
-        '/Width 640\n/ColorSpace /DeviceGray\n/Height 480\n'
-        '/Filter /FlateDecode\n/Subtype /Image\n/Length 6638\n'
-        '/BitsPerComponent 8\n>>',
-        pdfsizeopt.PdfObj.GetParsableHead(
-            '<</Subtype/Image\n/ColorSpace/DeviceGray\n/Width 640\n'
+        '<</BitsPerComponent 8/ColorSpace/DeviceGray/DecodeParms'
+        '<</Predictor 15\n/Columns 640>>/Filter/FlateDecode/Height 480'
+        '/Length 6638/Subtype/Image/Width 640/Z true>>',
+        pdfsizeopt.PdfObj.SerializeDict(pdfsizeopt.PdfObj.ParseSimplestDict(
+            '<</Subtype/Image\n/ColorSpace/DeviceGray\n/Width 640/Z  true\n'
             '/Height 480\n/BitsPerComponent 8\n/Filter/FlateDecode\n'
-            '/DecodeParms <</Predictor 15\n/Columns 640>>/Length 6638>>'))
+            '/DecodeParms <</Predictor 15\n/Columns 640>>/Length 6638>>')))
 
   def testIsGrayColorSpace(self):
     e = pdfsizeopt.PdfObj.IsGrayColorSpace
@@ -173,10 +174,13 @@ class PdfSizeOptTest(unittest.TestCase):
     e = pdfsizeopt.PdfObj.ParseSimpleValue
     self.assertEqual(True, e('true'))
     self.assertEqual(False, e('false'))
-    self.assertEqual('true ', e('true '))
-    self.assertEqual('\nfalse', e('\nfalse'))
+    self.assertEqual(True, e('true '))
+    self.assertEqual(False, e('\nfalse'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, 'foo bar')
+    self.assertEqual('[foo  bar]', e('\f[foo  bar]\n\r'))
+    self.assertEqual('<<foo  bar\tbaz>>', e('\f<<foo  bar\tbaz>>\n\r'))
     self.assertEqual(None, e('null'))
-    self.assertEqual('', e(''))
     self.assertEqual(0, e('0'))
     self.assertEqual(42, e('42'))
     self.assertEqual(42, e('00042'))
@@ -278,6 +282,59 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
     self.assertEqual('(())', e(' <2829>\t'))
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
+
+  def testPdfObjGetSet(self):
+    obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>endobj')
+    self.assertEqual('<</Foo(hi)>>', obj._head)
+    self.assertEqual(None, obj._cache)
+    self.assertEqual('<</Foo(hi)>>', obj.head)
+    self.assertEqual(None, obj._cache)
+    self.assertEqual(None, obj.Get('Bar'))
+    self.assertEqual(None, obj._cache)
+    self.assertEqual(None, obj.Get('Fo'))
+    self.assertEqual({'Foo': '<6869>'}, obj._cache)
+    self.assertEqual('<6869>', obj.Get('Foo'))
+    self.assertEqual('<</Foo(hi)>>', obj._head)
+    obj.Set('Foo', ' \t<6869>\f \r ')
+    self.assertEqual('<6869>', obj.Get('Foo'))
+    self.assertEqual({'Foo': '<6869>'}, obj._cache)
+    self.assertEqual('<</Foo(hi)>>', obj._head)
+    obj.Set('Foo', ' \t(hi)\f \r ')
+    self.assertEqual('<6869>', obj.Get('Foo'))
+    self.assertEqual({'Foo': '<6869>'}, obj._cache)
+    self.assertEqual('<</Foo(hi)>>', obj._head)  # still valid
+    obj.Set('Foo', '(*)')
+    self.assertEqual('<2a>', obj.Get('Foo'))
+    self.assertEqual(None, obj._head)
+    self.assertEqual({'Foo': '<2a>'}, obj._cache)
+    obj.Set('Bar', '0042')
+    self.assertEqual({'Foo': '<2a>', 'Bar': 42}, obj._cache)
+    self.assertEqual(None, obj._head)
+    self.assertEqual('<</Bar 42/Foo(*)>>', obj.head)
+    self.assertEqual('<</Bar 42/Foo(*)>>', obj._head)
+    obj.Set('Bar', 'null')
+    self.assertEqual({'Foo': '<2a>', 'Bar': 'null'}, obj._cache)
+    self.assertEqual(None, obj._head)
+    self.assertEqual('<</Bar null/Foo(*)>>', obj.head)
+    self.assertEqual('<</Bar null/Foo(*)>>', obj._head)
+    obj.Set('Bar', None, do_keep_null=True)
+    self.assertEqual({'Foo': '<2a>', 'Bar': 'null'}, obj._cache)
+    self.assertEqual('<</Bar null/Foo(*)>>', obj._head)
+    obj.Set('Bar', None)
+    self.assertEqual({'Foo': '<2a>'}, obj._cache)
+    self.assertEqual(None, obj._head)
+    self.assertEqual(len('<</Foo(*)>>') + 20, obj.size)
+    self.assertEqual('<</Foo(*)>>', obj._head)
+    self.assertEqual('<</Foo(*)>>', obj.head)
+    obj.head = '<</Foo(*)>>'
+    self.assertEqual({'Foo': '<2a>'}, obj._cache)
+    obj.head = '<</Foo<2a>>>'  # invalidates the cache
+    self.assertEqual(None, obj._cache)
+    self.assertEqual(None, obj.Get('Food'))
+    self.assertEqual(None, obj._cache)
+    self.assertEqual('<2a>', obj.Get('Foo'))
+    self.assertEqual({'Foo': '<2a>'}, obj._cache)
+    
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

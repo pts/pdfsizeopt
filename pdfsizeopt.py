@@ -17,6 +17,8 @@ This script is work in progress.
 
 This scripts needs a Unix system, with Ghostscript and pdftops (from xpdf),
 sam2p and pngout. Future versions may relax the system requirements.
+
+!!! BUGFIX: Test with tuzv.pdf, gs not showing .notdef substitutions
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
@@ -85,13 +87,17 @@ class PdfXrefError(Error):
 
 
 class PdfObj(object):
-  """Contents of a PDF object.
+  """Contents of a PDF object (head and stream data).
+
+  PdfObj provides convenience methods Set and Get for manipulating PDF objects
+  of type dict and stream.
 
   Attributes:
-    head: stripped string between `obj' and (`stream' or `endobj')
+    _head: stripped string between `obj' and (`stream' or `endobj')
+    _cache: ParseDict(self._head) or None.
     stream: stripped string between `stream' and `endstream', or None
   """
-  __slots__ = ['head', 'stream']
+  __slots__ = ['_head', 'stream', '_cache']
 
   def __init__(self, other, objs=None, file_ofs=0):
     """Initialize from other.
@@ -100,11 +106,14 @@ class PdfObj(object):
     start parsing it from `X 0 obj' (ignoring the number) till endobj.
 
     Args:
+      other: PdfObj or string (with full obj, stream, endstream, endobj +
+        garbage) or None
       objs: A dictionary mapping obj numbers to existing PdfObj objects. These
         can be used for resolving `R's to build self.
     """
+    self._cache = None
     if isinstance(other, PdfObj):
-      self.head = other.head
+      self._head = other.head
       self.stream = other.stream
     elif isinstance(other, str):
       # !! TODO(pts): what if endobj is part of a string in the obj? --
@@ -115,7 +124,7 @@ class PdfObj(object):
       skip_obj_number_idx = len(match.group(0))
       match = re.search(r'\b(stream(?:\r\n|\s)|endobj(?:[\s/]|\Z))', other)
       assert match, 'endobj/stream not found from ofs=%s' % file_ofs
-      self.head = other[skip_obj_number_idx : match.start(0)].rstrip(
+      self._head = other[skip_obj_number_idx : match.start(0)].rstrip(
           PDF_WHITESPACE_CHARS)
       if match.group(1).startswith('endobj'):
         self.stream = None
@@ -132,9 +141,9 @@ class PdfObj(object):
           stream_length = int(objs[int(match.group(1))].head)
           stream_end_idx = stream_start_idx + stream_length
           # Inline the reference to /Length
-          self.head = '%s/Length %d%s' % (
-              self.head[:match.start(0)], stream_length,
-              self.head[match.end(0):]) 
+          self._head = '%s/Length %d%s' % (
+              self._head[:match.start(0)], stream_length,
+              self._head[match.end(0):]) 
         endstream_str = other[stream_end_idx : stream_end_idx + 30]
         assert re.match(
             r'\s*endstream\s+endobj(?:[\s/]|\Z)', endstream_str), (
@@ -142,7 +151,7 @@ class PdfObj(object):
             (endstream_str, file_ofs + stream_end_idx))
         self.stream = other[stream_start_idx : stream_end_idx]
     elif other is None:
-      self.head = None
+      self._head = None
       self.stream = None
     else:
       raise TypeError
@@ -165,43 +174,24 @@ class PdfObj(object):
     else:
       output.append('%sendobj\n' % space)
 
+  def __GetHead(self):
+    if self._head is None and self._cache is not None:
+      self._head = self.SerializeDict(self._cache)
+    return self._head
+
+  def __SetHead(self, head):
+    if head != self._head:  # works for None as well
+      self._head = head
+      self._cache = None
+
+  head = property(__GetHead, __SetHead)
+
   @property
   def size(self):
     if self.stream is None:
       return len(self.head) + 20
     else:
       return len(self.head) + len(self.stream) + 32
-
-  FIX_RE = re.compile(
-      r'(?s)\s*/([-.#\w]+)\s*(\[.*?\]|'
-      r'\([^\\()]*\)|'
-      r'<<[^<>]*>>|<<(?:[^<>]*|<<(?:[^<>]*|<<.*?>>)*>>)*>>|'
-      r'\S[^/]*)')
-
-  @classmethod
-  def GetParsableHead(cls, head):
-    """Make head parsable for Get and Set, return the new head."""
-    # !! stupid code here
-    assert head.startswith('<<')
-    assert head.endswith('>>')
-    if not head.startswith('<<\n'):
-      # !! avoid code duplication with self.Get()
-      h = {}
-      rest = re.sub(
-          cls.FIX_RE,
-          lambda match: h.__setitem__(match.group(1),
-              re.sub('[\n\r]+', ' ',
-              match.group(2).rstrip(PDF_WHITESPACE_CHARS))),
-          head[:-2])  # Without `>>'
-      rest = rest.strip(PDF_WHITESPACE_CHARS)
-      assert re.match(r'<<\s*\Z', rest), (
-          'could not parse PDF obj, left %r from %r' % (rest, head))
-      if not h: return '<<\n>>'
-      return '<<\n%s>>' % ''.join(
-          ['/%s %s\n' % (key, value)
-           for key, value in h.items()])  # TODO(pts): sorted
-    else:
-      return head
 
   @classmethod
   def GetBadNumbersFixed(cls, data):
@@ -213,72 +203,59 @@ class PdfObj(object):
 
   def Get(self, key):
     """!!Return int, long, bool, float, None; or str if it's a ref or more complicated."""
-    #assert 0
-    # !! implement GetComposite: !! even with R resolving
-    # pdf_obj.GetStruct('ColorSpace', objs=...).GetStruct(4)
     # !! extra argument to autoresolve refs
     # !! TODO(pts): proper PDF token sequence parsing
-    assert self.head.startswith('<<')
-    assert self.head.endswith('>>')
-    value = self
-    if self.head.startswith('<<\n'):
-      i = self.head.find('\n/' + key + ' ')
-      if i < 0: return None
-      i += len(key) + 3
-      j = self.head.find('\n', i)
-      value = self.head[i : j].strip(PDF_WHITESPACE_CHARS)
-      if value in ('<<', '['):
-        value = self  # parse the hard way 
+    if key.startswith('/'):
+      raise TypeError('slash in the key= argument')
+    if self._cache is None:
+      assert self._head is not None
+      assert self.head.startswith('<<') and self.head.endswith('>>'), (
+          'expected a dict or stream obj')
+      if ('/' + key) not in self._head:
+        # Quick return False, without having to parse.
+        # TODO(pts): Special casing for /Length, we don't want to parse that.
+        return None
+      self._cache = self.ParseDict(self._head)
+    return self._cache.get(key)
 
-    if value is self:
-      # Parse dict from sam2p. This cannot parse a /DecodeParms<<...>> value
-      # or a binary /Indexed palette
-      # !! avoid code duplication
-      h = {}
-      rest = re.sub(
-          self.FIX_RE,
-          lambda match: h.__setitem__(
-          match.group(1), match.group(2).rstrip(PDF_WHITESPACE_CHARS)),
-          self.head[:-2])  # Without `>>'
-      rest = rest.strip(PDF_WHITESPACE_CHARS)
-      assert re.match(r'<<\s*\Z', rest), (
-          'could not parse PDF obj, left %r from %r' % (rest, self.head))
-      # !! cache `h' for later retrievals
-      value = h.get(key)
-      if value is None: return None
-    return self.ParseSimpleValue(value)
-
-  def Set(self, key, value):
+  def Set(self, key, value, do_keep_null=False):
     """Set value to key or remove key if value is None.
     
-    To set key to `null', specify value='null'.
+    To set key to 'null', specify value='null' or value=None,
+    do_keep_null=True.
+
+    To remove key, specify value=None (and do_keep_null=False by default).
     """
     # !! TODO(pts): proper PDF token sequence parsing
     # !! doc: slow because of string concatenation
     # !! argument to convert value=None to value='null'
-    if not self.head.endswith('\n>>'):
-      self.head = self.GetParsableHead(self.head)
-    assert self.head.endswith('\n>>'), 'bad head: %r' % self.head
-    assert self.head.startswith('<<')
-    if isinstance(value, bool):
-      value = str(value).lower()
-    elif isinstance(value, int) or isinstance(value, long):
-      value = str(value)
-    elif isinstance(value, float):
-      value = repr(value)  # !! better serialize for PDF
-    elif value is None:
+    # !!! change self.head to self._head
+    if key.startswith('/'):
+      raise TypeError('slash in the key= argument')
+    if value is None:
+      if do_keep_null:
+        value = 'null'
+    elif value == 'null':
       pass
+    elif isinstance(value, str):
+      value = self.ParseSimpleValue(value)
     else:
-      assert isinstance(value, str)
-    i = self.head.find('\n/' + key + ' ')
-    if i < 0:
-      if value is not None:
-        self.head = '%s/%s %s\n>>' % (self.head[:-2], key, value)
+      self.SerializeSimpleValue(value)  # just for the TypeError
+    if self._cache is None:
+      assert self._head is not None
+      assert self.head.startswith('<<') and self.head.endswith('>>'), (
+          'expected a dict or stream obj')
+      self._cache = self.ParseDict(self._head)
+    if value is None:
+      if key in self._cache:
+        del self._cache[key]
+        self._head = None  # self.__GetHead will regenerate it.
     else:
-      j = self.head.find('\n', i + len(key) + 3)
-      self.head = self.head[:i] + self.head[j:]
-      if value is not None:
-        self.head = '%s/%s %s\n>>' % (self.head[:-2], key, value)
+      # It's good that we don't support isinstance(value, float), because
+      # comparing NaNs would fail here.
+      if self._cache.get(key) != value:
+        self._cache[key] = value
+        self._head = None  # self.__GetHead will regenerate it.
 
   PDF_SIMPLE_VALUE_RE = re.compile(
       r'(?s)[\0\t\n\r\f ]*('
@@ -305,6 +282,9 @@ class PdfObj(object):
 
   PDF_WHITESPACE_RE = re.compile(r'[\0\t\n\r\f ]+')
   """Matches whitespace (1 or more) at end of string."""
+
+  PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
+  """Matches a PDF /name or name literal."""
 
   PDF_INVALID_NAME_CHAR_RE = re.compile(r'[^-A-Za-z0-9_.]')
   """Matches a PDF data character which is not valid in a plain name."""
@@ -344,6 +324,7 @@ class PdfObj(object):
     """
     if not isinstance(data, str):
       raise TypeError
+    data = data.strip(PDF_WHITESPACE_CHARS)
     if data in ('true', 'false'):
       return data == 'true'
     elif data == 'null':
@@ -363,7 +344,15 @@ class PdfObj(object):
         return data2[1:]
       else:
         return '<%s>' % data[1 : -1].encode('hex')
-    elif data.startswith('<') and not data.startswith('<<'):
+    elif data.startswith('<<'):
+      if not data.endswith('>>'):
+        raise PdfTokenParseError('unclosed dict in %r' % data)
+      return data
+    elif data.startswith('['):
+      if not data.endswith(']'):
+        raise PdfTokenParseError('unclosed array in %r' % data)
+      return data
+    elif data.startswith('<'):  # see also data.startswith('<<') above
       if not cls.PDF_HEX_STRING_LITERAL_RE.match(data):
         raise PdfTokenParseError('bad hex string %r' % data)
       data = cls.PDF_WHITESPACE_RE.sub('', data).lower()
@@ -371,14 +360,16 @@ class PdfObj(object):
         return data[:-1] + '0>'
       else:
         return data
+    # Don't parse floats, we usually don't need them parsed.
+    elif cls.PDF_NAME_LITERAL_TO_EOS_RE.match(data):
+      return data
     elif data.endswith('R'):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
       if match:
         return '%d %d R' % (int(match.group(1)), int(match.group(2))) 
       return data
-    # Don't parse floats, we usually don't need them parsed.
     else:
-      return data
+      raise PdfTokenParseError('syntax error in %r' % data)
 
   @classmethod
   def ParseSimplestDict(cls, data):
@@ -691,7 +682,45 @@ class PdfObj(object):
         return cls.EscapeString(cls.ParseString(match.group(3)))
 
     return cls.COMPRESS_PARSABLE_RE.sub(Replacement, data)
-    
+
+  @classmethod
+  def SerializeSimpleValue(cls, value):
+    if isinstance(value, str):
+      if (value.startswith('(') or
+          (value.startswith('<') and not value.startswith('<<'))):
+        return cls.EscapeString(cls.ParseString(value))
+      else:
+        return value
+    elif isinstance(value, bool):  # must be above int and long
+      return str(value).lower()
+    elif isinstance(value, int) or isinstance(value, long):
+      return str(value)
+    elif value is None:
+      return 'null'
+    # We deliberately don't serialize float because of precision and
+    # representation issues (PDF doesn't support exponential notation).
+    else:
+      raise TypeError
+
+  @classmethod
+  def SerializeDict(cls, dict_obj):
+    """Serialize a dict (such as in PdfObj.head) to a PDF dict string.
+
+    Please note that this method doesn't normalize or optimize the dict values
+    (it doesn't even remove leading and trailing whitespace). To get that, use
+    cls.CompressParsable(cls.RewriteToParsable(cls.SerializeDict(dict_obj))),
+    of which cls.RewriteToParsable is slow.
+    """
+    output = ['<<']
+    for key in sorted(dict_obj):
+      output.append('/' + key)
+      value = cls.SerializeSimpleValue(dict_obj[key])
+      if value[0] not in '<({[/\0\t\n\r\f %':
+        output.append(' ')
+      output.append(value)
+    output.append('>>')
+    return ''.join(output)
+
   @classmethod
   def EscapeString(cls, data):
     """Escape a string to the shortest possible PDF string literal."""
@@ -2480,7 +2509,6 @@ class PdfData(object):
         continue
 
       obj = PdfObj(obj)
-      obj.head = obj.GetParsableHead(obj.head)
       # !! TODO(pts): proper PDF token sequence parsing
       # !! add resolving of references
       if re.match(r'\b\d+\s+\d+\s+R\b', obj.head):
