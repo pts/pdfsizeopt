@@ -78,8 +78,10 @@ class PdfTokenTruncated(Error):
 class PdfTokenNotString(Error):
   """Raised if a PDF token sequence is not a single string."""
 
+
 class PdfTokenNotSimplest(Error):
   """Raised if ParseSimplestDict cannot parse the PDF token sequence."""
+
 
 class FormatUnsupported(Error):
   """Raised if a file/data to be loaded is valid, but not supported."""
@@ -100,6 +102,18 @@ class PdfObj(object):
     stream: stripped string between `stream' and `endstream', or None
   """
   __slots__ = ['_head', 'stream', '_cache']
+
+  PDF_STREAM_OR_ENDOBJ_RE_STR = (
+      r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
+      r'endobj(?:[\0\t\n\r\f /]|\Z))')
+  PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
+  """Matches stream or endobj in a PDF obj."""
+
+  REST_OF_R_RE_STR = (
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f %<>\[\](])')
+  REST_OF_R_RE = re.compile(REST_OF_R_RE_STR)
+  """Matches the generation number and the 'R'."""
 
   def __init__(self, other, objs=None, file_ofs=0):
     """Initialize from other.
@@ -130,68 +144,55 @@ class PdfObj(object):
       # We do the simplest and fastest parsing approach first to find
       # endobj/endstream. This covers about 90% of the objs. Notable
       # exceptions are the /Producer, /CreationDate and /CharSet strings.
-      match = re.search(
-          r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
-          r'endobj(?:[\0\t\n\r\f /]|\Z))', other)
-      assert match, 'endobj/stream not found from ofs=%s' % file_ofs
+      match = self.PDF_STREAM_OR_ENDOBJ_RE.search(other)
+      if not match:
+        raise PdfTokenParseError(
+            'endobj/stream not found from ofs=%s' % file_ofs)
       head = other[skip_obj_number_idx : match.start(1)].rstrip(
           PDF_WHITESPACE_CHARS)
       if '%' in head or '(' in head:
         # Our simple parsing approach failed, maybe because we've found
         # the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
-        head = None
-      else:
-        if match.group(1).startswith('stream'):
-          stream_start_idx = match.end(1)
-
-      #!! implement this
-      #if head is None:
-      #  # A little bit slower, but smarter approach, which can parse comments
-      #  # and nonrecursive strings.
-      #  head = self.Simplify(other, skip_obj_number_idx)
-      #  
-      #  assert 0, repr(other) + 'ZZZ'
-      #  PDF_COMMENT_OR_SIMPLE_STRING_RE = re.compile(
-      #      r'%[^\r\n[\0\t\n\r\f ]+]*|\([^()\\]*\)|\('
-
-      if head is None:
-        # Very slow parsing approach, which can parse any valid PDF obj.
-        #assert 0, repr(other)  # !!
-        end_ofs_out = []
-        parsable = self.RewriteToParsable(
-            data=other, start_ofs=skip_obj_number_idx, end_ofs_out=end_ofs_out,
-            do_terminate_obj=True)
-        terminator = parsable[parsable.rindex(' ') + 1:]
-        if terminator == 'stream':
-          stream_start_idx = end_ofs_out[0]
-        elif terminator != 'endobj':
+        #
+        # Now we do the little bit slower parsing approach, which can parse any valid PDF
+        # obj. Please note that we still don't have to call RewriteParsable
+        # on `other'.
+        i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
+        #assert 0, '%r + %r' % (other[:i], other[i:])
+        j = min(i - 16, 0)
+        head_suffix = other[j : i].strip(PDF_WHITESPACE_CHARS)
+        match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
+        if not match:
           raise PdfTokenParseError(
-              'invalid object terminator %r' % terminator)
-        i = end_ofs_out[0]
-        while other[i - 1] in PDF_WHITESPACE_CHARS:
-          i -= 1
-        i -= len(terminator)
-        assert (i >= 0 and
-                other[i : i + len(terminator)] == terminator)
+              'endobj/stream not found from ofs=%s' % file_ofs)
+        if match.group(1).startswith('stream'):
+          stream_start_idx = j + match.end(1)
+        i = j + match.start(1)
         while other[i - 1] in PDF_WHITESPACE_CHARS:
           i -= 1
         head = other[skip_obj_number_idx : i]
-        # TODO(pts): Don't throw away `parsable', propagate it to the cache,
-        # and possibly emit it with CompressParsable in self.AppendTo.
-        # TODO(pts): Use self.Get('Length') on parsable here to speed up.
+      else:
+        if match.group(1).startswith('stream'):
+          stream_start_idx = match.end(1)
 
       self._head = head
       if stream_start_idx is None:
         self.stream = None
       else:  # has 'stream'
+        if not head.startswith('<<') and head.endswith('>>'):
+          raise PdfTokenParseError(
+              'stream must have a dict head at ofs=%s' % file_ofs)
         # !! TODO(pts): proper PDF token sequence parsing
         match = re.search(
-            r'/Length[\0\t\n\r\f ]+(\d+\b)'
-            r'(?:[\0\t\n\r\f ]+0[\0\t\n\r\f ]+(R)\b)?', self.head)
+            r'/Length[\0\t\n\r\f ]+(\d+)\b'
+            r'(?:[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b)?', self.head)
         assert match
         if match.group(2) is None:
           stream_end_idx = stream_start_idx + int(match.group(1))
         else:
+          # !!! negative
+          if int(match.group(2)) != 0:
+            raise NotImplementedError('generation refs not implemented')
           stream_length = int(objs[int(match.group(1))].head)
           stream_end_idx = stream_start_idx + stream_length
           # Inline the reference to /Length
@@ -372,6 +373,53 @@ class PdfObj(object):
       r'(?=[^/\[\]()<>{}\0\t\n\r\f ])|'
       r'(<<)|(<[^>]*>)|[\0\t\n\r\f ]+')
   """Matches substring which needs special attention in CompressParsable()."""
+
+  PDF_FIND_END_RE = re.compile(
+      r'%[^\r\n]*|\([^()\\]*(?=\))|(\()|'
+      + PDF_STREAM_OR_ENDOBJ_RE_STR)
+  """Matches a substring interesting for FindEndOfObj."""
+
+  @classmethod
+  def FindEndOfObj(cls, data, start=0, end=None, do_rewrite=True):
+    """Find the right endobj/endstream from data[start : end].
+    
+    Args:
+      data: PDF token sequence (with or without `<x> <y> obj' from `start').
+      start: Offset to start parsing at.
+      end: Offset to stop parsing at.
+      do_rewrite: Bool indicating whether to call cls.ReweriteToParsable if
+        needed.
+    Returns:
+      Index in data right after the right 'endobj\n' or 'stream\r\n' (any
+      other whitespace is also OK).
+    Raises:
+      PdfTokenParseError: if `endobj' or `stream' was not found.
+    """
+    if end is None:
+      end = len(data)
+    scanner = cls.PDF_FIND_END_RE.scanner(data, start, end)
+    while True:
+      match = scanner.search()
+      if not match:
+        raise PdfTokenParseError(
+            'could not find endobj/stream in %r...' % data[: 256])
+      if match.group(1):  # a (...) string we were not able to parse
+        if not do_rewrite:
+          raise PdfTokenNotSimplest
+        end_ofs_out = []
+        try:
+          # Ignore return value (the parsable string).
+          cls.RewriteToParsable(
+              data=data, start=match.start(1), end_ofs_out=end_ofs_out)
+        except PdfTokenTruncated, exc:
+          raise PdfTokenParseError(
+              'could not find end of string in %r: %s' %
+              (data[match.start(1) : match.start(1) + 256], exc))
+        # We subtract one below so we don't match ')', and we could match
+        # ')endobj' later.
+        scanner = cls.PDF_FIND_END_RE.scanner(data, end_ofs_out[0] - 1, end)
+      elif match.group(2):  # endobj or stream
+        return match.end(2)
 
   @classmethod
   def ParseSimpleValue(cls, data):
@@ -905,13 +953,8 @@ class PdfObj(object):
   PDF_CLASSIFY[ord('/')] = 18
   PDF_CLASSIFY[ord('%')] = 19
 
-  REST_OF_R_RE = re.compile(
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f %<>\[\](])')
-  """Matches the generation number and the 'R'."""
-
   @classmethod
-  def RewriteToParsable(cls, data, start_ofs=0,
+  def RewriteToParsable(cls, data, start=0,
       end_ofs_out=None, do_terminate_obj=False):
     """Rewrite PDF token sequence so it will be easier to parse by regexps.
 
@@ -933,7 +976,7 @@ class PdfObj(object):
 
     Args:
       data: String containing a PDF token sequence.
-      start_ofs: Offset in data to start the parsing at.
+      start: Offset in data to start the parsing at.
       end_ofs_out: None or a list for the first output byte
         (which is unparsed) offset to be appended. Terminating whitespace is
         not included, except for a single withespace is only after
@@ -955,8 +998,8 @@ class PdfObj(object):
     # !! precompile regexps in this method (although sre._compile uses cache,
     # but if flushes the cache after 100 regexps)
     data_size = len(data)
-    i = start_ofs
-    if data_size <= start_ofs:
+    i = start
+    if data_size <= start:
       raise PdfTokenTruncated
     output = []
     # Stack of '[' (list) and '<' (dict)

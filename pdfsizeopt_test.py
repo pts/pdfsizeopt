@@ -305,7 +305,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
 
   def testPdfObjGetSet(self):
-    obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj ')
+    obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj junk stream\r\n')
     self.assertEqual('<</Foo(hi)>>', obj._head)
     self.assertEqual(None, obj._cache)
     self.assertEqual('<</Foo(hi)>>', obj.head)
@@ -355,7 +355,30 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(None, obj._cache)
     self.assertEqual('<2a>', obj.Get('Foo'))
     self.assertEqual({'Foo': '<2a>'}, obj._cache)
-    
+
+  def testFindEndOfObj(self):
+    def Rest(data, do_rewrite=False):
+      return data[pdfsizeopt.PdfObj.FindEndOfObj(
+          data, do_rewrite=do_rewrite):]
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, Rest, 'foo bar ')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, Rest, 'endobj ')
+    self.assertEqual('after', Rest(' endobj after'))
+    self.assertEqual('after', Rest('>endobj\rafter'))
+    self.assertEqual('after', Rest('foo\t\tbar endobj\nafter'))
+    self.assertEqual('after', Rest('foo%stream\r\nbar%baz\rendobj after'))
+    self.assertEqual('after', Rest('(hi)endobj after'))
+    self.assertEqual('after', Rest('foo bar >>endobj\nafter'))
+    self.assertEqual('\n\tafter', Rest('foo bar >>endobj\n\n\tafter'))
+    self.assertEqual('\n after', Rest('foo bar >>endobj\r\n after'))
+    self.assertEqual('\fafter', Rest('foo bar >>stream\r\n\fafter'))
+    self.assertRaises(
+        pdfsizeopt.PdfTokenNotSimplest, Rest,
+        '((\\)\\)endobj \\\\))endobj\nafter')
+    self.assertEqual(
+        'after', Rest('((\\)\\)endobj \\\\))endobj\nafter', do_rewrite=True))
+    self.assertEqual('after', Rest('(%\nendobj\n)\tendobj\nafter'))
+    self.assertEqual('after', Rest('(%)endobj\nafter'))
+    self.assertEqual('after', Rest('%((()endobj\n)\tendobj\nafter'))
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
