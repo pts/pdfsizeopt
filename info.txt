@@ -385,3 +385,10 @@ additional compression may be possible with:
   if $N; $N=1 } elsif (/^cleartomark/) { $N=2 } elsif ($N==1) { print }' |
   EexecDecode | perl -ne 'print"$1\n" if m@^(/\S+) \d+ RD @' | sort
 * Ghostscript load CFF Type1C font: /MY (t.bin) (r) file /FontSetInit /ProcSet findresource /MY findfont {pop ===} forall
+* how to test images are not recompressed with MultivalentLoad:
+  $ java -cp Multivalent.jar tool.pdf.Compress pts2.lzw.pdf 
+  $ grep /LZWEncode pts2.lzw-o.pdf
+  (no match because recompress)
+  $ java -ea MultivalentLoad Multivalent.jar tool.pdf.Comprepp pts2.lzw.pdf 
+  $ grep /LZWEncode pts2.lzw-o.pdf
+  (matches)
