@@ -2684,7 +2684,6 @@ class PdfData(object):
           obj.size + len(new_obj_head) - len(obj.head))
       if new_size < old_size:
         obj.head = new_obj_head
-        type1c_obj = type1c_obj[obj_num]
         self.objs[font_file_obj_num] = type1c_objs[obj_num]
         print >>sys.stderr, (
             'info: optimized Type1 font XObject %s,%s: new size=%s (%s)' %
