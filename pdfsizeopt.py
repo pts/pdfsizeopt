@@ -929,7 +929,7 @@ class PdfObj(object):
       else:  # whitespace: remove unless needed
         if (match.start() == 0 or match.end() == len(data) or
             data[match.start() - 1] in '<>)[]{}' or 
-            data[match.end()] in '/<([]{}'):
+            data[match.end()] in '/<>([]{}'):
           return ''
         else:
           return ' '
@@ -3155,6 +3155,8 @@ class PdfData(object):
         assert value[2] > 0, 'unused obj %s survived' % value[0]
         i += 1
         self.objs[i] = PdfObj(None)
+        print repr(value[3])
+        print repr(PdfObj.CompressValue(value[3]))
         self.objs[i].head = value[3]
         self.objs[i].stream = value[4]
         obj_num_map[value[0]] = i

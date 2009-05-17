@@ -325,6 +325,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(
         u, e(s, obj_num_map={43: 53, 42: 52}, old_obj_nums_ret=old_obj_nums))
     self.assertEqual([None, 41, 43, 42, 42], old_obj_nums)
+    self.assertEqual('<</Length 68/Filter/FlateDecode>>',
+                     e('<</Length 68/Filter/FlateDecode >>'))
+    self.assertEqual('<</Type/Catalog/Pages 1 0 R>>',
+                     e('<</Type/Catalog/Pages 1 0 R >>'))
 
   def testPdfObjParse(self):
     obj = pdfsizeopt.PdfObj(
