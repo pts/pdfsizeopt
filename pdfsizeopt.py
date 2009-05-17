@@ -162,7 +162,8 @@ class PdfObj(object):
       match = self.PDF_STREAM_OR_ENDOBJ_RE.search(other)
       if not match:
         raise PdfTokenParseError(
-            'endobj/stream not found from ofs=%s' % file_ofs)
+            'endobj/stream not found from ofs=%s to ofs=%s' %
+            (file_ofs, file_ofs + len(other)))
       head = other[skip_obj_number_idx : match.start(1)].rstrip(
           self.PDF_WHITESPACE_CHARS)
       if '%' in head or '(' in head:
@@ -173,13 +174,14 @@ class PdfObj(object):
         # obj. Please note that we still don't have to call RewriteParsable
         # on `other'.
         i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
-        #assert 0, '%r + %r' % (other[:i], other[i:])
-        j = min(i - 16, 0)
-        head_suffix = other[j : i].strip(self.PDF_WHITESPACE_CHARS)
+        j = max(i - 16, 0)
+        head_suffix = other[j : i]
+        #print '\n%r from %r + %r' % (head_suffix, other[:i], other[i:])
         match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
         if not match:
           raise PdfTokenParseError(
-              'endobj/stream not found from ofs=%s' % file_ofs)
+              'full endobj/stream not found from ofs=%s to ofs=%s' %
+              (file_ofs, file_ofs + len(other)))
         if match.group(1).startswith('stream'):
           stream_start_idx = j + match.end(1)
         i = j + match.start(1)

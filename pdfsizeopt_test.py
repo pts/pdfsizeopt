@@ -349,6 +349,9 @@ class PdfSizeOptTest(unittest.TestCase):
     obj = pdfsizeopt.PdfObj(
         '42 0 obj<</T[/Length 99]/Length  3>>stream\r\nABC endstream endobj')
     self.assertEqual('ABC', obj.stream)
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj<</T()/Length  3>>stream\nABC endstream endobj')
+    self.assertEqual('ABC', obj.stream)
     # TODO(pts): Add more tests.
 
   def testPdfObjGetSet(self):
