@@ -392,3 +392,12 @@ additional compression may be possible with:
   $ java -ea MultivalentLoad Multivalent.jar tool.pdf.Comprepp pts2.lzw.pdf 
   $ grep /LZWEncode pts2.lzw-o.pdf
   (matches)
+* font unification
+** good candidate for font unification:
+   grep -a FontName eurotex2006.final.type1c.pdf | grep GaramondNo8-Reg
+   grep -a BaseFont eurotex2006.final.type1c.pdf | grep GaramondNo8-Reg
+** TODO: investigate why CMR10 in eurotex2006.final.pdf is a bad candidate
+   why do we get a different /FontBBox in the FontDescriptor?
+   $ grep -a FontName eurotex2006.final.type1c.pdf | grep CMR10
+   <</Type/FontDescriptor/FontName/OHUJVM+CMR10/FontBBox[0 -22 813 716]/Flags 4/Ascent 716/CapHeight 716/Descent -22/ItalicAngle 0/StemV 121/MissingWidth 333/CharSet(/A/c/d/e/m/o/one/r/zero)/FontFile3 1422 0 R>>endobj
+   <</Type/FontDescriptor/FontName/IXTUXC+CMR10/FontBBox[0 -193 813 683]/Flags 4/Ascent 683/CapHeight 683/Descent -193/ItalicAngle 0/StemV 121/MissingWidth 333/CharSet(/F/P/c/comma/m/period/r)/FontFile3 1423 0 R>>endobj

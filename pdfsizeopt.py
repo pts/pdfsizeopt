@@ -3181,6 +3181,7 @@ class PdfData(object):
         break
       # TODO(pts): Avoid the need for a 2nd iteration, one iteration is slow
       # enough for pdf_reference_1-7.pdf .
+      # on eurotex2006.final.pdf, we have 5 iterations.
 
     return self
 
