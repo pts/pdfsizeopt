@@ -440,6 +440,9 @@ class PdfObj(object):
   PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+R\b')
   """Matches `<obj> 0 R', not allowing comments."""
 
+  PDF_HEX_STRING_OR_DICT_RE = re.compile(r'<<|<(?!<)([^>]*)>')
+  """Matches a hex string or <<."""
+
   @classmethod
   def FindEndOfObj(cls, data, start=0, end=None, do_rewrite=True):
     """Find the right endobj/endstream from data[start : end].
@@ -831,19 +834,23 @@ class PdfObj(object):
     return list_obj
 
   @classmethod
-  def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None):
+  def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None,
+                    do_emit_strings_as_hex=False):
     """Return shorter representation of a PDF token sequence.
 
     This method doesn't optimize integer constants starting with 0.
 
     Args:
       data: A PDF token sequence.
-      obj_num_map: Optional dictionary mapping ints to ints. It instructs
+      obj_num_map: Optional dictionary mapping ints to ints; or a nonempty
+        string (to force a specific obj_num placeholder), or None. It instructs
         this method to change all occurrences of `<key> 0 R' to `<value> 0 R'
         in data.
       old_obj_nums_ret: Optional list to which this method will append
         num for all occurrences of `<num> 0 R' in data.
         TODO(pts): Write a simpler method which returns only this.
+      do_emit_strings_as_hex: Boolean indicating whether to emit strings as
+        hex <...>.
     Returns:
       The most compact PDF token sequence form of data: without superfluous
       whitespce; with '(' string literals. It may contain \n only in
@@ -901,7 +908,10 @@ class PdfObj(object):
         obj_num = int(match.group(1))
         if old_obj_nums_ret is not None:
           old_obj_nums_ret.append(obj_num)
-        obj_num = obj_num_map.get(obj_num, obj_num)
+        if isinstance(obj_num_map, str):
+          obj_num = obj_num_map
+        else:
+          obj_num = obj_num_map.get(obj_num, obj_num)
         if obj_num is None:
           return 'null'
         else:
@@ -925,7 +935,10 @@ class PdfObj(object):
           s = s.decode('hex')
         except TypeError:
           raise PdfTokenParseError('invalid hex string %r' % s)
-        return cls.EscapeString(s)
+        if do_emit_strings_as_hex:
+          return '<%s>' % s.encode('hex')
+        else:
+          return cls.EscapeString(s)
       elif match.group(1):  # '<<'
         return match.group(1)
       else:  # whitespace: remove unless needed
@@ -2020,11 +2033,12 @@ class PdfData(object):
     if 'xref' in obj_starts:
       last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
 
-    def PairCmp(a, b):
+    def ComparePair(a, b):
       return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
 
     obj_items = sorted(
-        [(obj_starts[obj_num], obj_num) for obj_num in obj_starts], PairCmp)
+        [(obj_starts[obj_num], obj_num) for obj_num in obj_starts],
+        ComparePair)
     if last_ofs <= obj_items[-1][0]:
       last_ofs = len(data)
     obj_items.append((last_ofs, 'last'))
@@ -2670,6 +2684,7 @@ class PdfData(object):
           obj.size + len(new_obj_head) - len(obj.head))
       if new_size < old_size:
         obj.head = new_obj_head
+        type1c_obj = type1c_obj[obj_num]
         self.objs[font_file_obj_num] = type1c_objs[obj_num]
         print >>sys.stderr, (
             'info: optimized Type1 font XObject %s,%s: new size=%s (%s)' %
@@ -3054,6 +3069,175 @@ class PdfData(object):
           obj.Set('BBox', obj.GetBadNumbersFixed(bbox))
     return self
 
+  @classmethod
+  def FindEqclasses(cls, objs, do_remove_unused=False, do_renumber=False):
+    """Find equivalence classes in objs, return new objs.
+    
+    Args:
+      objs: A dict mapping object numbers (or strings such as 'trailer') to
+        PdfObj instances.
+      do_remove_unused: A boolean indicating whether to remove all objects
+        not reachable from 'trailer' etc.
+      do_renumber: A boolean indicating whether to renumber all objects,
+        ordered by decreasing number of referrers.
+    Returns:
+      A new dict mapping object numbers to PdfObj instances.
+    """
+    # List of list of desc ([obj_num, head_minus, stream, refs_to,
+    # inrefs_count]). Each list of eqclasses is an eqivalence class of
+    # object descs.
+    eqclasses = []
+    # Maps object numbers to an element of eqclasses.
+    eqclass_of = {}
+
+    # Maps (head_minus, stream) to a list of desc.
+    by_form = {}
+    # List of desc.
+    search_todo = []
+    for obj_num in sorted(objs):
+      refs_to = []  # List of object numbers obj_num refers to).
+      head = objs[obj_num].head
+      # TODO(pts): reorder dicts etc.
+      head_minus = PdfObj.CompressValue(
+          head, obj_num_map='0', old_obj_nums_ret=refs_to,
+          do_emit_strings_as_hex=True)
+      stream = objs[obj_num].stream
+      desc = [obj_num, head_minus, stream, refs_to, 0]
+      if isinstance(obj_num, str):  # for 'trailer'
+        eqclasses.append([desc])
+        eqclass_of[obj_num] = eqclasses[-1]
+        if do_remove_unused:
+          search_todo.append(desc)
+      else:
+        form = (head_minus, stream)
+        form_desc = by_form.get(form)
+        if form_desc is not None:
+          form_desc.append(desc)
+          eqclass_of[obj_num] = form_desc
+        else:
+          eqclasses.append([desc])
+          eqclass_of[obj_num] = by_form[form] = eqclasses[-1]
+    del by_form  # save memory
+
+    #for eqclass in eqclasses:
+    #  for desc in eqclass:
+    #    print desc
+    #  print
+
+    had_split = True
+    while had_split:
+      had_split = False
+      for eqclass in eqclasses:
+        assert eqclass
+        if len(eqclass) > 1:
+          desc = eqclass[0]
+          refs_to = desc[3]
+          eqlist = [desc]
+          nelist = []
+          for i in xrange(1, len(eqclass)):
+            descb = eqclass[i]
+            refs_tob = descb[3]
+            has_ne = False
+            j = 0
+            while (j < len(refs_to) and
+                   eqclass_of.get(refs_to[j]) is eqclass_of.get(refs_tob[j])):
+              j += 1
+            if j == len(refs_to):
+              eqlist.append(descb)
+            else:
+              nelist.append(descb)
+          if nelist:  # everybody in eqclass is equivalent to desc
+            had_split = True
+            eqclasses.append(nelist)
+            for descb in nelist:
+              assert eqclass_of[descb[0]] is eqclass
+              eqclass_of[descb[0]] = nelist
+            eqclass[:] = eqlist
+
+    eliminated_count = len(objs) - len(eqclasses)
+    assert eliminated_count >= 0
+    if eliminated_count > 0:
+      print >>sys.stderr, 'info: eliminated %s duplicate objs' % (
+          eliminated_count)
+
+    # Set of eqclass-leader object numbers.
+    unused_obj_nums = set()
+    if do_remove_unused or do_renumber:
+      unused_obj_nums = set([eqclass[0][0] for eqclass in eqclasses])
+      for desc in search_todo:
+        unused_obj_nums.remove(desc[0])
+      for desc in search_todo:  # breadth-first search from trailer
+        for obj_num in desc[3]:  # refs_to
+          target_class = eqclass_of.get(obj_num)
+          if target_class is not None:
+            target_class[0][4] += 1  # inrefs_count
+            target_obj_num = target_class[0][0]
+            if target_obj_num in unused_obj_nums:
+              search_todo.append(target_class[0])
+              unused_obj_nums.remove(target_obj_num)
+      if not do_remove_unused:
+        unused_obj_nums.clear()
+      elif unused_obj_nums:
+        print >>sys.stderr, 'info: eliminated %s unused objs in %s classes' % (
+            sum([len(eqclass_of[obj_num]) for obj_num in unused_obj_nums]),
+            len(unused_obj_nums))
+
+    # Maps eqclass-leader object number to object number.
+    obj_num_map = {}
+    if do_renumber:
+
+      def CompareDesc(desc_a, desc_b):
+        """Order by decreasing inrefs_count, then increasing obj_num."""
+        return (desc_b[4].__cmp__(desc_a[4]) or  # inrefs_count
+                desc_a[0].__cmp__(desc_b[0]))    # original obj_num
+
+      descs = [eqclass[0] for eqclass in eqclasses
+               if not isinstance(eqclass[0][0], str) and
+               eqclass[0][0] not in unused_obj_nums]
+      descs.sort(CompareDesc)
+      i = 0
+      for desc in descs:
+        i += 1
+        obj_num_map[desc[0]] = i
+
+    objs_ret = {}
+    for eqclass in eqclasses:
+      obj_num, head_minus, stream, refs_to, _ = eqclass[0]
+      if obj_num in unused_obj_nums:
+        continue
+
+      refs_to_rev = refs_to[:]
+      refs_to_rev.reverse()
+
+      def ReplacementRef(match):
+        match_obj_num = int(match.group(1))
+        assert match_obj_num == 0
+        assert refs_to_rev
+        target_obj_num = refs_to_rev.pop()
+        new_class = eqclass_of.get(target_obj_num)
+        if new_class is None:
+          print >>sys.stderr, (
+              'warning: obj %s missing, referenced by objs %r...' %
+              (target_obj_num, [desc[0] for desc in eqclass]))
+          return 'null'
+        else:
+          new_obj_num = new_class[0][0]
+          return '%s 0 R'  % obj_num_map.get(new_obj_num, new_obj_num)
+
+      head = PdfObj.PDF_SIMPLE_REF_RE.sub(ReplacementRef, head_minus)
+      assert not refs_to_rev
+      
+      head = PdfObj.PDF_HEX_STRING_OR_DICT_RE.sub(
+          lambda match: (match.group(1) and PdfObj.EscapeString(
+              match.group(1).decode('hex')) or '<<'), head)
+      obj = PdfObj(None)
+      obj.head = head
+      obj.stream = stream
+      objs_ret[obj_num_map.get(obj_num, obj_num)] = obj
+      # !! fix CFF as well (ObjNNN is part of the CFF)
+
+    return objs_ret
+
   def OptimizeObjs(self):
     """Optimize PDF objects.
 
@@ -3073,117 +3257,21 @@ class PdfData(object):
       10 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 5 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj
     Use Multivalent.jar for that.
     TODO(pts): Implement this, using equivalence class separation.
+    For testing: pts2.zip.4times.pdf and tuzv.pdf
 
     Return:
       self.
     """
     # TODO(pts): Inline ``obj null endobj'' and ``obj<<>>endobj'' etc.
-    
-    while True:
-      # Dictionary mapping a (head, stream) pair to
-      # [smallest_original_obj_num, refs_to, inrefs_count, head, stream]
-      by_pair = {}
-      # Dictionary mapping an input obj_num to by_pair value.
-      by_num = {}
-      for obj_num in sorted(self.objs):
-        refs_to = []  # List of object numbers obj_num refers to).
-        head = PdfObj.CompressValue(
-            self.objs[obj_num].head, old_obj_nums_ret=refs_to)
-        stream = self.objs[obj_num].stream
-        pair = (head, stream)
-        if pair in by_pair:
-          by_num[obj_num] = by_pair[pair]
-          assert refs_to == by_num[obj_num][1]
-        else:
-          by_num[obj_num] = by_pair[pair] = [obj_num, refs_to, 0, head, stream]
-      if len(by_num) > len(by_pair):
-        print >>sys.stderr, 'info: eliminated %s duplicate objs' % (
-            len(by_num) - len(by_pair))
-      
-      # Maps old object numbers to new object numbers.
-      obj_num_map = {}
 
-      # Normalize refs_to.
-      for pair in by_pair:
-        value = by_pair[pair]
-        new_refs_to = set()
-        for obj_num in value[1]:
-          if obj_num in by_num:
-            new_refs_to.add(by_num[obj_num][0])
-          elif obj_num not in obj_num_map:
-            # For testing: `109960 0 R' points to a nonexisting obj in
-            # pdf_reference_1-7.pdf .
-            print >>sys.stderr, (
-                'warning: obj %s missing, referenced by obj %s' %
-                (obj_num, value[0]))
-            obj_num_map[obj_num] = None
-        value[1] = sorted(new_refs_to)
-
-      assert self.trailer.stream is None
-      trailer_refs_to = []
-      self.trailer.head = PdfObj.CompressValue(
-          self.trailer.head, old_obj_nums_ret=trailer_refs_to)
-
-      # Compute inrefs_count values, and find unused objs.
-      to_visit = sorted(set([by_num[obj_num][0] for obj_num in trailer_refs_to]))
-      for ref_to in to_visit:
-        by_num[ref_to][2] += 1  # inrefs_count
-      to_visit_set = set(to_visit)
-      for obj_num in to_visit:  # breadth first search
-        for ref_to in by_num[obj_num][1]:  # refs_to
-          by_num[ref_to][2] += 1  # inrefs_count
-          if ref_to not in to_visit_set:
-            to_visit.append(ref_to)
-            to_visit_set.add(ref_to)
-
-      unused_count = 0
-      for pair in by_pair.keys():
-        value = by_pair[pair]
-        if value[0] not in to_visit_set:
-          del by_pair[pair]
-          #print (value[0], self.objs[value[0]].head)
-          unused_count += 1
-      if unused_count > 0:
-        print >>sys.stderr, 'info: eliminated %s unused objs' % unused_count
-
-      def ValueCmp(value_a, value_b):
-        """Order by decreasing inrefs_count, then increasing obj_num."""
-        return (value_b[2].__cmp__(value_a[2]) or  # inrefs_count
-                value_a[0].__cmp__(value_b[0]))    # original obj_num
-
-      i = 0
-      self.objs.clear()
-      for value in sorted(by_pair.values(), ValueCmp):
-        assert value[2] > 0, 'unused obj %s survived' % value[0]
-        i += 1
-        self.objs[i] = PdfObj(None)
-        self.objs[i].head = value[3]
-        self.objs[i].stream = value[4]
-        obj_num_map[value[0]] = i
-      for obj_num in sorted(by_num):
-        value = by_num[obj_num]
-        if value[0] in to_visit_set:
-          obj_num_map[obj_num] = obj_num_map[value[0]]
-      for obj_num in sorted(obj_num_map):
-        if obj_num_map[obj_num] == obj_num:
-          del obj_num_map[obj_num]
-
-      if obj_num_map:
-        print >>sys.stderr, 'info: reordered %s objs' % len(obj_num_map)
-        # TODO(pts): call CompressValue only if needed
-        for obj_num in sorted(self.objs):
-          self.objs[obj_num].head = PdfObj.CompressValue(
-              self.objs[obj_num].head, obj_num_map=obj_num_map)
-        self.trailer.head = PdfObj.CompressValue(
-            self.trailer.head, obj_num_map=obj_num_map)
-
-      if len(by_num) == len(by_pair) and unused_count == 0 and not obj_num_map:
-        break
-      # TODO(pts): Avoid the need for a 2nd iteration, one iteration is slow
-      # enough for pdf_reference_1-7.pdf .
-      # on eurotex2006.final.pdf, we have 5 iterations.
-
+    self.objs['trailer'] = self.trailer
+    new_objs = self.FindEqclasses(
+        self.objs, do_remove_unused=True, do_renumber=True)
+    self.trailer = new_objs.pop('trailer')
+    self.objs.clear()
+    self.objs.update(new_objs)
     return self
+
 
 def main(argv):
   # Find image converters in script dir first.

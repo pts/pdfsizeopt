@@ -430,5 +430,185 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('after', Rest('(%)endobj\nafter'))
     self.assertEqual('after', Rest('%((()endobj\n)\tendobj\nafter'))
 
+  def testFindEqclassesAllEquivalent(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R   >>endobj')
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual({3: ('<</S(q)/P 3 0 R>>', None)}, new_objs)
+
+  def testFindEqclassesAllEquivalentAndUndefined(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R /U 6 0 R>>endobj')
+    pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 1 0 R /U 7 0 R>>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R /U 8 0 R>>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R /U 9 0 R>>endobj')
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual({1: ('<</S(q)/P 1 0 R/U null>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsByHead(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 3 0 R   >>endobj')
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {3: ('<</S(q)/P 4 0 R>>', None),
+         4: ('<</S(q)/Q 3 0 R>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsWithTrailer(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<</A[3 0 R 4 0 R 5 0 R 6 0 R 3 0 R]>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 3 0 R   >>endobj')
+    pdf.objs[10] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[11] = pdfsizeopt.PdfObj('0 0 obj[10 0 R]endobj')
+    pdf.objs[12] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[12].stream = 'blah'
+    pdf.objs['trailer'] = pdf.trailer
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    del pdf.objs['trailer']
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {'trailer': ('<</A[3 0 R 4 0 R 3 0 R 4 0 R 3 0 R]>>', None),
+         10: ('[10 0 R]', None),
+         12: ('[10 0 R]', 'blah'),
+         3: ('<</S(q)/P 4 0 R>>', None),
+         4: ('<</S(q)/Q 3 0 R>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsByOrder(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R>>endobj')
+    pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</P 1 0 R/S(q)>>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R>>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</P 3 0 R  /S<71>>>endobj')
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {1: ('<</S(q)/P 2 0 R>>', None),
+         2: ('<</P 1 0 R/S(q)>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsByStream(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R>>endobj')
+    pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 1 0 R >>endobj')
+    pdf.objs[2].stream = 'foo';
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R   >>endobj')
+    pdf.objs[4].stream = 'foo';
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {1: ('<</S(q)/P 2 0 R>>', None),
+         2: ('<</S(q)/P 1 0 R>>', 'foo')}, new_objs)
+
+  def testFindEqclassesAllDifferentBecauseOfStream(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
+    pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R>>endobj')
+    pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 1 0 R >>endobj')
+    pdf.objs[2].stream = 'foo';
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R   >>endobj')
+    pdf.objs[4].stream = 'fox';
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {1: ('<</S(q)/P 2 0 R>>', None), 2: ('<</S(q)/P 1 0 R>>', 'foo'),
+         3: ('<</S(q)/P 4 0 R>>', None), 4: ('<</S(q)/P 3 0 R>>', 'fox')},
+        new_objs)
+
+  def testFindEqclassesTwoGroupsWithTrailer(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<</A[3 0 R 4 0 R 5 0 R 6 0 R 3 0 R]>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 3 0 R   >>endobj')
+    pdf.objs[10] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[11] = pdfsizeopt.PdfObj('0 0 obj[10 0 R]endobj')
+    pdf.objs[12] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[12].stream = 'blah'
+    pdf.objs['trailer'] = pdf.trailer
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
+    del pdf.objs['trailer']
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {'trailer': ('<</A[3 0 R 4 0 R 3 0 R 4 0 R 3 0 R]>>', None),
+         10: ('[10 0 R]', None),
+         12: ('[10 0 R]', 'blah'),
+         3: ('<</S(q)/P 4 0 R>>', None),
+         4: ('<</S(q)/Q 3 0 R>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsWithTrailerUnused(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<</A[3 0 R 4 0 R 5 0 R 6 0 R 4 0 R]>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 3 0 R   >>endobj')
+    pdf.objs[10] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[11] = pdfsizeopt.PdfObj('0 0 obj[10 0 R]endobj')
+    pdf.objs[12] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[12].stream = 'blah'
+    pdf.objs['trailer'] = pdf.trailer
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(
+        pdf.objs, do_remove_unused=True)
+    del pdf.objs['trailer']
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {'trailer': ('<</A[3 0 R 4 0 R 3 0 R 4 0 R 4 0 R]>>', None),
+         3: ('<</S(q)/P 4 0 R>>', None),
+         4: ('<</S(q)/Q 3 0 R>>', None)}, new_objs)
+
+  def testFindEqclassesTwoGroupsWithTrailerRenumber(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<</A[3 0 R 4 0 R 5 0 R 6 0 R 4 0 R]>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 6 0 R>>endobj')
+    pdf.objs[6] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 5 0 R >>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/Q 3 0 R   >>endobj')
+    pdf.objs[10] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[11] = pdfsizeopt.PdfObj('0 0 obj[10 0 R]endobj')
+    pdf.objs[12] = pdfsizeopt.PdfObj('0 0 obj[11 0 R]endobj')
+    pdf.objs[12].stream = 'blah'
+    pdf.objs['trailer'] = pdf.trailer
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(
+        pdf.objs, do_remove_unused=True, do_renumber=True)
+    del pdf.objs['trailer']
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {'trailer': ('<</A[2 0 R 1 0 R 2 0 R 1 0 R 1 0 R]>>', None),
+         2: ('<</S(q)/P 1 0 R>>', None),
+         1: ('<</S(q)/Q 2 0 R>>', None)}, new_objs)
+
+
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
