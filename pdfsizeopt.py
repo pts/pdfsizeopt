@@ -1407,6 +1407,40 @@ class PdfObj(object):
       raise NotImplementedError('/DecodeParms not implemented')
     return zlib.decompress(self.stream)
 
+  def FixFontNameInType1C(self):
+    """Fix the FontName in a /Subtype/Type1C object."""
+    # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
+    # was used to write this function.
+    assert self.Get('Subtype') == '/Type1C'
+    data = self.GetDecompressedStream()
+    assert ord(data[2]) >= 4
+    i0 = i = ord(data[2])  # skip header
+    count, off_size = struct.unpack('>HB', data[i : i + 3])
+    assert count == 1, 'Type1C name index count should be 1, got ' % count
+    if off_size == 1:
+      i += 5
+      offset1 = ord(data[i - 2])
+      offset2 = ord(data[i - 1])
+    elif off_size == 2:
+      i += 7
+      offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
+    assert offset1 >= 1
+    assert offset2 > offset1
+    i += offset1 - 1
+    j = i + offset2 - offset1
+    assert j < 255, 'font name %r... too long' % data[i : i + 20]
+    if data[i : j] != 'F':  # set the FontName to /F.
+      # We add some padding ('F' characters) so len(data) doesn't change.
+      # The reason we have to keep that intact is that CFF contains absolute
+      # offsets within itself.
+      data = '%s\x00\x01\x01%c%c%sF%s' %(
+          data[:i0], j - i, j - i + 1, 'F' * (j - i - 1), data[j:])
+      #data = data[:i] + 'F' * (j - i) + data[j:]  # Simpler: many 'F's
+      self.stream = zlib.compress(data, 9)
+      self.Set('Filter', '/FlateDecode')
+      self.Set('DecodeParms', None)
+      self.Set('Length', len(self.stream))
+
 
 class ImageData(object):
   """Partial PNG image data, undecompressed by default.
@@ -2361,8 +2395,12 @@ class PdfData(object):
   % stack: <fontname>
   findfont dup length dict copy
   % Let the font name be /Obj68 etc.
-  dup /FontName _ObjNumber 10 string cvs (Obj) exch concatstrings cvn put
-  dup /FullName _ObjNumber 10 string cvs (Obj) exch concatstrings put
+  dup /FullName _ObjNumber 10 string cvs
+      % pad to 10 digits for object unification in FixFontNameInType1C.
+      dup (0000000000) exch length neg 10 add 0 exch
+      getinterval exch concatstrings
+      (Obj) exch concatstrings put
+  dup dup /FullName get cvn /FontName exch put
   %dup /FID undef  % undef not needed.
   % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
   % (for GhostScript 8.54) here, because otherwise Ghostscript would put
@@ -2672,6 +2710,9 @@ class PdfData(object):
         self.GetFonts('Type1'), 'type1cconv.tmp.ps', 'type1cconv.tmp.pdf')
     for obj_num in type1c_objs:
       obj = self.objs[obj_num]
+      type1c_obj = type1c_objs[obj_num]
+      # !! fix in genuine Type1C objects as well
+      type1c_obj.FixFontNameInType1C()
       match = re.search(r'/FontFile\s+(\d+)\s+0 R\b', obj.head)
       assert match
       font_file_obj_num = int(match.group(1))
@@ -2680,11 +2721,11 @@ class PdfData(object):
           '/FontFile3 %d 0 R' % font_file_obj_num +
           obj.head[match.end(0):])
       old_size = self.objs[font_file_obj_num].size + obj.size
-      new_size = type1c_objs[obj_num].size + (
+      new_size = type1c_obj.size + (
           obj.size + len(new_obj_head) - len(obj.head))
       if new_size < old_size:
         obj.head = new_obj_head
-        self.objs[font_file_obj_num] = type1c_objs[obj_num]
+        self.objs[font_file_obj_num] = type1c_obj
         print >>sys.stderr, (
             'info: optimized Type1 font XObject %s,%s: new size=%s (%s)' %
             (obj_num, font_file_obj_num, new_size,
