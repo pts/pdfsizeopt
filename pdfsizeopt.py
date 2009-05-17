@@ -38,7 +38,6 @@ import zlib
 class Error(Exception):
   """Comon base class for exceptions defined in this file."""
 
-PDF_WHITESPACE_CHARS = '\0\t\n\r\f '
 
 def ShellQuote(string):
   # TODO(pts): Make it work on non-Unix systems.
@@ -86,6 +85,7 @@ class PdfTokenNotSimplest(Error):
 class FormatUnsupported(Error):
   """Raised if a file/data to be loaded is valid, but not supported."""
 
+
 class PdfXrefError(Error):
   """Raised if the PDF file doesn't contain a valid cross-reference table."""
 
@@ -102,6 +102,9 @@ class PdfObj(object):
     stream: stripped string between `stream' and `endstream', or None
   """
   __slots__ = ['_head', 'stream', '_cache']
+
+  PDF_WHITESPACE_CHARS = '\0\t\n\r\f '
+  """String containing all PDF whitespace characters."""
 
   PDF_STREAM_OR_ENDOBJ_RE_STR = (
       r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
@@ -161,7 +164,7 @@ class PdfObj(object):
         raise PdfTokenParseError(
             'endobj/stream not found from ofs=%s' % file_ofs)
       head = other[skip_obj_number_idx : match.start(1)].rstrip(
-          PDF_WHITESPACE_CHARS)
+          self.PDF_WHITESPACE_CHARS)
       if '%' in head or '(' in head:
         # Our simple parsing approach failed, maybe because we've found
         # the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
@@ -172,7 +175,7 @@ class PdfObj(object):
         i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
         #assert 0, '%r + %r' % (other[:i], other[i:])
         j = min(i - 16, 0)
-        head_suffix = other[j : i].strip(PDF_WHITESPACE_CHARS)
+        head_suffix = other[j : i].strip(self.PDF_WHITESPACE_CHARS)
         match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
         if not match:
           raise PdfTokenParseError(
@@ -180,7 +183,7 @@ class PdfObj(object):
         if match.group(1).startswith('stream'):
           stream_start_idx = j + match.end(1)
         i = j + match.start(1)
-        while other[i - 1] in PDF_WHITESPACE_CHARS:
+        while other[i - 1] in self.PDF_WHITESPACE_CHARS:
           i -= 1
         head = other[skip_obj_number_idx : i]
       else:
@@ -251,8 +254,9 @@ class PdfObj(object):
 
   def AppendTo(self, output, obj_num):
     """Append serialized self to output list, using obj_num."""
+    # TODO(pts): Test this method.
     output.append('%s 0 obj\n' % int(obj_num))
-    head = self.head.strip(PDF_WHITESPACE_CHARS)
+    head = self.head.strip(self.PDF_WHITESPACE_CHARS)
     output.append(head)  # Implicit \s later .
     space = ' ' * int(head[-1] not in '>])}')
     if self.stream is not None:
@@ -381,7 +385,11 @@ class PdfObj(object):
   """Matches whitespace (0 or more) at end of string."""
 
   PDF_WHITESPACE_RE = re.compile(r'[\0\t\n\r\f ]+')
-  """Matches whitespace (1 or more) at end of string."""
+  """Matches whitespace (1 or more)."""
+
+  PDF_WHITESPACE_OR_HEX_STRING_RE = re.compile(
+      r'[\0\t\n\r\f ]+|(<<)|<(?!<)([^>]*)>')
+  """Matches whitespace (1 or more) or a hex string constant or <<."""
 
   PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
@@ -404,16 +412,31 @@ class PdfObj(object):
   PDF_REF_AT_EOS_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\Z')
   """Matches a PDF indirect reference at end-of-string."""
 
-  COMPRESS_PARSABLE_RE = re.compile(
-      r'([^\[\]()<>{}\0\t\n\r\f ])[\0\t\n\r\f ]+'
-      r'(?=[^/\[\]()<>{}\0\t\n\r\f ])|'
-      r'(<<)|(<[^>]*>)|[\0\t\n\r\f ]+')
-  """Matches substring which needs special attention in CompressParsable()."""
+  PDF_COMMENT_OR_STRING_RE = re.compile(
+      r'%[^\r\n]*|\(([^()\\]*)\)|(\()')
+  """Matches a comment, a string simple literal or a string literal opener."""
 
-  PDF_FIND_END_RE = re.compile(
+  PDF_FIND_END_OBJ_RE = re.compile(
       r'%[^\r\n]*|\([^()\\]*(?=\))|(\()|'
       + PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches a substring interesting for FindEndOfObj."""
+
+  PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
+      r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
+  """Matches a single character which needs a hex escape."""
+
+  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = re.compile(
+      r'[^-+A-Za-z0-9_.]')
+  """Matches a single character which should be kept escaped."""
+
+  PDF_COMMENT_RE = re.compile(r'%[^\r\n]*')
+  """Matches a single comment line without a terminator."""
+
+  PDF_HEX_CHAR_RE = re.compile('#([0-9a-fA-F]{2})')
+  """Matches a character escaped as # + hex."""
+
+  PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+R\b')
+  """Matches `<obj> 0 R', not allowing comments."""
 
   @classmethod
   def FindEndOfObj(cls, data, start=0, end=None, do_rewrite=True):
@@ -433,7 +456,7 @@ class PdfObj(object):
     """
     if end is None:
       end = len(data)
-    scanner = cls.PDF_FIND_END_RE.scanner(data, start, end)
+    scanner = cls.PDF_FIND_END_OBJ_RE.scanner(data, start, end)
     while True:
       match = scanner.search()
       if not match:
@@ -453,7 +476,8 @@ class PdfObj(object):
               (data[match.start(1) : match.start(1) + 256], exc))
         # We subtract one below so we don't match ')', and we could match
         # ')endobj' later.
-        scanner = cls.PDF_FIND_END_RE.scanner(data, end_ofs_out[0] - 1, end)
+        scanner = cls.PDF_FIND_END_OBJ_RE.scanner(
+            data, end_ofs_out[0] - 1, end)
       elif match.group(2):  # endobj or stream
         return match.end(2)
 
@@ -471,7 +495,7 @@ class PdfObj(object):
     """
     if not isinstance(data, str):
       raise TypeError
-    data = data.strip(PDF_WHITESPACE_CHARS)
+    data = data.strip(cls.PDF_WHITESPACE_CHARS)
     if data in ('true', 'false'):
       return data == 'true'
     elif data == 'null':
@@ -485,7 +509,7 @@ class PdfObj(object):
           data, 1, len(data) - 1).search():
         end_ofs_out = []
         data2 = cls.RewriteToParsable(data, end_ofs_out=end_ofs_out)
-        if data[end_ofs_out[0]:].strip(PDF_WHITESPACE_CHARS):
+        if data[end_ofs_out[0]:].strip(cls.PDF_WHITESPACE_CHARS):
           raise PdfTokenParseError('bad string %r' % data)
         assert data2.startswith(' <') and data2.endswith('>')
         return data2[1:]
@@ -740,7 +764,7 @@ class PdfObj(object):
           # But we don't want that because that would be inconsistent with
           # the ('[' in value) above.
           if '%' in value:
-            value = cls.CompressParsable(value2[1:])
+            value = cls.CompressValue(value2[1:])
           else:
             value = data[match.start(1) : start]
           scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
@@ -764,7 +788,7 @@ class PdfObj(object):
           assert value2.startswith(' <<') and value2.endswith('>>')
           start = match.start(1) + end_ofs_out[0]
           if '%' in value:
-            value = cls.CompressParsable(value2[1:])
+            value = cls.CompressValue(value2[1:])
           else:
             value = data[match.start(1) : start]
           scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
@@ -805,30 +829,113 @@ class PdfObj(object):
     return list_obj
 
   @classmethod
-  def CompressParsable(cls, data):
-    """Return shortest representation of a parsable PDF token sequence.
-    
+  def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None):
+    """Return shorter representation of a PDF token sequence.
+
+    This method doesn't optimize integer constants starting with 0.
+
     Args:
-      data: A PDF token sequence without '%' or '(' (checked) and with
-        proper name tokens (unchecked).
+      data: A PDF token sequence.
+      obj_num_map: Optional dictionary mapping ints to ints. It instructs
+        this method to change all occurrences of `<key> 0 R' to `<value> 0 R'
+        in data.
+      old_obj_nums_ret: Optional list to which this method will append
+        num for all occurrences of `<num> 0 R' in data.
+        TODO(pts): Write a simpler method which returns only this.
     Returns:
       The most compact PDF token sequence form of data: without superfluous
       whitespce; with '(' string literals. It may contain \n only in
       string literals.
+    Raises:
+      PdfTokenParseError
     """
-    assert '%' not in data
-    assert '(' not in data
-    
-    def Replacement(match):
-      if match.group(1) is not None:
-        return match.group(1) + ' '
-      elif match.group(2) is not None:
-        return '<<'
-      elif match.group(3) is not None:
-        # TODO(pts): Inline cls.ParseString.
-        return cls.EscapeString(cls.ParseString(match.group(3)))
+    if '(' in data:
+      output = []
+      i = 0
+      scanner = cls.PDF_COMMENT_OR_STRING_RE.scanner(data, 0, len(data))
+      match = scanner.search()
+      while match:
+        if i < match.start():
+          output.append(data[i : match.start()])
+        i = match.end()
+        if match.group(1):  # simple string literal
+          output.append('<%s>' % match.group(1).encode('hex'))
+        elif match.group(2):  # complicated string literal
+          end_ofs_out = []
+          try:
+            # Ignore return value (the parsable string).
+            output.append(cls.RewriteToParsable(
+                data=data, start=match.start(), end_ofs_out=end_ofs_out))
+          except PdfTokenTruncated, exc:
+            raise PdfTokenParseError(
+                'could not find end of string in %r: %s' %
+                (data[match.start() : match.start() + 256], exc))
+          i = end_ofs_out[0]
+          scanner = cls.PDF_COMMENT_OR_STRING_RE.scanner(
+              data, i, len(data))
+        else:  # comment
+          output.append(' ')
+        match = scanner.search()
+      output.append(data[i:])
+      data = ''.join(output)
+    else:
+      data = cls.PDF_COMMENT_RE.sub(' ', data)
 
-    return cls.COMPRESS_PARSABLE_RE.sub(Replacement, data)
+    def ReplacementHexEscape(match):
+      char = chr(int(match.group(1), 16))
+      if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.match(char):
+        return match.group(0).upper()  # keep escaped
+      else:
+        return char
+
+    data = cls.PDF_HEX_CHAR_RE.sub(ReplacementHexEscape, data)
+    data = cls.PDF_CHAR_TO_HEX_ESCAPE_RE.sub(
+        lambda match: '#%02X' % ord(match.group(0)), data)
+    # TODO(pts): Optimize integer constants starting with 0.
+
+    if obj_num_map:  # nonempty dict
+
+      def ReplacementRef(match):
+        obj_num = int(match.group(1))
+        if old_obj_nums_ret is not None:
+          old_obj_nums_ret.append(obj_num)
+        obj_num = obj_num_map.get(obj_num, obj_num)
+        if obj_num is None:
+          return 'null'
+        else:
+          return '%s 0 R' % obj_num
+
+      data = cls.PDF_SIMPLE_REF_RE.sub(ReplacementRef, data)
+    elif old_obj_nums_ret is not None:
+      for match in cls.PDF_SIMPLE_REF_RE.finditer(data):
+        old_obj_nums_ret.append(int(match.group(1)))
+    
+    def ReplacementWhiteString(match):
+      """Return replacement for whitespace or hex string `match'.
+
+      This function assumes that match is in data.
+      """
+      if match.group(2):  # hex string
+        s = cls.PDF_WHITESPACE_RE.sub('', match.group(2))
+        if len(s) % 2 != 0:
+          s += '0'
+        try:
+          s = s.decode('hex')
+        except TypeError:
+          raise PdfTokenParseError('invalid hex string %r' % s)
+        return cls.EscapeString(s)
+      elif match.group(1):  # '<<'
+        return match.group(1)
+      else:  # whitespace: remove unless needed
+        if (match.start() == 0 or match.end() == len(data) or
+            data[match.start() - 1] in '<>)[]{}' or 
+            data[match.end()] in '/<([]{}'):
+          return ''
+        else:
+          return ' '
+
+    return cls.PDF_WHITESPACE_OR_HEX_STRING_RE.sub(
+        ReplacementWhiteString, data)
 
   @classmethod
   def SerializeSimpleValue(cls, value):
@@ -855,7 +962,7 @@ class PdfObj(object):
 
     Please note that this method doesn't normalize or optimize the dict values
     (it doesn't even remove leading and trailing whitespace). To get that, use
-    cls.CompressParsable(cls.RewriteToParsable(cls.SerializeDict(dict_obj))),
+    cls.CompressValue(cls.RewriteToParsable(cls.SerializeDict(dict_obj))),
     of which cls.RewriteToParsable is slow.
     """
     output = ['<<']
@@ -916,7 +1023,7 @@ class PdfObj(object):
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
     if not isinstance(colorspace, str): raise TypeError
-    colorspace = colorspace.strip(PDF_WHITESPACE_CHARS)
+    colorspace = colorspace.strip(cls.PDF_WHITESPACE_CHARS)
     if colorspace == '/DeviceGray':
       return True
     match = re.match(r'\[\s*/Indexed\s*(/DeviceRGB|/DeviceGray)'
@@ -1377,6 +1484,11 @@ class ImageData(object):
                 (not self.color_type.startswith('indexed-') or (
                  isinstance(self.plte, str) and len(self.plte) % 3 == 0)))
 
+  def ToDataTuple(self):
+    """Return the data in self as __hash__{}able tuple."""
+    return (self.width, self.height, self.bpc, self.color_type,
+            self.is_interlaced, self.idat, self.plte, self.compression)
+
   def CanBePdfImage(self):
     return bool(self and self.bpc in (1, 2, 4, 8) and
                 self.color_type in ('gray', 'rgb', 'indexed-rgb') and
@@ -1653,7 +1765,7 @@ class ImageData(object):
       content_obj = pdf.objs[int(match.group(1))]
       content_stream = content_obj.GetDecompressedStream()
       content_stream = ' '.join(
-          content_stream.strip(PDF_WHITESPACE_CHARS).split())
+          content_stream.strip(PdfObj.PDF_WHITESPACE_CHARS).split())
       number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
       width = obj.Get('Width')
       height = obj.Get('Height')
@@ -1899,7 +2011,8 @@ class PdfData(object):
     assert match, 'bad trailer data: %r' % trailer_data
     self.trailer = PdfObj(None)
     # TODO(pts): No need to strip with proper PDF token sequence parsing
-    self.trailer.head = '<<%s>>' % match.group(1).strip(PDF_WHITESPACE_CHARS)
+    self.trailer.head = '<<%s>>' % match.group(1).strip(
+        PdfObj.PDF_WHITESPACE_CHARS)
     self.trailer.Set('Prev', None)
     self.trailer.Set('XRefStm', None)
     if 'xref' in obj_starts:
@@ -2608,8 +2721,14 @@ class PdfData(object):
     image_count = 0
     image_total_size = 0
     images = {}
+    # Maps /XImage (head, stream) pairs to object numbers.
+    by_orig_data = {}
+    # Maps obj_nums (to be modified) to obj_nums (to be modified to).
+    modify_obj_nums = {}
     for obj_num in sorted(self.objs):
+      # TODO(pts): Find byte-by-byte identical images, and don't rerender them.
       obj = self.objs[obj_num]
+      
       # !! TODO(pts): proper PDF token sequence parsing
       if (not re.search(r'/Subtype\s*/Image\b', obj.head) or
           not obj.stream is not None): continue
@@ -2630,6 +2749,19 @@ class PdfData(object):
           not re.match(r'\[\s*\]\Z', mask)):
         continue
 
+      data_pair = (obj.head, obj.stream)
+      target_obj_num = by_orig_data.get(data_pair)
+      if target_obj_num is not None: 
+        # For testing: pts2.zip.4times.pdf
+        # This is just a speed optimization so we don't have to parse the
+        # image again.
+        print >>sys.stderr, (
+            'info: using identical image obj %s for obj %s' %
+            (target_obj_num, obj_num))
+        modify_obj_nums[obj_num] = target_obj_num
+        continue
+      by_orig_data[data_pair] = obj_num
+
       obj0 = obj
 
       if obj.Get('ImageMask'):
@@ -2647,11 +2779,11 @@ class PdfData(object):
       colorspace = obj.Get('ColorSpace')
       assert isinstance(colorspace, str)
       # !! TODO(pts): proper PDF token sequence parsing
-      # !! Implement ParseArray
+      # !! use ParseArray
       if '(' not in colorspace and '<' not in colorspace:
         # TODO(pts): Inline this to reduce PDF size.
         # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R] 
-        # !! generic resolver
+        # !! generic reference resolver
         colorspace0 = colorspace
         match = re.match(r'(\d+)\s+0\s+R\Z', colorspace)
         if match:
@@ -2743,7 +2875,7 @@ class PdfData(object):
     print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
         image_count, image_total_size)
 
-    # Render images.
+    # Render images which we couldn't convert in-process.
     for gs_device in sorted(device_image_objs):
       ps_tmp_file_name = 'type1cconv.%s.tmp.ps' % gs_device
       objs = device_image_objs[gs_device]
@@ -2759,66 +2891,93 @@ class PdfData(object):
 
     # Optimize images.
     bytes_saved = 0
+    # Maps image data tuples to obj_num.
+    by_image_tuple = {}
+    # Maps image data tuples to an ImageData.
+    by_rendered_tuple = {}
     for obj_num in sorted(images):
       # !! TODO(pts): Don't load all images to memory (maximum 2).
-      obj_images = images[obj_num]
-      rendered_image_file_name = obj_images[-1][1].file_name
-      # TODO(pts): use KZIP or something to further optimize the ZIP stream
-      # !! shortcut for sam2p (don't need pngtopnm)
-      #    (add basic support for reading PNG to sam2p? -- just what GS produces)
-      #    (or just add .gz support?)
-      obj_images.append(self.ConvertImage(
-          sourcefn=rendered_image_file_name,
-          targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
-          # We specify -s here to explicitly exclue SF_Opaque for single-color
-          # images.
-          # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
-          # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
-          # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
-          cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- %(sourcefnq)s %(targetfnq)s',
-          cmd_name='sam2p_np'))
-      obj_images.append(self.ConvertImage(
-          sourcefn=rendered_image_file_name,
-          targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
-          cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
-          cmd_name='sam2p_pr'))
-      if (use_jbig2 and obj_images[-1][1].bpc == 1 and
-          obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
-        # !! autoconvert 1-bit indexed PNG to gray
-        obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
-        if obj_images[-1][1].color_type != 'gray':
-          # This changes obj_images[-1].file_name as well.
-          obj_images[-1][1].SavePng(
-              file_name='type1cconv-%d.gray.png' % obj_num, do_force_gray=True)
-        obj_images[-1][1].idat = self.ConvertImage(
-            sourcefn=obj_images[-1][1].file_name,
-            targetfn='type1cconv-%d.jbig2' % obj_num,
-            cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
-            cmd_name='jbig2', do_just_read=True)[1]
-        obj_images[-1][1].compression = 'jbig2'
-        obj_images[-1][1].file_name = 'type1cconv-%d.jbig2' % obj_num
-      # !! add /FlateEncode again to all obj_images to find the smallest
-      #    (maybe to UpdatePdfObj)
-      # !! rename type1cconv and .type1c in temporary filenames
-      # !! TODO(pts): Find better pngout binary file name.
-      # TODO(pts): Try optipng as well (-o5?)
-      if use_pngout:
-        images[obj_num].append(self.ConvertImage(
-            sourcefn=rendered_image_file_name,
-            targetfn='type1cconv-%d.pngout.png' % obj_num,
-            cmd_pattern='pngout-linux-pentium4-static '
-                        '%(sourcefnq)s %(targetfnq)s',
-            cmd_name='pngout'))
-
-    for obj_num in sorted(images):
       obj = self.objs[obj_num]
-      obj_infos = [(obj.size, '#orig', '', obj)]
-      image_idx = 0
-      for cmd_name, image_data in images[obj_num]:
-        image_idx += 1
+      obj_images = images[obj_num]
+
+      rendered_tuple = obj_images[-1][1].ToDataTuple()
+      target_image = by_rendered_tuple.get(rendered_tuple)
+      if target_image is not None:  # We have already rendered this image.
+        # For testing: pts2.zip.4timesb.pdf
+        # This is just a speed optimization so we don't have to run
+        # sam2p again.
+        print >>sys.stderr, (
+            'info: using already rendered image for obj %s' % obj_num)
+        if target_image is None:
+          continue  # keep original image
+        obj_images.append(('#prev-rendered-best', target_image))
+      else:
+        rendered_image_file_name = obj_images[-1][1].file_name
+        # TODO(pts): use KZIP or something to further optimize the ZIP stream
+        # !! shortcut for sam2p (don't need pngtopnm)
+        #    (add basic support for reading PNG to sam2p? -- just what GS produces)
+        #    (or just add .gz support?)
+        obj_images.append(self.ConvertImage(
+            sourcefn=rendered_image_file_name,
+            targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
+            # We specify -s here to explicitly exclue SF_Opaque for single-color
+            # images.
+            # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
+            # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
+            # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
+            cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- %(sourcefnq)s %(targetfnq)s',
+            cmd_name='sam2p_np'))
+
+        image_tuple = obj_images[-1][1].ToDataTuple()
+        target_image = by_image_tuple.get(image_tuple)
+        if target_image is not None:  # We have already optimized this image.
+          # For testing: pts2.ziplzw.pdf
+          # The latest sam2p is deterministic, so the bytes of the file
+          # produced by sam2p depends only on the RGB image data.
+          print >>sys.stderr, (
+              'info: using already processed image for obj %s' % obj_num)
+          if target_image is None:
+            continue  # keep original image
+          obj_images.append(('#prev-sam2p-best', target_image))
+        else:
+          obj_images.append(self.ConvertImage(
+              sourcefn=rendered_image_file_name,
+              targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
+              cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
+              cmd_name='sam2p_pr'))
+          if (use_jbig2 and obj_images[-1][1].bpc == 1 and
+              obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
+            # !! autoconvert 1-bit indexed PNG to gray
+            obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
+            if obj_images[-1][1].color_type != 'gray':
+              # This changes obj_images[-1].file_name as well.
+              obj_images[-1][1].SavePng(
+                  file_name='type1cconv-%d.gray.png' % obj_num, do_force_gray=True)
+            obj_images[-1][1].idat = self.ConvertImage(
+                sourcefn=obj_images[-1][1].file_name,
+                targetfn='type1cconv-%d.jbig2' % obj_num,
+                cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
+                cmd_name='jbig2', do_just_read=True)[1]
+            obj_images[-1][1].compression = 'jbig2'
+            obj_images[-1][1].file_name = 'type1cconv-%d.jbig2' % obj_num
+          # !! add /FlateEncode again to all obj_images to find the smallest
+          #    (maybe to UpdatePdfObj)
+          # !! rename type1cconv and .type1c in temporary filenames
+          # !! TODO(pts): Find better pngout binary file name.
+          # TODO(pts): Try optipng as well (-o5?)
+          if use_pngout:
+            obj_images.append(self.ConvertImage(
+                sourcefn=rendered_image_file_name,
+                targetfn='type1cconv-%d.pngout.png' % obj_num,
+                cmd_pattern='pngout-linux-pentium4-static '
+                            '%(sourcefnq)s %(targetfnq)s',
+                cmd_name='pngout'))
+
+      obj_infos = [(obj.size, '#orig', '', obj, None)]
+      for cmd_name, image_data in obj_images:
         new_obj = PdfObj(obj)
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
-          if image_idx != 1:  # no warning for what was rendered by Ghostscript
+          if cmd_name != 'gs':  # no warning for what was rendered by Ghostscript
             print >>sys.stderr, (
                 'warning: skipping bpc=%s color_type=%s file_name=%r '
                 'for image XObject %s because of source /ImageMask' %
@@ -2826,8 +2985,8 @@ class PdfData(object):
                  obj_num))
         else:
           image_data.UpdatePdfObj(new_obj)
-          obj_infos.append(
-              [new_obj.size, cmd_name, image_data.file_name, new_obj])
+          obj_infos.append([new_obj.size, cmd_name, image_data.file_name,
+                            new_obj, image_data])
 
       # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
       # properly ([0] first)) if one of them is an object. So we implement
@@ -2842,7 +3001,7 @@ class PdfData(object):
       method_sizes = ','.join(
           ['%s:%s' % (obj_info[1], obj_info[0]) for obj_info in obj_infos])
 
-      if obj_infos[0][-1] is obj:
+      if obj_infos[0][3] is obj:
         # TODO(pts): Diagnose this: why can't we generate a smaller image?
         # !! Originals in eurotex2006.final.pdf tend to be smaller here because
         #    they have ColorSpace in a separate XObject.
@@ -2856,17 +3015,23 @@ class PdfData(object):
             'size=%s (%s) methods=%s' %
             (obj_num, obj_infos[0][2], obj_infos[0][0],
              FormatPercent(obj_infos[0][0], obj.size), method_sizes)) 
-        bytes_saved += self.objs[obj_num].size - obj_infos[0][-1].size
-        if ('/JBIG2Decode' in (obj_infos[0][-1].Get('Filter') or '') and
+        bytes_saved += self.objs[obj_num].size - obj_infos[0][0]
+        if ('/JBIG2Decode' in (obj_infos[0][3].Get('Filter') or '') and
             self.version < '1.4'):
           self.version = '1.4'
-        self.objs[obj_num] = obj_infos[0][-1]
+        self.objs[obj_num] = obj_infos[0][3]
+      by_rendered_tuple[rendered_tuple] = obj_infos[0][4]
+      by_image_tuple[image_tuple] = obj_infos[0][4]
+      del obj_images[:]  # free memory occupied by unchosen images
     print >>sys.stderr, 'info: saved %s bytes (%s) on images' % (
         bytes_saved, FormatPercent(bytes_saved, image_total_size))
-    # !! unify identical images (unify identical objects first?)
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
-    # !! os.remove(images[obj_num][...]), also *.jbig2 and *.gray.png
+    # !! os.remove(obj_images[...]), also *.jbig2 and *.gray.png
+
+    for obj_num in modify_obj_nums:
+      self.objs[obj_num] = PdfObj(self.objs[modify_obj_nums[obj_num]])
+
     return self
 
   def FixAllBadNumbers(self):
@@ -2887,6 +3052,135 @@ class PdfData(object):
           obj.Set('BBox', obj.GetBadNumbersFixed(bbox))
     return self
 
+  def OptimizeObjs(self):
+    """Optimize PDF objects.
+
+    This method does the following:
+
+    * Calls PdfObj.CompressValue for all obj.head
+    * Removes unused objs.
+    * Removes duplicate objs.
+    * In multiple iterations, removes duplicate trees.
+    * Removes gaps between obj numbers.
+    * Reorders objs so most-referenced objs come early.
+
+    This method doesn't unify equivalent sets with circular references, e.g.
+      4 0 obj<</Parent 1 0 R/Type/Pages/Kids[9 0 R]/Count 1>>endobj 
+      5 0 obj<</Parent 1 0 R/Type/Pages/Kids[10 0 R]/Count 1>>endobj
+      9 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 4 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj
+      10 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 5 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj
+    Use Multivalent.jar for that.
+    TODO(pts): Implement this, using equivalence class separation.
+
+    Return:
+      self.
+    """
+    # TODO(pts): Inline ``obj null endobj'' and ``obj<<>>endobj'' etc.
+    
+    while True:
+      # Dictionary mapping a (head, stream) pair to
+      # [smallest_original_obj_num, refs_to, inrefs_count, head, stream]
+      by_pair = {}
+      # Dictionary mapping an input obj_num to by_pair value.
+      by_num = {}
+      for obj_num in sorted(self.objs):
+        refs_to = []  # List of object numbers obj_num refers to).
+        head = PdfObj.CompressValue(
+            self.objs[obj_num].head, old_obj_nums_ret=refs_to)
+        stream = self.objs[obj_num].stream
+        pair = (head, stream)
+        if pair in by_pair:
+          by_num[obj_num] = by_pair[pair]
+          assert refs_to == by_num[obj_num][1]
+        else:
+          by_num[obj_num] = by_pair[pair] = [obj_num, refs_to, 0, head, stream]
+      if len(by_num) > len(by_pair):
+        print >>sys.stderr, 'info: eliminated %s duplicate objs' % (
+            len(by_num) - len(by_pair))
+      
+      # Maps old object numbers to new object numbers.
+      obj_num_map = {}
+
+      # Normalize refs_to.
+      for pair in by_pair:
+        value = by_pair[pair]
+        new_refs_to = set()
+        for obj_num in value[1]:
+          if obj_num in by_num:
+            new_refs_to.add(by_num[obj_num][0])
+          elif obj_num not in obj_num_map:
+            # For testing: `109960 0 R' points to a nonexisting obj in
+            # pdf_reference_1-7.pdf .
+            print >>sys.stderr, (
+                'warning: obj %s missing, referenced by obj %s' %
+                (obj_num, value[0]))
+            obj_num_map[obj_num] = None
+        value[1] = sorted(new_refs_to)
+
+      assert self.trailer.stream is None
+      trailer_refs_to = []
+      self.trailer.head = PdfObj.CompressValue(
+          self.trailer.head, old_obj_nums_ret=trailer_refs_to)
+
+      # Compute inrefs_count values, and find unused objs.
+      to_visit = sorted(set([by_num[obj_num][0] for obj_num in trailer_refs_to]))
+      for ref_to in to_visit:
+        by_num[ref_to][2] += 1  # inrefs_count
+      to_visit_set = set(to_visit)
+      for obj_num in to_visit:  # breadth first search
+        for ref_to in by_num[obj_num][1]:  # refs_to
+          by_num[ref_to][2] += 1  # inrefs_count
+          if ref_to not in to_visit_set:
+            to_visit.append(ref_to)
+            to_visit_set.add(ref_to)
+
+      unused_count = 0
+      for pair in by_pair.keys():
+        value = by_pair[pair]
+        if value[0] not in to_visit_set:
+          del by_pair[pair]
+          #print (value[0], self.objs[value[0]].head)
+          unused_count += 1
+      if unused_count > 0:
+        print >>sys.stderr, 'info: eliminated %s unused objs' % unused_count
+
+      def ValueCmp(value_a, value_b):
+        """Order by decreasing inrefs_count, then increasing obj_num."""
+        return (value_b[2].__cmp__(value_a[2]) or  # inrefs_count
+                value_a[0].__cmp__(value_b[0]))    # original obj_num
+
+      i = 0
+      self.objs.clear()
+      for value in sorted(by_pair.values(), ValueCmp):
+        assert value[2] > 0, 'unused obj %s survived' % value[0]
+        i += 1
+        self.objs[i] = PdfObj(None)
+        self.objs[i].head = value[3]
+        self.objs[i].stream = value[4]
+        obj_num_map[value[0]] = i
+      for obj_num in sorted(by_num):
+        value = by_num[obj_num]
+        if value[0] in to_visit_set:
+          obj_num_map[obj_num] = obj_num_map[value[0]]
+      for obj_num in sorted(obj_num_map):
+        if obj_num_map[obj_num] == obj_num:
+          del obj_num_map[obj_num]
+
+      if obj_num_map:
+        print >>sys.stderr, 'info: reordered %s objs' % len(obj_num_map)
+        # TODO(pts): call CompressValue only if needed
+        for obj_num in sorted(self.objs):
+          self.objs[obj_num].head = PdfObj.CompressValue(
+              self.objs[obj_num].head, obj_num_map=obj_num_map)
+        self.trailer.head = PdfObj.CompressValue(
+            self.trailer.head, obj_num_map=obj_num_map)
+
+      if len(by_num) == len(by_pair) and unused_count == 0 and not obj_num_map:
+        break
+      # TODO(pts): Avoid the need for a 2nd iteration, one iteration is slow
+      # enough for pdf_reference_1-7.pdf .
+
+    return self
 
 def main(argv):
   # Find image converters in script dir first.
@@ -2925,6 +3219,7 @@ def main(argv):
    .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
+   .OptimizeObjs()
    .Save(output_file_name))
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #! /usr/bin/python2.4
-
+#
 # pdfsizeopt_test.py: unit tests for pdfsizeopt.py
 # by pts@fazekas.hu at Sun Apr 19 10:21:07 CEST 2009
 #
@@ -297,15 +297,34 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>', True, False, None],
                      e('[[ ] [\t[\f]] <<\t [\f[ >> true%\nfalse\fnull]'))
 
-  def testCompressParsable(self):
-    e = pdfsizeopt.PdfObj.CompressParsable
+  def testCompressValue(self):
+    e = pdfsizeopt.PdfObj.CompressValue
     self.assertEqual('', e('\t\f\0\r \n'))
     self.assertEqual('foo bar', e('   foo\n\t  bar\f'))
     self.assertEqual(']foo/bar(\xba\xd0)>>', e(' ]  foo\n\t  /bar\f <bAd>>>'))
-    self.assertEqual('<<bAd CAFE>>', e('<<bAd CAFE>>'))
+    self.assertEqual('<<bAd CAFE>>', e('<<bAd  CAFE>>'))
     self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
     self.assertEqual('(())', e(' <2829>\t'))
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
+    self.assertEqual('[12 34]', e('[12%\n34]'))
+    self.assertEqual('[12 34]', e('[ 12 34 ]'))
+    self.assertEqual('<</A[12 34]>>', e(' << \t/A\f[12%\n34]>>\r'))
+    self.assertEqual('( hello\t\n)world', e(' ( hello\t\n)world'))
+    self.assertEqual('(\\)((hi))\\\\)world', e(' (\\)(\\(hi\\))\\\\)world'))
+    self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
+    s = '/Kids[041\t 0\rR\f43\n0% 96 0 R\rR 42 0 R 97 0 Rs 42 0 R]( 98 0 R )\f'
+    t = '/Kids[041 0 R 43 0 R 42 0 R 97 0 Rs 42 0 R]( 98 0 R )'
+    self.assertEqual(t, e(s))
+    self.assertEqual(t, e(e(s)))
+    old_obj_nums = ['']
+    self.assertEqual(t, e(s, old_obj_nums_ret=old_obj_nums))
+    self.assertEqual(['', 41, 43, 42, 42], old_obj_nums)
+    u = '/Kids[41 0 R 53 0 R 52 0 R 97 0 Rs 52 0 R]( 98 0 R )'
+    self.assertEqual(u, e(s, obj_num_map={43: 53, 42: 52}))
+    old_obj_nums = [None]
+    self.assertEqual(
+        u, e(s, obj_num_map={43: 53, 42: 52}, old_obj_nums_ret=old_obj_nums))
+    self.assertEqual([None, 41, 43, 42, 42], old_obj_nums)
 
   def testPdfObjParse(self):
     obj = pdfsizeopt.PdfObj(
