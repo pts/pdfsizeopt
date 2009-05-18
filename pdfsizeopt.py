@@ -269,8 +269,8 @@ class PdfObj(object):
         assert '/Length' in head
       output.append('%sstream\n' % space)
       output.append(self.stream)
-      # TODO(pts): Do we need '\nendstream' after a non-compressed content
-      # stream?
+      # We don't need '\nendstream' after a non-compressed content stream,
+      # 'Qendstream endobj' is perfectly fine (accepted by gs and xpdf).
       output.append('endstream endobj\n')
     else:
       output.append('%sendobj\n' % space)
@@ -289,10 +289,11 @@ class PdfObj(object):
 
   @property
   def size(self):
+    # + 20 for obj...endobj, + 20 for the xref entry
     if self.stream is None:
-      return len(self.head) + 20
+      return len(self.head) + 40
     else:
-      return len(self.head) + len(self.stream) + 32
+      return len(self.head) + len(self.stream) + 52
 
   @classmethod
   def GetBadNumbersFixed(cls, data):
@@ -303,7 +304,7 @@ class PdfObj(object):
         r'([\0\t\n\r\f \[])[.](?=[\0\t\n\r\f \]])',
         lambda match: match.group(1) + '0', data)
 
-  def Get(self, key):
+  def Get(self, key, default=None):
     """Get value for key if self.head is a PDF dict.
     
     Use PdfData.Resolve(obj.Get(...)) to resolve indirect refs.
@@ -313,7 +314,7 @@ class PdfObj(object):
       key: A PDF name literal without a slash, e.g. 'ColorSpace'
     Returns:
       An str, bool, int, long or None value, as returned by
-      self.ParseSimpleValue.
+      self.ParseSimpleValue, default, if key was not found.
     """
     if key.startswith('/'):
       raise TypeError('slash in the key= argument')
@@ -326,7 +327,7 @@ class PdfObj(object):
         # TODO(pts): Special casing for /Length, we don't want to parse that.
         return None
       self._cache = self.ParseDict(self._head)
-    return self._cache.get(key)
+    return self._cache.get(key, default)
 
   def Set(self, key, value, do_keep_null=False):
     """Set value to key or remove key if value is None.
@@ -1825,7 +1826,7 @@ class ImageData(object):
           r'q (%(number_re)s) (%(number_re)s) (%(number_re)s) rg 0 0 m '
           r'%(width)s 0 l %(width)s %(height)s l 0 %(height)s l F '
           r'(%(number_re)s) (%(number_re)s) (%(number_re)s) rg %(width)s '
-          r'0 0 %(height)s 0 0 cm /[-.#\w]+ Do Q\Z' % locals())
+          r'0 0 %(height)s 0 0 cm\s*/[-.#\w]+ Do Q\Z' % locals())
       match = re.match(content_re, content_stream)
       assert match, 'unrecognized content stream for sam2p ImageMask'
       # TODO(pts): Clip the floats to the interval [0..1]
@@ -2769,11 +2770,173 @@ class PdfData(object):
     else:
       return cmd_name, ImageData().Load(targetfn)
 
+  def AddObj(self, obj):
+    """Add PdfObj to self.objs, return its object number."""
+    if not isinstance(obj, PdfObj):
+      raise TypeError
+    obj_num = len(self.objs) + 1
+    if obj_num in self.objs:
+      obj_num = max(self.objs) + 1
+    self.objs[obj_num] = obj
+    return obj_num
+
+  INLINE_IMAGE_UNABBREVIATIONS = {
+      'BPC': 'BitsPerComponent',
+      'CS': 'ColorSpace',
+      'D': 'Decode',
+      'DP': 'DecodeParms',
+      'F': 'Filter',
+      'H': 'Height',
+      'W': 'Width',
+      'IM': 'ImageMask',
+      'I': 'Interpolate',  # ambiguous for Indexed
+      'G': 'DeviceGray',
+      'RGB': 'DeviceRGB',
+      'CMYK': 'DeviceCMYK',
+      'AHx': 'ASCIIHexDecode',
+      'A85': 'ASCII85Decode',
+      'LZW': 'LZWDecode',
+      'Fl': 'FlateDecode',
+      'RL': 'RunLengthDecode',
+      'CCF': 'CCITTFaxDecode',
+      'DCT': 'DCTDecode',
+  }
+  """Maps an abbreviated name (in an inline image) to its full equivalent.
+
+  From table 4.43, 4.44, ++ on page 353 of pdf_reference_1-7.pdf .
+  """
+
+  def ConvertInlineImagesToXObjects(self):
+    """Convert embedded inline images to Image XObject{}s.
+
+    This method finds only Form XObject{}s which contain a single inline
+    image, and converts them to Image XObject{}s. Such Form XObject{}s are
+    created by sam2p with the default config (e.g. without `sam2p -pdf:2').
+
+    The reason why we want to have Image XObject{}s is so that we can
+    optimize them and unify them in self.OptimizeImages(). Embedded Image
+    XObject{}s are usually a few dozen bytes smaller than their corresponding
+    Form XObject{}s.
+
+    !! TODO(pts): Do this for single content-streams of a sam2p-generated
+    .pdf image. (pts2a.pdf)
+
+    TODO(pts): Convert all kinds of inline images.
+    
+    Returns:
+      self.
+    """
+    uninline_count = 0
+    uninline_bytes_saved = 0
+    for obj_num in sorted(self.objs):
+      obj = self.objs[obj_num]
+
+      # TODO(pts): Is re.search here fast enough?; PDF comments?
+      if (not re.search(r'/Subtype[\0\t\n\r\f ]*/Form\b', obj.head) or
+          not obj.head.startswith('<<') or
+          not obj.stream is not None or
+          obj.Get('Subtype') != '/Form' or
+          obj.Get('FormType', 1) != 1 or
+          obj.Get('Filter') not in (None, '/FlateDecode') or
+          obj.Get('DecodeParms') is not None or
+          not str(obj.Get('BBox')).startswith('[')): continue
+
+      bbox = PdfObj.ParseArray(obj.Get('BBox'))
+      if (len(bbox) != 4 or bbox[0] != 0 or bbox[1] != 0 or
+          bbox[2] < 1 or bbox[2] != int(bbox[2]) or
+          bbox[3] < 1 or bbox[3] != int(bbox[3])):
+        continue
+      width = bbox[2]
+      height = bbox[3]
+
+      stream = obj.GetDecompressedStream()
+      # TODO(pts): Match comments etc.
+      match = re.match(
+          r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
+          r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+cm[\0\t\n\r\f ]+'
+          r'BI[\0\t\n\r\f ]*(/(?s).*?)ID(?:\r\n|[\0\t\n\r\f ])', stream)
+      if not match: continue
+      if int(match.group(1)) != width or int(match.group(2)) != height:
+        continue
+      # Run CompressValue so we get it normalized, and we can do easier
+      # regexp matches and substring searches.
+      inline_dict = PdfObj.CompressValue(
+          match.group(3), do_emit_strings_as_hex=True)
+      stream_start = match.end()
+
+      stream_tail = stream[-16:]
+      # TODO(pts): What if \r\n in front of EI? We don't support that.
+      match = re.search(
+          r'[\0\t\n\r\f ]EI[\0\t\n\r\f ]+Q[\0\t\n\r\f ]*\Z', stream_tail)
+      if not match: continue
+      stream_end = len(stream) - len(stream_tail) + match.start()
+      stream = stream[stream_start : stream_end]
+
+      inline_dict = re.sub(
+          r'/([A-Za-z]+)\b',
+          lambda match: '/' + self.INLINE_IMAGE_UNABBREVIATIONS.get(
+              match.group(1), match.group(1)), inline_dict)
+      image_obj = PdfObj('0 0 obj<<%s>>endobj' % inline_dict)
+      if (image_obj.Get('Width') != width or
+          image_obj.Get('Height') != height):
+        continue
+
+      # For testing: obj 2 in pts2e.pdf
+      uninline_count += 1
+      colorspace = image_obj.Get('ColorSpace')
+      assert colorspace is not None
+      assert (image_obj.Get('BitsPerComponent') is not None or
+              image_obj.Get('ImageMask', False) is True)
+      #if image_obj.Get('Filter') == '/FlateDecode':
+      # If we do a zlib.decompress(stream) now, it will succeed even if stream
+      # has trailing garbage. But zlib.decompress(steram[:-1]) would fail. In
+      # Python, there is no way the get te real end on the compressed zlib
+      # stream (see also http://www.faqs.org/rfcs/rfc1950.html and
+      # http://www.faqs.org/rfcs/rfc1951.html). We may just check the last
+      # 4 bytes (adler32).
+      if colorspace.startswith('[/Interpolate/'):
+        # Fix bad decoding in INLINE_IMAGE_UNABBREVIATIONS
+        colorspace = '[/Indexed' + colorspace[13:]
+        image_obj.Set('ColorSpace', colorspace)
+      # TODO(pts): Get rid of /Type/XObject etc. from other objects as well
+      image_obj.Set('Type', None)  # /XObject, but optimized
+      image_obj.Set('Subtype', '/Image')
+      image_obj.Set('Length', len(stream))
+      image_obj.head = PdfObj.CompressValue(image_obj.head)
+      image_obj.stream = stream
+      # We cannot just replace obj by image_obj here, because we have to scale
+      # (with the `cm' operator).
+      image_obj_num = self.AddObj(image_obj)
+      resources_obj = PdfObj(
+          '0 0 obj %s endobj' % obj.Get('Resources', '<<>>'))
+      assert resources_obj.Get('XObject') is None
+      resources_obj.Set('XObject', '<</S %s 0 R>>'% image_obj_num)
+      form_obj = PdfObj('0 0 obj<</Subtype/Form>>endobj')
+      form_obj.stream = 'q %s 0 0 %s 0 0 cm/S Do Q' % (width, height)
+      form_obj.Set('BBox', '[0 0 %s %s]' % (width, height))
+      form_obj.Set('Resources', resources_obj.head)
+      form_obj.Set('Length', len(form_obj.stream))
+      form_obj.head = PdfObj.CompressValue(form_obj.head)
+      uninline_bytes_saved += obj.size - form_obj.size - image_obj.size
+      # Throw away /Type, /Subtype/Form, /FormType, /PTEX.FileName,
+      # /PTEX.PageNumber, /BBox and /Resources (and many others).
+      self.objs[obj_num] = form_obj
+      self.objs[image_obj_num] = image_obj
+
+    if uninline_count > 0:
+      # Usually a little negative, like -50 for each image. But since
+      # self.OptimizeImages() will recompress the image, we'll gain more than
+      # 50 bytes.
+      print >>sys.stderr, 'info: uninlined %s images, saved %s bytes' % (
+          uninline_count, uninline_bytes_saved)
+    return self
+
   def OptimizeImages(self, use_pngout=True, use_jbig2=True):
     """Optimize image XObjects in the PDF."""
     # TODO(pts): convert inline images to image XObject{}s.
     # Dictionary mapping Ghostscript -sDEVICE= names to dictionaries mapping
     # PDF object numbers to PdfObj instances.
+    # TODO(pts): Remove key PTEX.* from all dicts (trailer and form xobjects)
     device_image_objs = {'png16m': {}, 'pnggray': {}, 'pngmono': {}}
     image_count = 0
     image_total_size = 0
@@ -2783,12 +2946,13 @@ class PdfData(object):
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
     for obj_num in sorted(self.objs):
-      # TODO(pts): Find byte-by-byte identical images, and don't rerender them.
       obj = self.objs[obj_num]
-      
-      # !! TODO(pts): proper PDF token sequence parsing
-      if (not re.search(r'/Subtype\s*/Image\b', obj.head) or
-          not obj.stream is not None): continue
+
+      # TODO(pts): Is re.search here fast enough?; PDF comments?
+      if (not re.search(r'/Subtype[\0\t\n\r\f ]*/Image\b', obj.head) or
+          not obj.head.startswith('<<') or
+          not obj.stream is not None or
+          obj.Get('Subtype') != '/Image'): continue
       filter = (obj.Get('Filter') or '').replace(']', ' ]') + ' '
 
       # Don't touch lossy-compressed images.
@@ -3349,6 +3513,7 @@ def main(argv):
   (PdfData().Load(file_name)
    .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
+   .ConvertInlineImagesToXObjects()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .OptimizeObjs()
    .Save(output_file_name))
