@@ -299,10 +299,32 @@ class PdfObj(object):
   def GetBadNumbersFixed(cls, data):
     if data == '.':
       return '0'
-    # Just convert `.' to 0 in an array.
+    # Just convert '.' to 0 in an array.
+    # We don't convert `42.' to '42.0' here.
     return re.sub(
         r'([\0\t\n\r\f \[])[.](?=[\0\t\n\r\f \]])',
         lambda match: match.group(1) + '0', data)
+
+  @classmethod
+  def GetNumber(cls, data):
+    """Return an int, log, float or None."""
+    if (isinstance(data, int) or isinstance(data, long) or
+        isinstance(data, float)):
+      return data
+    elif not isinstance(data, str):
+      return None
+    elif data == '.':
+      return 0.0
+    elif re.match(r'-?\d+[.]', data):
+      return float(data[:-1])
+    else:
+      try:
+        if '.' in data:
+          return float(data)
+        else:
+          return int(data)
+      except ValueError:
+        return None
 
   def Get(self, key, default=None):
     """Get value for key if self.head is a PDF dict.
@@ -2841,13 +2863,13 @@ class PdfData(object):
           obj.Get('DecodeParms') is not None or
           not str(obj.Get('BBox')).startswith('[')): continue
 
-      bbox = PdfObj.ParseArray(obj.Get('BBox'))
+      bbox = map(PdfObj.GetNumber, PdfObj.ParseArray(obj.Get('BBox')))
       if (len(bbox) != 4 or bbox[0] != 0 or bbox[1] != 0 or
-          bbox[2] < 1 or bbox[2] != int(bbox[2]) or
-          bbox[3] < 1 or bbox[3] != int(bbox[3])):
+          bbox[2] is None or bbox[2] < 1 or bbox[2] != int(bbox[2]) or
+          bbox[3] is None or bbox[3] < 1 or bbox[3] != int(bbox[3])):
         continue
-      width = bbox[2]
-      height = bbox[3]
+      width = int(bbox[2])
+      height = int(bbox[3])
 
       stream = obj.GetDecompressedStream()
       # TODO(pts): Match comments etc.
