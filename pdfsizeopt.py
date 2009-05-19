@@ -90,6 +90,13 @@ class PdfXrefError(Error):
   """Raised if the PDF file doesn't contain a valid cross-reference table."""
 
 
+class FontsNotMergeable(Error):
+  """Raised if the specified fonts cannot be merged.
+
+  Please not the `Parsable' and `Mergeable' are correct spellings.
+  """
+
+
 class PdfObj(object):
   """Contents of a PDF object (head and stream data).
 
@@ -465,6 +472,14 @@ class PdfObj(object):
 
   PDF_HEX_STRING_OR_DICT_RE = re.compile(r'<<|<(?!<)([^>]*)>')
   """Matches a hex string or <<."""
+
+  PDF_SIMPLE_TOKEN_RE = re.compile(
+      ' |(/?[^/{}\[\]()<>\0\t\n\r\f %]+)|<<|>>|[\[\]]|<([a-f0-9]*)>')
+  """Matches a simple PDF token.
+  
+  PdfObj.CompressValue(data, do_emit_strings_as_hex=True emits) a string of
+  simple tokens, possibly concatenated by a single space.
+  """
 
   @classmethod
   def FindEndOfObj(cls, data, start=0, end=None, do_rewrite=True):
@@ -1057,6 +1072,85 @@ class PdfObj(object):
       assert depth == 0
       assert close_remaining == 0
       return ''.join(output)
+
+  @classmethod
+  def ParseValueRecursive(cls, data):
+    """Parse PDF token sequence data to a recursive Python structure.
+
+    As a relaxation, numbers are allowed as dict keys.
+    
+    Args:
+      data: PDF token sequence
+    Returns:
+      A recursive Python data structure.
+    Raises:
+      PdfTokenParseError
+    """
+    data = PdfObj.CompressValue(data, do_emit_strings_as_hex=True)
+    #data = '<<42 43/Foo [bar, <<>>]5 6>>'  # TODO(pts): Write tests
+    scanner = PdfObj.PDF_SIMPLE_TOKEN_RE.scanner(data)
+    match = scanner.match()
+    last_end = 0
+    output = []
+    # TODO(pts): Reimplement this using a stack.
+    while match:
+      last_end = match.end()
+      token = match.group(0)
+      if match.group(1):
+        try:
+          token = int(token)
+        except ValueError:
+          pass
+        output.append(repr(token))
+        output.append(', ')
+      elif token == '<<':
+        output.append('D([')  # Need the array for >255 arguments.
+      elif token == '>>':
+        output.append('])')
+        output.append(', ')
+      elif token == '[':
+        output.append(token)
+      elif token == ']':
+        output.append(token)
+        output.append(', ')
+      elif token == ' ':
+        pass
+      else:
+        assert token.startswith('<') and token.endswith('>')
+        #output.append(repr(token[1 : -1].decode('hex')))
+        output.append("'%s'" % token)  # keep it in hex
+        output.append(', ')
+      match = scanner.match()
+    if last_end != len(data):
+      raise PdfTokenParseError(
+         'syntax error at %r...' % data[last_end : last_end + 32])
+    if not output:
+      raise PdfTokenParseError('no data to parse')
+    if output[-1] != ', ':
+      raise PdfTokenParseError('data not ended properly (got %r)' % output[-1])
+    output.pop()  # remove ', '
+
+    def BuildDict(args):
+      """Build dict from args: even indexes as keys, odd indexes as values."""
+      if len(args) % 2 != 0:
+        raise PdfTokenParseError('odd number of dict elements')
+      dict_obj = {}
+      for i in xrange(0, len(args), 2):
+        key = args[i]
+        if isinstance(key, str):
+          if not key.startswith('/'):
+            raise PdfTokenParseError('dict key %r must start with slash' % key)
+          dict_obj[args[i][1:]] = args[i + 1]
+        else:
+          dict_obj[args[i]] = args[i + 1]
+      return dict_obj
+
+    try:
+      # This eval is safe since we've generated all the tokens in output
+      # above.
+      return eval(''.join(output), {'D': BuildDict})
+    except Exception, exc:
+      raise PdfTokenParseError('%s: %s' % (exc.__class__, exc))
 
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
@@ -2346,7 +2440,7 @@ class PdfData(object):
   } if
 } bind def
 
-/ReadStreamFile {  % <streamdict> ReadStream <streamdict> <compressed-file>
+/ReadStreamFile {  % <streamdict> ReadStreamFile <streamdict> <compressed-file>
   dup /Length get
   % Reading to a string would fail for >65535 bytes (this is the maximum
   % string size in PostScript)
@@ -2369,6 +2463,26 @@ class PdfData(object):
   currentfile ReadWhitespaceChar pop
 } bind def
 
+% <streamdict> <compressed-file> DecompressStreamFile
+% <streamdict> <decompressed-file>
+/DecompressStreamFile {
+  exch
+  % TODO(pts): Give these parameters to the /ReusableStreamDecode in
+  % ReadStreamFile.
+  9 dict begin
+    /Intent 2 def  % sequential access
+    /CloseSource true def
+    dup /Filter .knownget not {null} if dup null ne {
+      dup /Filter exch def
+    } if pop
+    dup /DecodeParms .knownget not {null} if dup null ne {
+      dup /DecodeParms exch def
+    } if pop
+  exch currentdict end
+  % stack: <streamdict> <compressed-file> <reusabledict>
+  /ReusableStreamDecode filter
+} bind def
+
 /obj {  % <objnumber> <gennumber> obj -
   pop
   save exch
@@ -2386,23 +2500,9 @@ class PdfData(object):
 % by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
 
 /stream {  % <streamdict> stream -
-  ReadStreamFile
-  % stack: <streamdict> <compressed-file>
-  exch
-  % TODO(pts): Give these parameters to th /ReusableStreamDecode in
-  % ReadStreamFile.
-  9 dict begin
-    /Intent 2 def  % sequential access
-    /CloseSource true def
-    dup /Filter .knownget not {null} if dup null ne {
-      dup /Filter exch def
-    } if pop
-    dup /DecodeParms .knownget not {null} if dup null ne {
-      dup /DecodeParms exch def
-    } if pop
-  currentdict end
-  % stack: <compressed-file> <streamdict> <reusabledict>
-  exch pop /ReusableStreamDecode filter
+  ReadStreamFile DecompressStreamFile
+  % <streamdict> <decompressed-file>
+  exch pop
   % stack: <decompressed-file> (containing a Type1 font program)
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
@@ -2470,6 +2570,7 @@ class PdfData(object):
 % </ProcSet>
 
 '''
+
   def GetFonts(self, font_type=None, do_obj_num_from_font_name=False):
     """Return dictionary containing Type1 /FontFile* objs.
 
@@ -2479,36 +2580,54 @@ class PdfData(object):
         the /FontName, e.g. /FontName/Obj42 --> 42.
     Returns:
       A dictionary mapping the obj number of the /Type/FontDescriptor obj to
-      the PdfObj of the /FontFile* obj. Please note that this dictionary is not
-      a subdictionary of self.objs, because of the different key--value
-      mapping.
+      the PdfObj of the /FontFile* obj (with /Subtype/Type1C etc.). Please note
+      that this dictionary is not a subdictionary of self.objs, because of the
+      different key--value mapping.
     """
     assert font_type in ('Type1', 'Type1C', None)
-    font_file_tag = {'Type1': 'FontFile', 'Type1C': 'FontFile3',
-                     None: None}[font_type]
+    # Also: TrueType fonts have /FontFile2.
+    good_font_file_tag = {'Type1': 'FontFile', 'Type1C': 'FontFile3',
+                          None: None}[font_type]
 
     objs = {}
     font_count = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! TODO(pts): proper PDF token sequence parsing
-      if (re.search(r'/Type\s*/FontDescriptor\b', obj.head) and
-          re.search(r'/FontName\s*/', obj.head)):
+      if (#re.search(r'/Type\s*/FontDescriptor\b', obj.head) and  # !! (nonstandard) eurotex2006.final.pdf has /Type/FontDescriptor missing
+          re.search(r'/FontName\s*/', obj.head) and
+          '/FontFile' in obj.head and # /FontFile, /FontFile2 or /FontFile3
+          '/Flags' in obj.head):
         # Type1C fonts have /FontFile3 instead of /FontFile.
         # TODO(pts): Do only Type1 fonts have /FontFile ?
         # What about Type3 fonts?
-        match = re.search(r'/(FontFile\d*)\s+(\d+)\s+0 R\b', obj.head)
-        if (match and (font_file_tag is None or
-            match.group(1) == font_file_tag)):
+        match = re.search(r'/(FontFile[23]?)\s+(\d+)\s+0 R\b', obj.head)
+        if (match and (good_font_file_tag is None or
+            match.group(1) == good_font_file_tag)):
+          font_file_tag = match.group(1)
           font_obj_num = int(match.group(2))
-          if do_obj_num_from_font_name:
+          font_obj = self.objs[font_obj_num]
+          # Known values: /Type1, /Type1C, /CIDFontType0C.
+          subtype = font_obj.Get('Subtype')
+          if subtype is not None:
+            pass
+          elif font_file_tag == 'FontFile':
+            subtype = '/Type1'
+          elif font_file_tag == 'FontFile2':
+            subtype = '/TrueType'  # TODO(pts): Find PDF standard name for this.
+          assert str(subtype).startswith('/'), (
+              'expected font /Subtype, got %r in obj %s' %
+              (subtype, font_obj_num))
+          if font_type is not None and font_type != subtype[1:]:
+            pass
+          elif do_obj_num_from_font_name:
             font_name = obj.Get('FontName')
             assert font_name is not None
             match = re.match(r'/(?:[A-Z]{6}[+])?Obj(\d+)\Z', font_name)
             assert match, 'GS generated non-Obj FontName: %s' % font_name
-            objs[int(match.group(1))] = self.objs[font_obj_num]
+            objs[int(match.group(1))] = font_obj
           else:
-            objs[obj_num] = self.objs[font_obj_num]
+            objs[obj_num] = font_obj
           font_count += 1
     if font_type is None:
       print >>sys.stderr, 'info: found %s fonts' % font_count
@@ -2585,102 +2704,91 @@ class PdfData(object):
         (type1_size, type1c_size, FormatPercent(type1c_size, type1_size)))
     return type1c_objs
 
-  IMAGE_RENDERER_PROCSET = r'''
+  TYPE1C_PARSER_PROCSET = r'''
 % <ProcSet>
-% PDF image renderer procset
-% Sun Apr  5 15:58:02 CEST 2009
+% Type1C font (CFF) parser procset
+% by pts@fazekas.hu at Tue May 19 22:46:15 CEST 2009
+
+% keys to omit from the font dictionary dump
+/OMIT << /FontName 1 /FID 1 /Encoding 1 /.OrigFont 1
+         /OrigFont 1 >> def
+
+/_DataFile DataFile (w) file def  % -sDataFile=... on the command line
 
 /stream {  % <streamdict> stream -
-  ReadStreamFile
-  % stack: <streamdict> <compressed-file>
-
-  1 index
-    (ImageRenderer: rendering image XObject ) print _ObjNumber =only
-    ( width=) print dup /Width get =only
-    ( height=) print dup /Height get =only
-    ( bpc=) print dup /BitsPerComponent get =only
-    ( colorspace=) print dup /ColorSpace get
-       % Show [/Indexed /DeviceRGB] instead of longer array.
-       dup type /arraytype eq {dup length 2 gt {0 2 getinterval}if }if ===only
-    ( filter=) print dup /Filter .knownget not {null} if ===only
-    ( decodeparms=) print dup /DecodeParms .knownget not {null} if ===only
-    ( device=) print currentpagedevice
-      /OutputDevice get dup length string cvs print
-    (\n) print flush
+  ReadStreamFile DecompressStreamFile
+  % <streamdict> <decompressed-file>
+  systemdict /FontDirectory get {pop undefinefont} forall
+  dup /MY exch /FontSetInit /ProcSet findresource begin //true ReadData
+  closefile  % is this needed?
+  % <streamdict>
   pop
-  
-  % stack: <streamdict> <compressed-file>
-  exch
-  % TODO(pts): Give these parameters to th /ReusableStreamDecode in
-  % ReadStreamFile.
-  % !! reuse this code
-  9 dict begin
-    /Intent 2 def  % sequential access
-    /CloseSource true def
-    dup /Filter .knownget not {null} if dup null ne {
-      dup /Filter exch def
-    } if pop
-    dup /DecodeParms .knownget not {null} if dup null ne {
-      dup /DecodeParms exch def
-    } if pop
-  exch currentdict end
-  % stack: <streamdict> <compressed-file> <reusabledict>
-  /ReusableStreamDecode filter
-  % stack: <streamdict> <decompressed-file> (containing image /DataSource)
-
-  9 dict begin  % Image dictionary
-  /DataSource exch def
-  % Stack: <streamdict>
-  dup /BitsPerComponent get /BitsPerComponent exch def
-  dup /Width get /Width exch def
-  dup /Height get /Height exch def
-  %dup /Decode .knownget {/Decode exch def} if
-  dup /ColorSpace get dup type /arraytype eq {
-    dup 0 get /Indexed eq {
-      % For /Indexed, set /Decode [0 x], where x == (1 << BitsPerComponent) - 1
-      /Decode [0 4 index /BitsPerComponent get 1 exch bitshift 1 sub] def
-    } if
-  } if pop
-  % We cannot affect the file name of -sOutputFile=%d.png , doing a
-  % ``<< /PageCount ... >> setpagedevice'' has no effect.
-  % It's OK to change /PageSize for each page.
-  << /PageSize [Width Height] >> setpagedevice
-  % This must come after setpagedevice to take effect.
-  dup /ColorSpace get setcolorspace
-  /ImageType 1 def
-  dup /Height get [1 0 0 -1 0 0] exch 5 exch 3 copy put pop pop
-      /ImageMatrix exch def
-  DataSource
-  currentdict end
-  % Stack: <streamdict> <datasource> <psimagedict>
-  image showpage
-  closefile
-  % Stack: <streamdict>
-  pop restore
+  /MY findfont
+  dup /FontType get 2 ne {/invalidfileaccess /NotType2Font signalerror} if
+  _DataFile _ObjNumber write===only
+  _DataFile ( <<\n) writestring
+  % SUXX: the CFF /FontName got lost (overwritten by /MY above)
+  {
+    exch dup OMIT exch known not
+    { _DataFile exch write===only
+      _DataFile ( ) writestring
+      _DataFile exch write===only
+      _DataFile (\n) writestring} {pop pop} ifelse
+  } forall
+  _DataFile (>>\n) writestring
+  systemdict /FontDirectory get {pop undefinefont} forall
+  restore  % save created by /obj
 } bind def
 % </ProcSet>
 
 '''
 
+  TYPE1C_GENERATOR_PROCSET = r'''
+% <ProcSet>
+% PDF Type1 font extraction and typesetter procset
+% by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
+
+% !!! remove duplicates
+/endobj {  % <streamdict> endobj -
+  % Undefine all fonts before running our font program.
+  systemdict /FontDirectory get {pop undefinefont} forall
+  /_FontName _ObjNumber 10 string cvs
+      % pad to 10 digits for object unification in FixFontNameInType1C.
+      dup (0000000000) exch length neg 10 add 0 exch
+      getinterval exch concatstrings
+      (Obj) exch concatstrings cvn def
+  dup /FontName _FontName put
+  dup /Encoding StandardEncoding put  % !! will everything be embedded?
+  _FontName exch definefont  % includes findfont
+  % TODO: (Type1Generator: ...) print
+  500 500 moveto
+  16 scalefont dup setfont
+  %dup /CharStrings get {pop dup === glyphshow} forall
+  dup /CharStrings get [ exch {pop} forall ] 0 get glyphshow
+  pop % <font>
+  %showpage % not needed?
+  restore
+} bind def
+% </ProcSet>
+
+'''
   @classmethod
-  def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern,
-                   gs_device):
-    """Returns: dictionary mapping obj_num to PNG filename."""
+  def ParseType1CFonts(cls, objs, ps_tmp_file_name, data_tmp_file_name):
+    """Converts /Subtype/Type1C objs to data structure representation."""
     if not objs: return {}
     output = ['%!PS-Adobe-3.0\n',
-              '% Ghostscript helper rendering PDF images as PNG\n',
+              '% Ghostscript helper parsing Type1C fonts\n',
               '%% autogenerated by %s at %s\n' % (__file__, time.time())]
     output.append(cls.GENERIC_PROCSET)
-    output.append(cls.IMAGE_RENDERER_PROCSET)
+    output.append(cls.TYPE1C_PARSER_PROCSET)
     output_prefix_len = sum(map(len, output))
-    image_size = 0
-    sorted_objs = sorted(objs)
-    for obj_num in sorted_objs:
-      image_size += objs[obj_num].size
+    type1_size = 0
+    for obj_num in sorted(objs):
+      type1_size += objs[obj_num].size
       objs[obj_num].AppendTo(output, obj_num)
-    output.append('(ImageRenderer: all OK\\n) print flush\n%%EOF\n')
+    output.append('(Type1CParser: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
-    print >>sys.stderr, ('info: writing ImageRenderer (%s image bytes) to: %s'
+    print >>sys.stderr, ('info: writing Type1CParser (%s font bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
@@ -2688,43 +2796,38 @@ class PdfData(object):
     finally:
       f.close()
 
-    # Remove old PNG output files.
-    i = 0
-    while True:
-      i += 1
-      png_tmp_file_name = png_tmp_file_pattern % i
-      if not os.path.exists(png_tmp_file_name): break
-      EnsureRemoved(png_tmp_file_name)
-      assert not os.path.exists(png_tmp_file_name)
-
+    EnsureRemoved(data_tmp_file_name)
     gs_cmd = (
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=%s '
-        '-sOutputFile=%s -f %s'
-        % (ShellQuote(gs_device),
-           ShellQuote(png_tmp_file_pattern), ShellQuote(ps_tmp_file_name)))
-    print >>sys.stderr, ('info: executing ImageRenderer with Ghostscript'
+        'gs -q -dNOPAUSE -dBATCH -sDEVICE=nullpage '
+        '-sDataFile=%s -f %s'
+        % (ShellQuote(data_tmp_file_name), ShellQuote(ps_tmp_file_name)))
+    print >>sys.stderr, ('info: executing Type1CParser with Ghostscript'
         ': %s' % gs_cmd)
     status = os.system(gs_cmd)
     if status:
-      print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
-      assert 0, 'ImageRenderer failed (status)'
-    assert not os.path.exists(png_tmp_file_pattern % (len(objs) + 1)), (
-        'ImageRenderer created too many PNGs')
-
-    png_files = {}
-    i = 0
-    for obj_num in sorted_objs:
-      i += 1
-      png_tmp_file_name = png_tmp_file_pattern % i
-      try:
-        stat = os.stat(png_tmp_file_name)
-      except OSError:
-        print >>sys.stderr, 'info: ImageRenderer has not created output: ' % (
-            pdf_tmp_file_name)
-        assert 0, 'ImageRenderer failed (missing output PNG)'
-      png_files[obj_num] = png_tmp_file_name
-
-    return png_files
+      print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
+      assert 0, 'Type1CParser failed (status)'
+    try:
+      stat = os.stat(data_tmp_file_name)
+    except OSError:
+      print >>sys.stderr, 'info: Type1CParser has not created output: ' % (
+          data_tmp_file_name)
+      assert 0, 'Type1CParser failed (no output)'
+    os.remove(ps_tmp_file_name)
+    f = open(data_tmp_file_name)
+    try:
+      data = f.read()
+    finally:
+      f.close()
+    # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
+    # accepts it.
+    # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
+    data_objs = PdfObj.ParseValueRecursive('<<%s>>' % data)
+    assert isinstance(data_objs, dict)
+    print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(data_objs)
+    assert sorted(data_objs) == sorted(objs), 'data obj number list mismatch'
+    os.remove(data_tmp_file_name)
+    return data_objs
 
   def ConvertType1FontsToType1C(self):
     """Convert all Type1 fonts to Type1C in self, returns self."""
@@ -2733,6 +2836,7 @@ class PdfData(object):
         self.GetFonts('Type1'), 'type1cconv.tmp.ps', 'type1cconv.tmp.pdf')
     for obj_num in type1c_objs:
       obj = self.objs[obj_num]
+      assert str(obj.Get('FontName')).startswith('/')
       type1c_obj = type1c_objs[obj_num]
       # !! fix in genuine Type1C objects as well
       type1c_obj.FixFontNameInType1C()
@@ -2758,7 +2862,205 @@ class PdfData(object):
             'info: keeping original Type1 font XObject %s,%s, '
             'replacement too large: old size=%s, new size=%s' %
             (obj_num, font_file_obj_num, old_size, new_size))
+    return self
 
+  @classmethod
+  def MergeTwoType1CFonts(cls, target_font, source_font):
+    """Merge source_font to target_font, modifying the latter in place.
+
+    Example parsed Type1C font dictionary:
+
+      {'FontName': '/LNJXBX+GaramondNo8-Reg',
+       'FontBBox': [0, -19, 968, 694],
+       'FontMatrix': ['0.001', 0, 0, '0.001', 0, 0],
+       'Private': {'StemSnapH': [33, 39], 'StdHW': [33], 'BlueValues': [-20, 0, 420, 440, 689, 709], 'StemSnapV': [75, 89], 'StdVW': [75]},
+       'FontType': 2,
+       'PaintType': 0,
+       'FontInfo': {
+           'Notice': '...',
+           'Copyright': '...',
+           'FamilyName': 'GaramondNo8',
+           'UnderlinePosition': 0,
+           'UnderlineThickness': 0,
+           'FullName': 'GaramondNo8 Regular'},
+       'CharStrings': {'udieresis': '...' ...}}
+    
+    Raise:
+      target_font: A parsed Type1C font dictionary, will be modified in place.
+      source_font: A parsed Type1C font dictionary.
+    Raises:
+      FontsNotMergeable:
+    """
+    assert 'Subrs' not in target_font
+    assert 'Subrs' not in target_font['Private']  # !! not mergeable
+    assert 'Subrs' not in source_font
+    assert 'Subrs' not in source_font['Private']  # !! not mergeable
+    target_bbox = target_font['FontBBox']
+    source_bbox = source_font['FontBBox']
+    assert len(target_bbox) == 4
+    assert len(source_bbox) == 4
+    for i in xrange(len(target_bbox)):
+      assert isinstance(target_bbox[i], int)  # !! allow float
+      assert isinstance(source_bbox[i], int)  # !! allow float
+    # !! proper check for FontBBox and FontMatrix floats.
+    # We ignore FontInfo and UniqueID.
+    # !! not match: __main__.FontsNotMergeable: mismatch in key FontBBox: target=[0, -19, 968, 694] source=[-55, -270, 968, 777]
+    for key in ('FontMatrix', 'Private', 'FontType', 'PaintType'):
+      target_value = target_font[key]
+      source_value = source_font[key]
+      if target_value != source_value:
+        raise FontsNotMergeable('mismatch in key %s: target=%r source=%r' %
+            (key, target_value, source_value))
+    target_cs = target_font['CharStrings']
+    source_cs = source_font['CharStrings']
+    for name in sorted(source_cs):
+      if name in target_cs and source_cs[name] != target_cs[name]:
+        raise FontsNotMergeable('mismatch on char /%s' % name)
+
+    # Only modify after doing all the checks.
+    target_cs.update(source_cs)
+    target_bbox[0] = min(target_bbox[0], source_bbox[0])  # llx
+    target_bbox[1] = min(target_bbox[1], source_bbox[1])  # lly
+    target_bbox[2] = max(target_bbox[2], source_bbox[2])  # urx
+    target_bbox[3] = max(target_bbox[3], source_bbox[3])  # ury
+
+  def UnifyType1CFonts(self):
+    """Unify different subsets of the same Type1C font.
+    
+    Returns:
+      self.
+    """
+    type1c_objs = self.GetFonts(font_type='Type1C')
+    if not type1c_objs:
+      return self
+    parsed_fonts = self.ParseType1CFonts(
+        objs=type1c_objs, ps_tmp_file_name='type1cconv.parse.tmp.ps',
+        data_tmp_file_name='type1cconv.parsedata.tmp.ps')
+    # !! merge byte-by-byte identical fonts first (easier) -- are there
+    # any?
+    garas = []  # !!!
+    gara_obj_nums = []
+    for obj_num in sorted(parsed_fonts):
+      obj = self.objs[obj_num]
+      parsed_font = parsed_fonts[obj_num]
+      parsed_font['FontName'] = obj.Get('FontName')
+      assert parsed_font['FontType'] == 2
+      assert 'CharStrings' in parsed_font
+      assert 'FontMatrix' in parsed_font
+      assert 'Private' in parsed_font
+      assert 'PaintType' in parsed_font
+      assert 'FontInfo' in parsed_font
+      assert 'CharStrings' in parsed_font
+      assert 'Subrs' not in parsed_font  # !! add a test for Subrs, maybe not in toplevel dict; maybe not dumped (because of noexec? -- but other parts of private are dumped)
+      assert 'Subrs' not in parsed_font['Private']
+      if parsed_font['FontName'].endswith('+GaramondNo8-Reg'):
+        gara_obj_nums.append(obj_num)
+        garas.append(parsed_font)
+      # Extra, not checked: 'UniqueID'
+      print parsed_font['FontName']
+    assert len(garas) > 1
+    merged_font = garas[0]
+    c = len(merged_font['CharStrings'])
+    for i in xrange(1, len(garas)):
+      c += len(garas[i]['CharStrings'])
+      print 'MERGING', garas[i]['FontName']
+      self.MergeTwoType1CFonts(merged_font, garas[i])
+    print >>sys.stderr, 'info: reduced font %s --> %s' % (
+        c, len(merged_font['CharStrings']))
+
+    def AppendSerialized(value, output):
+      if isinstance(value, list):
+        output.append('[')
+        for item in value:
+          AppendSerialized(item, output)
+          output.append(' ')
+        output.append(']')
+      elif isinstance(value, dict):
+        output.append('<<')
+        for item in sorted(value):
+          if isinstance(item, str):
+            output.append('/' + item)
+          else:
+            AppendSerialized(item, output)
+          output.append(' ')
+          AppendSerialized(value[item], output)
+          output.append(' ')
+        output.append('>>')
+      else:
+        output.append(str(value))
+        output.append(' ')
+
+    # !! 
+    output = ['%!PS-Adobe-3.0\n',
+              '% Ghostscript helper generating Type1C fonts\n',
+              '%% autogenerated by %s at %s\n' % (__file__, time.time())]
+    output.append(self.GENERIC_PROCSET)
+    output.append(self.TYPE1C_GENERATOR_PROCSET)
+    output_prefix_len = sum(map(len, output))
+    output.append('%s 0 obj' % gara_obj_nums[0])
+    AppendSerialized(merged_font, output)
+    output.append('endobj\n')
+    output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
+    ps_tmp_file_name = 'type1cconv.type1cgen.tmp.ps'
+    pdf_tmp_file_name = 'type1cconv.type1cgen.tmp.pdf'
+    output_str = ''.join(output)
+    print >>sys.stderr, ('info: writing Type1CGenerator (%s font bytes) to: %s'
+        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    f = open(ps_tmp_file_name, 'wb')
+    try:
+      f.write(output_str)
+    finally:
+      f.close()
+
+    EnsureRemoved(pdf_tmp_file_name)
+    # !! unify command
+    gs_cmd = (
+        'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        # Ghostscript 8.54 needs SubsetFonts this up here
+        # for Ghostscript 8.61, <</SubsetFonts ...>>setpagedevice is also OK.
+        '-dSubsetFonts=false '
+        '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
+        '-sOutputFile=%s -c "<</CompatibilityLevel 1.4 /EmbedAllFonts true '
+        # Ghostscript removes all characters from fonts outside this range.
+        '/PageSize [1000 1000] '
+        '/ImagingBBox null '  # No effect, characters get clipped.
+        '/Optimize true /SubsetFonts false>>setpagedevice .setpdfwrite" -f %s'
+        % (ShellQuote(pdf_tmp_file_name), ShellQuote(ps_tmp_file_name)))
+    print >>sys.stderr, ('info: executing Type1CGenerator with Ghostscript'
+        ': %s' % gs_cmd)
+    status = os.system(gs_cmd)
+    if status:
+      print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
+      assert 0, 'Type1CGenerator failed (status)'
+    try:
+      stat = os.stat(pdf_tmp_file_name)
+    except OSError:
+      print >>sys.stderr, 'info: Type1CGenerator has not created output: ' % (
+          pdf_tmp_file_name)
+      assert 0, 'Type1CGenerator failed (no output)'
+    os.remove(ps_tmp_file_name)
+    pdf = PdfData().Load(pdf_tmp_file_name)
+    # TODO(pts): Better error reporting if the font name is wrong.
+    loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
+    assert sorted(loaded_objs) == gara_obj_nums[:1], (  # !!!
+        'font obj number list mismatch')
+    type1c_size = 0
+    for obj_num in loaded_objs:
+      loaded_obj = loaded_objs[obj_num]
+      # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
+      assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
+          'could not convert font %s to Type1C' % obj_num)
+      type1c_size += loaded_objs[obj_num].size
+      for gara_obj_num in gara_obj_nums:
+        # !! unify /FontDescriptor as well, remove excessive objs
+        # With aliasing, we modify self.objs.
+        type1c_objs[gara_obj_num].head = loaded_obj.head
+        type1c_objs[gara_obj_num].stream = loaded_obj.stream
+    # TODO(pts): Don't remove if command-line flag.
+    os.remove(pdf_tmp_file_name)
+    # TODO(pts): Undo if no reduction in size.
+    print >>sys.stderr, (  # !! better message
+        'info: generated total Type1C font size %s' % type1c_size)
     return self
 
   @classmethod
@@ -2952,6 +3254,132 @@ class PdfData(object):
       print >>sys.stderr, 'info: uninlined %s images, saved %s bytes' % (
           uninline_count, uninline_bytes_saved)
     return self
+
+  # For testing: pts2.lzw.pdf
+  IMAGE_RENDERER_PROCSET = r'''
+% <ProcSet>
+% PDF image renderer procset
+% Sun Apr  5 15:58:02 CEST 2009
+
+/stream {  % <streamdict> stream -
+  ReadStreamFile
+  % stack: <streamdict> <compressed-file>
+
+  1 index
+    (ImageRenderer: rendering image XObject ) print _ObjNumber =only
+    ( width=) print dup /Width get =only
+    ( height=) print dup /Height get =only
+    ( bpc=) print dup /BitsPerComponent get =only
+    ( colorspace=) print dup /ColorSpace get
+       % Show [/Indexed /DeviceRGB] instead of longer array.
+       dup type /arraytype eq {dup length 2 gt {0 2 getinterval}if }if ===only
+    ( filter=) print dup /Filter .knownget not {null} if ===only
+    ( decodeparms=) print dup /DecodeParms .knownget not {null} if ===only
+    ( device=) print currentpagedevice
+      /OutputDevice get dup length string cvs print
+    (\n) print flush
+  pop
+  % stack: <streamdict> <compressed-file>
+  DecompressStreamFile
+  % stack: <streamdict> <decompressed-file> (containing image /DataSource)
+
+  9 dict begin  % Image dictionary
+  /DataSource exch def
+  % Stack: <streamdict>
+  dup /BitsPerComponent get /BitsPerComponent exch def
+  dup /Width get /Width exch def
+  dup /Height get /Height exch def
+  %dup /Decode .knownget {/Decode exch def} if
+  dup /ColorSpace get dup type /arraytype eq {
+    dup 0 get /Indexed eq {
+      % For /Indexed, set /Decode [0 x], where x == (1 << BitsPerComponent) - 1
+      /Decode [0 4 index /BitsPerComponent get 1 exch bitshift 1 sub] def
+    } if
+  } if pop
+  % We cannot affect the file name of -sOutputFile=%d.png , doing a
+  % ``<< /PageCount ... >> setpagedevice'' has no effect.
+  % It's OK to change /PageSize for each page.
+  << /PageSize [Width Height] >> setpagedevice
+  % This must come after setpagedevice to take effect.
+  dup /ColorSpace get setcolorspace
+  /ImageType 1 def
+  dup /Height get [1 0 0 -1 0 0] exch 5 exch 3 copy put pop pop
+      /ImageMatrix exch def
+  DataSource
+  currentdict end
+  % Stack: <streamdict> <datasource> <psimagedict>
+  image showpage
+  closefile
+  % Stack: <streamdict>
+  pop restore
+} bind def
+% </ProcSet>
+
+'''
+
+  @classmethod
+  def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern,
+                   gs_device):
+    """Returns: dictionary mapping obj_num to PNG filename."""
+    if not objs: return {}
+    output = ['%!PS-Adobe-3.0\n',
+              '% Ghostscript helper rendering PDF images as PNG\n',
+              '%% autogenerated by %s at %s\n' % (__file__, time.time())]
+    output.append(cls.GENERIC_PROCSET)
+    output.append(cls.IMAGE_RENDERER_PROCSET)
+    output_prefix_len = sum(map(len, output))
+    image_size = 0
+    sorted_objs = sorted(objs)
+    for obj_num in sorted_objs:
+      image_size += objs[obj_num].size
+      objs[obj_num].AppendTo(output, obj_num)
+    output.append('(ImageRenderer: all OK\\n) print flush\n%%EOF\n')
+    output_str = ''.join(output)
+    print >>sys.stderr, ('info: writing ImageRenderer (%s image bytes) to: %s'
+        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    f = open(ps_tmp_file_name, 'wb')
+    try:
+      f.write(output_str)
+    finally:
+      f.close()
+
+    # Remove old PNG output files.
+    i = 0
+    while True:
+      i += 1
+      png_tmp_file_name = png_tmp_file_pattern % i
+      if not os.path.exists(png_tmp_file_name): break
+      EnsureRemoved(png_tmp_file_name)
+      assert not os.path.exists(png_tmp_file_name)
+
+    gs_cmd = (
+        'gs -q -dNOPAUSE -dBATCH -sDEVICE=%s '
+        '-sOutputFile=%s -f %s'
+        % (ShellQuote(gs_device),
+           ShellQuote(png_tmp_file_pattern), ShellQuote(ps_tmp_file_name)))
+    print >>sys.stderr, ('info: executing ImageRenderer with Ghostscript'
+        ': %s' % gs_cmd)
+    status = os.system(gs_cmd)
+    if status:
+      print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
+      assert 0, 'ImageRenderer failed (status)'
+    assert not os.path.exists(png_tmp_file_pattern % (len(objs) + 1)), (
+        'ImageRenderer created too many PNGs')
+
+    png_files = {}
+    i = 0
+    for obj_num in sorted_objs:
+      i += 1
+      png_tmp_file_name = png_tmp_file_pattern % i
+      try:
+        stat = os.stat(png_tmp_file_name)
+      except OSError:
+        print >>sys.stderr, 'info: ImageRenderer has not created output: ' % (
+            pdf_tmp_file_name)
+        assert 0, 'ImageRenderer failed (missing output PNG)'
+      png_files[obj_num] = png_tmp_file_name
+
+    return png_files
 
   def OptimizeImages(self, use_pngout=True, use_jbig2=True):
     """Optimize image XObjects in the PDF."""
@@ -3535,6 +3963,7 @@ def main(argv):
   (PdfData().Load(file_name)
    .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
+   #.UnifyType1CFonts() !!! unstable so far, disabled by default
    .ConvertInlineImagesToXObjects()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .OptimizeObjs()
