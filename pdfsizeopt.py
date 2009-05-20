@@ -1092,6 +1092,7 @@ class PdfObj(object):
     match = scanner.match()
     last_end = 0
     output = []
+    print 'GGG'
     # TODO(pts): Reimplement this using a stack.
     while match:
       last_end = match.end()
@@ -1145,6 +1146,7 @@ class PdfObj(object):
           dict_obj[args[i]] = args[i + 1]
       return dict_obj
 
+    print 'AAA'
     try:
       # This eval is safe since we've generated all the tokens in output
       # above.
@@ -2715,6 +2717,39 @@ class PdfData(object):
 
 /_DataFile DataFile (w) file def  % -sDataFile=... on the command line
 
+% Dump the specified value to the specified stream in a parable form.
+% Dumps strings as hex (<...>). Dumps all arrays as [...], never {...}. The
+% motivation is to dump quickly, and read it back from Python quicly. Since
+% PdfObj.CompressValue called from PdfObj.ParseValueRecursive is slow on
+% (...) strings, we dump strings as <...>.
+/Dump { % <stream> <value> Dump -
+  dup type /dicttype eq {
+    1 index (<<) writestring
+    { exch 2 index exch Dump
+      1 index ( ) writestring
+      1 index exch Dump
+      dup ( ) writestring
+    } forall
+    (>>) writestring
+  } {
+    dup type /arraytype eq {
+      1 index ([) writestring
+      { 1 index exch Dump
+        dup ( ) writestring
+      } forall
+      (]) writestring
+    } {
+      dup type /stringtype eq {
+        1 index (<) writestring
+        1 index exch writehexstring
+        (>) writestring
+      } {
+        write===only
+      } ifelse
+    } ifelse
+  } ifelse
+} bind def
+
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
   % <streamdict> <decompressed-file>
@@ -2732,7 +2767,7 @@ class PdfData(object):
     exch dup OMIT exch known not
     { _DataFile exch write===only
       _DataFile ( ) writestring
-      _DataFile exch write===only
+      _DataFile exch Dump
       _DataFile (\n) writestring} {pop pop} ifelse
   } forall
   _DataFile (>>\n) writestring
@@ -2813,6 +2848,8 @@ class PdfData(object):
       print >>sys.stderr, 'info: Type1CParser has not created output: ' % (
           data_tmp_file_name)
       assert 0, 'Type1CParser failed (no output)'
+    # ps_tmp_file_name is usually about 5 times as large as the input of
+    # Type1CParse (pdf_tmp_file_name)
     os.remove(ps_tmp_file_name)
     f = open(data_tmp_file_name)
     try:
@@ -2822,6 +2859,7 @@ class PdfData(object):
     # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
     # accepts it.
     # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
+    print 'XXX'
     data_objs = PdfObj.ParseValueRecursive('<<%s>>' % data)
     assert isinstance(data_objs, dict)
     print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(data_objs)
@@ -3963,7 +4001,7 @@ def main(argv):
   (PdfData().Load(file_name)
    .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
-   #.UnifyType1CFonts() !!! unstable so far, disabled by default
+   .UnifyType1CFonts() #!!! unstable so far, disabled by default
    .ConvertInlineImagesToXObjects()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .OptimizeObjs()
