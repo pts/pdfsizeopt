@@ -905,7 +905,7 @@ class PdfObj(object):
         if i < match.start():
           output.append(data[i : match.start()])
         i = match.end()
-        if match.group(1):  # simple string literal
+        if match.group(1) is not None:  # simple string literal
           output.append('<%s>' % match.group(1).encode('hex'))
         elif match.group(2):  # complicated string literal
           end_ofs_out = []
@@ -965,7 +965,7 @@ class PdfObj(object):
 
       This function assumes that match is in data.
       """
-      if match.group(2):  # hex string
+      if match.group(2) is not None:  # hex string
         s = cls.PDF_WHITESPACE_RE.sub('', match.group(2))
         if len(s) % 2 != 0:
           s += '0'
@@ -1087,72 +1087,71 @@ class PdfObj(object):
       PdfTokenParseError
     """
     data = PdfObj.CompressValue(data, do_emit_strings_as_hex=True)
-    #data = '<<42 43/Foo [bar, <<>>]5 6>>'  # TODO(pts): Write tests
     scanner = PdfObj.PDF_SIMPLE_TOKEN_RE.scanner(data)
     match = scanner.match()
     last_end = 0
-    output = []
-    print 'GGG'
+    stack = [[]]
     # TODO(pts): Reimplement this using a stack.
     while match:
       last_end = match.end()
       token = match.group(0)
-      if match.group(1):
+      if token == '<<':
+        stack.append({})
+        match = scanner.match()
+        continue
+      elif token == '[':
+        stack.append([])
+        match = scanner.match()
+        continue
+      elif token == ' ':
+        match = scanner.match()
+        continue
+      elif match.group(1):
         try:
           token = int(token)
         except ValueError:
-          pass
-        output.append(repr(token))
-        output.append(', ')
-      elif token == '<<':
-        output.append('D([')  # Need the array for >255 arguments.
+          if token == 'true':
+            token = True
+          elif token == 'false':
+            token = False
+          elif token == 'null':
+            token = None
       elif token == '>>':
-        output.append('])')
-        output.append(', ')
-      elif token == '[':
-        output.append(token)
+        if not isinstance(stack[-1], dict):
+          raise PdfTokenParseError('unexpected dict-close')
+        token = stack.pop()
       elif token == ']':
-        output.append(token)
-        output.append(', ')
-      elif token == ' ':
-        pass
-      else:
-        assert token.startswith('<') and token.endswith('>')
-        #output.append(repr(token[1 : -1].decode('hex')))
-        output.append("'%s'" % token)  # keep it in hex
-        output.append(', ')
+        if not isinstance(stack[-1], list):
+          raise PdfTokenParseError('unexpected array-close')
+        token = stack.pop()
+        if not stack:
+          raise PdfTokenParseError('unexpected array-close at top level')
+      # Otherwise token is a hex string constant. Keep it as is (in hex).
+      if stack[-1] is None:  # token is a value in a dict
+        stack.pop()
+        stack[-2][stack[-1]] = token
+        stack.pop()
+      elif isinstance(stack[-1], dict):  # token is a key in a dict
+        if isinstance(token, str) and token[0] == '/':
+          stack.append(token[1:])
+        else:
+          stack.append(token)
+        stack.append(None)
+      else:  # token is an item in an array
+        stack[-1].append(token)
       match = scanner.match()
+
     if last_end != len(data):
       raise PdfTokenParseError(
          'syntax error at %r...' % data[last_end : last_end + 32])
-    if not output:
-      raise PdfTokenParseError('no data to parse')
-    if output[-1] != ', ':
-      raise PdfTokenParseError('data not ended properly (got %r)' % output[-1])
-    output.pop()  # remove ', '
-
-    def BuildDict(args):
-      """Build dict from args: even indexes as keys, odd indexes as values."""
-      if len(args) % 2 != 0:
-        raise PdfTokenParseError('odd number of dict elements')
-      dict_obj = {}
-      for i in xrange(0, len(args), 2):
-        key = args[i]
-        if isinstance(key, str):
-          if not key.startswith('/'):
-            raise PdfTokenParseError('dict key %r must start with slash' % key)
-          dict_obj[args[i][1:]] = args[i + 1]
-        else:
-          dict_obj[args[i]] = args[i + 1]
-      return dict_obj
-
-    print 'AAA'
-    try:
-      # This eval is safe since we've generated all the tokens in output
-      # above.
-      return eval(''.join(output), {'D': BuildDict})
-    except Exception, exc:
-      raise PdfTokenParseError('%s: %s' % (exc.__class__, exc))
+    if len(stack) != 1:
+      raise PdfTokenParseError('data structures not closed')
+    token = stack.pop()
+    if not token:
+      raise PdfTokenParseError('no values received')
+    if len(token) > 1:
+      raise PdfTokenParseError('multiple value received')
+    return token[0]
 
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
@@ -2859,7 +2858,6 @@ class PdfData(object):
     # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
     # accepts it.
     # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
-    print 'XXX'
     data_objs = PdfObj.ParseValueRecursive('<<%s>>' % data)
     assert isinstance(data_objs, dict)
     print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(data_objs)

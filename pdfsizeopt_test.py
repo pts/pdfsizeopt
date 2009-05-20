@@ -297,6 +297,41 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>', True, False, None],
                      e('[[ ] [\t[\f]] <<\t [\f[ >> true%\nfalse\fnull]'))
 
+  def testParseValueRecursive(self):
+    e = pdfsizeopt.PdfObj.ParseValueRecursive
+    self.assertEqual(None, e('null'))
+    self.assertEqual(True, e('true'))
+    self.assertEqual(False, e('false'))
+    self.assertEqual('foo', e(' foo % true\n\r '))
+    self.assertEqual(42, e('000042'))
+    self.assertEqual('0042.0', e('0042.0'))
+    self.assertEqual('/Font', e('\t/Font\f'))
+    self.assertEqual('<28282929>', e('((()))'))
+    self.assertEqual('<25>', e('(%)'))
+    self.assertEqual('<29282868656c292929296c6f295c>',
+                     e('(\\)((hel\\)\\))\\)lo)\\\\)'))
+    self.assertEqual([], e('[]'))
+    self.assertEqual({}, e('<<>>'))
+    self.assertEqual({1: 2}, e('<<1 2>>'))
+    self.assertEqual({'bar': '/baz', 5: {'A': [67, '<>', 'foo']}},
+                     e('<<5<</A[67()foo]>>bar /baz>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '1 2')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[[]')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, ']')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '3]')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<]')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(()')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '(()))')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<12')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<12<>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<1>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<%>>')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[%]')
+
   def testCompressValue(self):
     e = pdfsizeopt.PdfObj.CompressValue
     self.assertEqual('', e('\t\f\0\r \n'))
@@ -304,6 +339,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(']foo/bar(\xba\xd0)>>', e(' ]  foo\n\t  /bar\f <bAd>>>'))
     self.assertEqual('<<bAd CAFE>>', e('<<bAd  CAFE>>'))
     self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
+    self.assertEqual('()', e('()'))
+    self.assertEqual('<>', e('()', do_emit_strings_as_hex=True))
+    self.assertEqual('<fa>', e('(\xFa)', do_emit_strings_as_hex=True))
+    self.assertEqual('<7e>', e('(\\176)', do_emit_strings_as_hex=True))
     self.assertEqual('(())', e(' <2829>\t'))
     self.assertEqual('(\\)\\()', e(' <2928>\t'))
     self.assertEqual('[12 34]', e('[12%\n34]'))
@@ -394,7 +433,7 @@ class PdfSizeOptTest(unittest.TestCase):
     obj.Set('Bar', None)
     self.assertEqual({'Foo': '<2a>'}, obj._cache)
     self.assertEqual(None, obj._head)
-    self.assertEqual(len('<</Foo(*)>>') + 20, obj.size)
+    self.assertEqual(len('<</Foo(*)>>') + 40, obj.size)
     self.assertEqual('<</Foo(*)>>', obj._head)
     self.assertEqual('<</Foo(*)>>', obj.head)
     obj.head = '<</Foo(*)>>'
