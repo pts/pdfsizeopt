@@ -96,6 +96,9 @@ class FontsNotMergeable(Error):
   Please not the `Parsable' and `Mergeable' are correct spellings.
   """
 
+class FilterNotImplementedError(Error):
+  """Raised if a stream filter is not implemented."""
+
 
 class PdfObj(object):
   """Contents of a PDF object (head and stream data).
@@ -872,6 +875,16 @@ class PdfObj(object):
     return list_obj
 
   @classmethod
+  def GetReferenceTarget(cls, data):
+    """Convert `5 0 R' to 5. Return None if data is not a reference."""
+    # TODO(pts): Allow comments in `data'.
+    match = cls.PDF_REF_AT_EOS_RE.match(data)
+    if match and int(match.group(2)) == 0:
+      return int(match.group(1))
+    else:
+      return None
+
+  @classmethod
   def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None,
                     do_emit_strings_as_hex=False):
     """Return shorter representation of a PDF token sequence.
@@ -1518,15 +1531,15 @@ class PdfObj(object):
 
   # !! def OptimizeSource()
 
-  def GetDecompressedStream(self):
+  def GetUncompressedStream(self):
     assert self.stream is not None
     filter = self.Get('Filter')
     if filter is None: return self.stream
     if filter != '/FlateDecode':
-      raise NotImplementedError('filter not implemented: %s' + filter)
+      raise FilterNotImplementedError('filter not implemented: ' + filter)
     decodeparms = self.Get('DecodeParms') or ''
     if '/Predictor' in decodeparms:
-      raise NotImplementedError('/DecodeParms not implemented')
+      raise FilterNotImplementedError('/DecodeParms not implemented')
     return zlib.decompress(self.stream)
 
   def FixFontNameInType1C(self):
@@ -1534,7 +1547,7 @@ class PdfObj(object):
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
     assert self.Get('Subtype') == '/Type1C'
-    data = self.GetDecompressedStream()
+    data = self.GetUncompressedStream()
     assert ord(data[2]) >= 4
     i0 = i = ord(data[2])  # skip header
     count, off_size = struct.unpack('>HB', data[i : i + 3])
@@ -1934,7 +1947,7 @@ class ImageData(object):
       match = re.match(r'(\d+)\s+0\s+R\Z', contents)
       assert match
       content_obj = pdf.objs[int(match.group(1))]
-      content_stream = content_obj.GetDecompressedStream()
+      content_stream = content_obj.GetUncompressedStream()
       content_stream = ' '.join(
           content_stream.strip(PdfObj.PDF_WHITESPACE_CHARS).split())
       number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
@@ -2913,7 +2926,6 @@ class PdfData(object):
     Example parsed Type1C font dictionary:
 
       {'FontName': '/LNJXBX+GaramondNo8-Reg',
-       'FontBBox': [0, -19, 968, 694],
        'FontMatrix': ['0.001', 0, 0, '0.001', 0, 0],
        'Private': {'StemSnapH': [33, 39], 'StdHW': [33], 'BlueValues': [-20, 0, 420, 440, 689, 709], 'StemSnapV': [75, 89], 'StdVW': [75]},
        'FontType': 2,
@@ -2937,16 +2949,11 @@ class PdfData(object):
     assert 'Subrs' not in target_font['Private']  # !! not mergeable
     assert 'Subrs' not in source_font
     assert 'Subrs' not in source_font['Private']  # !! not mergeable
-    target_bbox = target_font['FontBBox']
-    source_bbox = source_font['FontBBox']
-    assert len(target_bbox) == 4
-    assert len(source_bbox) == 4
-    for i in xrange(len(target_bbox)):
-      assert isinstance(target_bbox[i], int)  # !! allow float
-      assert isinstance(source_bbox[i], int)  # !! allow float
-    # !! proper check for FontBBox and FontMatrix floats.
+    # Our caller should take care of removing FontBBox.
+    assert 'FontBBox' not in source_font
+    assert 'FontBBox' not in target_font
+    # !! proper check for FontMatrix floats.
     # We ignore FontInfo and UniqueID.
-    # !! not match: __main__.FontsNotMergeable: mismatch in key FontBBox: target=[0, -19, 968, 694] source=[-55, -270, 968, 777]
     for key in ('FontMatrix', 'Private', 'FontType', 'PaintType'):
       target_value = target_font[key]
       source_value = source_font[key]
@@ -2961,10 +2968,6 @@ class PdfData(object):
 
     # Only modify after doing all the checks.
     target_cs.update(source_cs)
-    target_bbox[0] = min(target_bbox[0], source_bbox[0])  # llx
-    target_bbox[1] = min(target_bbox[1], source_bbox[1])  # lly
-    target_bbox[2] = max(target_bbox[2], source_bbox[2])  # urx
-    target_bbox[3] = max(target_bbox[3], source_bbox[3])  # ury
 
   def UnifyType1CFonts(self):
     """Unify different subsets of the same Type1C font.
@@ -2975,15 +2978,62 @@ class PdfData(object):
     type1c_objs = self.GetFonts(font_type='Type1C')
     if not type1c_objs:
       return self
+
+    # merge byte-by-byte identical fonts
+    duplicate_count = 0
+    h = {}
+    for obj_num in type1c_objs:
+      type1c_obj = type1c_objs[obj_num]
+      head_dict = PdfObj.ParseDict(type1c_obj.head)
+      assert head_dict['Subtype'] == '/Type1C'
+      try:
+        stream = type1c_obj.GetUncompressedStream()
+        head_dict.clear()
+      except FilterNotImplementedError:
+        stream = type1c_obj.stream
+        for key in sorted(head_dict):
+          if key != 'Filter' and key != 'DecodeParms':
+            del head_dict[key]
+      key = (PdfObj.SerializeDict(head_dict), stream)
+      data_len = len(key[0]) + len(key[1])
+      if key in h:
+        h[key].append((data_len, obj_num))
+      else:
+        h[key] = [(data_len, obj_num)]
+    for key in h:
+      same_type1c_objs = h[key]
+      if len(same_type1c_objs) < 2:
+        continue
+      # For testing: tuzv.pdf
+      # Use sort() instead of min(...) to find the smallest tuple, min(...)
+      # is buggy on tuples.
+      same_type1c_objs.sort()  # smallest first
+      master_obj_num = None
+      for data_len, obj_num in same_type1c_objs:
+        obj = self.objs[obj_num]
+        target_obj_num = PdfObj.GetReferenceTarget(obj.Get('FontFile3'))
+        assert (
+            target_obj_num is not None and
+            self.objs[target_obj_num] is type1c_objs[obj_num]), (
+            'bad /FontFile3 target in %s' % obj_num)
+        if master_obj_num is None:
+          master_obj_num = target_obj_num
+        elif master_obj_num != target_obj_num:
+          obj.Set('FontFile3', '%s 0 R' % master_obj_num)
+          del self.objs[target_obj_num]
+          duplicate_count += 1
+    h.clear()
+    if duplicate_count:
+      print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
+          duplicate_count)
+
     parsed_fonts = self.ParseType1CFonts(
         objs=type1c_objs, ps_tmp_file_name='type1cconv.parse.tmp.ps',
         data_tmp_file_name='type1cconv.parsedata.tmp.ps')
-    # !! merge byte-by-byte identical fonts first (easier) -- are there
-    # any?
     garas = []  # !!!
     gara_obj_nums = []
     for obj_num in sorted(parsed_fonts):
-      obj = self.objs[obj_num]
+      obj = self.objs[obj_num]  # /FontDescriptor
       parsed_font = parsed_fonts[obj_num]
       parsed_font['FontName'] = obj.Get('FontName')
       assert parsed_font['FontType'] == 2
@@ -2995,6 +3045,10 @@ class PdfData(object):
       assert 'CharStrings' in parsed_font
       assert 'Subrs' not in parsed_font  # !! add a test for Subrs, maybe not in toplevel dict; maybe not dumped (because of noexec? -- but other parts of private are dumped)
       assert 'Subrs' not in parsed_font['Private']
+      if 'FontBBox' in parsed_font:
+        # This is part of the /FontDescriptor, we don't need it in the Type1C
+        # font.
+        del parsed_font['FontBBox']
       if parsed_font['FontName'].endswith('+GaramondNo8-Reg'):
         gara_obj_nums.append(obj_num)
         garas.append(parsed_font)
@@ -3006,8 +3060,9 @@ class PdfData(object):
     c = len(merged_font['CharStrings'])
     for i in xrange(1, len(garas)):
       c += len(garas[i]['CharStrings'])
-      print 'MERGING', garas[i]['FontName']
-      self.MergeTwoType1CFonts(merged_font, garas[i])
+      print 'MERGING', garas[i]['FontName'], self.objs[gara_obj_nums[i]].head
+      self.MergeTwoType1CFonts(merged_font, garas[i])  # !! except
+    #assert 0  #!!!
     print >>sys.stderr, 'info: reduced font %s --> %s' % (
         c, len(merged_font['CharStrings']))
 
@@ -3033,6 +3088,7 @@ class PdfData(object):
         output.append(str(value))
         output.append(' ')
 
+    # !! fix the /BaseFont in /Font (PDF spec says they must be identical)
     # !! 
     output = ['%!PS-Adobe-3.0\n',
               '% Ghostscript helper generating Type1C fonts\n',
@@ -3216,7 +3272,7 @@ class PdfData(object):
       width = int(bbox[2])
       height = int(bbox[3])
 
-      stream = obj.GetDecompressedStream()
+      stream = obj.GetUncompressedStream()
       # TODO(pts): Match comments etc.
       match = re.match(
           r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
@@ -3505,7 +3561,8 @@ class PdfData(object):
         colorspace = re.sub(
             r'\b(\d+)\s+0\s+R\s*(?=\]\Z)',
             (lambda match:
-             obj.EscapeString(self.objs[int(match.group(1))].GetDecompressedStream())),
+             obj.EscapeString(self.objs[int(match.group(1))]
+             .GetUncompressedStream())),
             colorspace)
         if colorspace != colorspace0:
           if obj is obj0:
