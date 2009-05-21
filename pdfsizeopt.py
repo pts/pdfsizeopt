@@ -318,23 +318,28 @@ class PdfObj(object):
   @classmethod
   def GetNumber(cls, data):
     """Return an int, log, float or None."""
-    if (isinstance(data, int) or isinstance(data, long) or
-        isinstance(data, float)):
-      return data
+    if isinstance(data, int) or isinstance(data, long):
+      return int(data)
+    elif isinstance(data, float):
+      pass
     elif not isinstance(data, str):
       return None
     elif data == '.':
-      return 0.0
+      return 0
     elif re.match(r'-?\d+[.]', data):
-      return float(data[:-1])
+      data = float(data[:-1])
     else:
       try:
         if '.' in data:
-          return float(data)
+          data = float(data)
         else:
           return int(data)
       except ValueError:
         return None
+    if isinstance(data, float) and int(data) == data:
+      return int(data)
+    else:
+      return data
 
   def Get(self, key, default=None):
     """Get value for key if self.head is a PDF dict.
@@ -2920,6 +2925,49 @@ class PdfData(object):
     return self
 
   @classmethod
+  def MergeTwoType1CFontDescriptors(cls, target_fd, source_fd):
+    """Merge two /FontDescriptor objs.
+
+    The entry for /CharSet and some other optional or unimportant entries
+    are left untouched in target_fd.
+
+    Raise:
+      target_font: A PdfObj of /Type/FontDescriptor, will be modified in place.
+      source_font: A PdfObj of /Type/FontDescriptor.
+    Raises:
+      FontsNotMergeable:
+    """
+    for key in ('Flags', 'StemH'):
+      target_value = target_fd.Get(key)
+      source_value = source_fd.Get(key)
+      if target_value != source_value:
+        # TODO(pts): Show the object numbers in the exception.
+        raise FontsNotMergeable(
+            'different /%s values: target=%s source=%s' %
+            (key, target_value, source_value))
+
+    source_bbox_str = PdfObj.ParseArray(source_fd.Get('FontBBox'))
+    target_bbox_str = PdfObj.ParseArray(target_fd.Get('FontBBox'))
+    if source_bbox_str != target_bbox_str:
+      source_bbox = map(PdfObj.GetNumber, source_bbox_str)
+      target_bbox = map(PdfObj.GetNumber, target_bbox_str)
+      if source_bbox != target_bbox:
+        # For testing: font GaramondNo8Reg in eurotex2006.final.pdf 
+        target_bbox[0] = min(target_bbox[0], source_bbox[0])  # llx
+        target_bbox[1] = min(target_bbox[1], source_bbox[1])  # lly
+        target_bbox[2] = max(target_bbox[2], source_bbox[2])  # urx
+        target_bbox[3] = max(target_bbox[3], source_bbox[3])  # ury
+
+    for key in ('ItalicAngle', 'Ascent', 'Descent', 'MissingWidth'):
+      # It is not important for these required entries to match, so we just
+      # copy from source if the value is missing from destination.
+      target_value = target_fd.Get(key)
+      if target_value is None:
+        source_value = source_fd.Get(key)
+        if source_value is not None:
+          target_fd.Set(key, source_value)
+
+  @classmethod
   def MergeTwoType1CFonts(cls, target_font, source_font):
     """Merge source_font to target_font, modifying the latter in place.
 
@@ -2971,7 +3019,7 @@ class PdfData(object):
 
   def UnifyType1CFonts(self):
     """Unify different subsets of the same Type1C font.
-    
+
     Returns:
       self.
     """
@@ -2979,10 +3027,30 @@ class PdfData(object):
     if not type1c_objs:
       return self
 
-    # merge byte-by-byte identical fonts
+    orig_type1c_size = 0
+    for obj_num in sorted(type1c_objs):
+      obj = self.objs[obj_num]  # /Type/FontDescriptor
+      assert obj.stream is None
+      assert obj.Get('Flags') is not None
+      assert obj.Get('StemV') is not None
+      assert str(obj.Get('FontName')).startswith('/')
+      assert str(obj.Get('FontBBox')).startswith('[')
+      # These entries are important only for finding substitute fonts, so
+      # we can get rid of them.
+      obj.Set('FontFamily', None)
+      obj.Set('FontStretch', None)
+      obj.Set('FontWeight', None)
+      obj.Set('Leading', None)
+      obj.Set('XHeight', None)
+      obj.Set('StemH', None)
+      obj.Set('AvgWidth', None)
+      obj.Set('MaxWidth', None)
+      orig_type1c_size += type1c_objs[obj_num].size + obj.size
+
+    # Merge byte-by-byte identical fonts.
     duplicate_count = 0
     h = {}
-    for obj_num in type1c_objs:
+    for obj_num in sorted(type1c_objs):
       type1c_obj = type1c_objs[obj_num]
       head_dict = PdfObj.ParseDict(type1c_obj.head)
       assert head_dict['Subtype'] == '/Type1C'
@@ -3020,6 +3088,8 @@ class PdfData(object):
           master_obj_num = target_obj_num
         elif master_obj_num != target_obj_num:
           obj.Set('FontFile3', '%s 0 R' % master_obj_num)
+          # TODO(pts): What if self.objs has another reference to
+          # target_obj_num, which is not coming from /FontDescriptor{}s?
           del self.objs[target_obj_num]
           duplicate_count += 1
     h.clear()
@@ -3033,7 +3103,8 @@ class PdfData(object):
     garas = []  # !!!
     gara_obj_nums = []
     for obj_num in sorted(parsed_fonts):
-      obj = self.objs[obj_num]  # /FontDescriptor
+      obj = self.objs[obj_num]  # /Type/FontDescriptor
+      assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       parsed_font['FontName'] = obj.Get('FontName')
       assert parsed_font['FontType'] == 2
@@ -3057,14 +3128,34 @@ class PdfData(object):
     if not garas: return self
     assert len(garas) > 1
     merged_font = garas[0]
-    c = len(merged_font['CharStrings'])
+    # /Type/FontDescriptor
+    merged_fontdesc_obj = PdfObj(self.objs[gara_obj_nums[0]])
+    orig_char_count = len(merged_font['CharStrings'])
     for i in xrange(1, len(garas)):
-      c += len(garas[i]['CharStrings'])
-      print 'MERGING', garas[i]['FontName'], self.objs[gara_obj_nums[i]].head
-      self.MergeTwoType1CFonts(merged_font, garas[i])  # !! except
-    #assert 0  #!!!
-    print >>sys.stderr, 'info: reduced font %s --> %s' % (
-        c, len(merged_font['CharStrings']))
+      obj = self.objs[gara_obj_nums[i]]  # /Type/FontDescriptor
+      orig_char_count += len(garas[i]['CharStrings'])
+      print 'MERGING', garas[i]['FontName']
+      # !! handle exceptions
+      self.MergeTwoType1CFontDescriptors(merged_fontdesc_obj, obj)
+      self.MergeTwoType1CFonts(merged_font, garas[i])
+    # pdf_reference_1-7.pdf requires /type/FontDescriptor.
+    merged_fontdesc_obj.Set('Type' , '/FontDescriptor')
+    merged_fontdesc_obj.Set(
+        'CharSet', PdfObj.EscapeString(''.join(
+            ['/' + name for name in sorted(merged_font['CharStrings'])])))
+    for i in xrange(1, len(garas)):
+      obj = self.objs[gara_obj_nums[i]]  # /Type/FontDescriptor
+      obj.head = merged_fontdesc_obj.head
+      assert obj.stream is None
+      del type1c_objs[gara_obj_nums[i]]
+      # Don't del `self.objs[gara_obj_nums[i]]' yet, because that object may
+      # be referenced from another /Font. self.OptimizeObjs() will clean up
+      # unreachable objs safely.
+    new_char_count = len(merged_font['CharStrings'])
+    print >>sys.stderr, ('info: merged fonts like %s from %s to %s chars (%s)' 
+        % (merged_font['FontName'], orig_char_count, new_char_count,
+           FormatPercent(new_char_count, orig_char_count)))
+    self.objs[gara_obj_nums[0]].head = merged_fontdesc_obj.head
 
     def AppendSerialized(value, output):
       if isinstance(value, list):
@@ -3084,21 +3175,29 @@ class PdfData(object):
           AppendSerialized(value[item], output)
           output.append(' ')
         output.append('>>')
+      elif value is None:
+        output.append('null ')
+      elif value is True:
+        output.append('true ')
+      elif value is False:
+        output.append('false ')
       else:
         output.append(str(value))
         output.append(' ')
 
     # !! fix the /BaseFont in /Font (PDF spec says they must be identical)
-    # !! 
     output = ['%!PS-Adobe-3.0\n',
               '% Ghostscript helper generating Type1C fonts\n',
               '%% autogenerated by %s at %s\n' % (__file__, time.time())]
     output.append(self.GENERIC_PROCSET)
     output.append(self.TYPE1C_GENERATOR_PROCSET)
     output_prefix_len = sum(map(len, output))
-    output.append('%s 0 obj' % gara_obj_nums[0])
-    AppendSerialized(merged_font, output)
-    output.append('endobj\n')
+    for obj_num in sorted(type1c_objs):
+      output.append('%s 0 obj' % obj_num)
+      if gara_obj_nums[0] == obj_num:
+        assert merged_font is parsed_fonts[obj_num]
+      AppendSerialized(parsed_fonts[obj_num], output)
+      output.append('endobj\n')
     output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
     ps_tmp_file_name = 'type1cconv.type1cgen.tmp.ps'
     pdf_tmp_file_name = 'type1cconv.type1cgen.tmp.pdf'
@@ -3141,25 +3240,28 @@ class PdfData(object):
     pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
     loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
-    assert sorted(loaded_objs) == gara_obj_nums[:1], (  # !!!
-        'font obj number list mismatch')
-    type1c_size = 0
+    assert sorted(loaded_objs) == sorted(type1c_objs), (
+        'font obj number list mismatch: loaded=%r expected=%s' %
+        (sorted(loaded_objs), sorted(type1c_objs)))
+    new_type1c_size = 0
     for obj_num in loaded_objs:
       loaded_obj = loaded_objs[obj_num]
       # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
       assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
           'could not convert font %s to Type1C' % obj_num)
-      type1c_size += loaded_objs[obj_num].size
-      for gara_obj_num in gara_obj_nums:
-        # !! unify /FontDescriptor as well, remove excessive objs
-        # With aliasing, we modify self.objs.
-        type1c_objs[gara_obj_num].head = loaded_obj.head
-        type1c_objs[gara_obj_num].stream = loaded_obj.stream
+      if obj_num == gara_obj_nums[0]:
+        # !!! without this, some characters get lost on some fonts, see
+        #     t.missing -- why?
+        type1c_objs[obj_num].head = loaded_obj.head
+        type1c_objs[obj_num].stream = loaded_obj.stream
+      new_type1c_size += type1c_objs[obj_num].size + self.objs[obj_num].size
+
     # TODO(pts): Don't remove if command-line flag.
     os.remove(pdf_tmp_file_name)
     # TODO(pts): Undo if no reduction in size.
-    print >>sys.stderr, (  # !! better message
-        'info: generated total Type1C font size %s' % type1c_size)
+    print >>sys.stderr, (
+        'info: optimized Type1C fonts to size %s (%s)' % (
+        (new_type1c_size, FormatPercent(new_type1c_size, orig_type1c_size))))
     return self
 
   @classmethod
