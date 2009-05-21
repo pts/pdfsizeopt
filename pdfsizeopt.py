@@ -1235,7 +1235,11 @@ class PdfObj(object):
     """Rewrite PDF token sequence so it will be easier to parse by regexps.
 
     Please note that this method is very slow. Use ParseSimpleValue or
-    ParseDict (or Get) to get faster results most of the time.
+    ParseDict (or Get) or ParseValueRecursive to get faster results most of
+    the time. In the complicated case, those methods will call
+    RewriteToParsable to do the hard work of proper parsing. You can avoid the
+    complicated case if you don't have comments or `(...)' string constants in
+    the token stream. Hex string constants (<...>) are OK.
 
     Parsing stops at `stream', `endobj' or `startxref', which will also
     be returned at the end of the string.
@@ -2321,7 +2325,9 @@ class PdfData(object):
     obj_starts = {}
 
     for match in re.finditer(
-        r'\n(?:(\d+)\s+(\d+)\s+obj\b|trailer(?=\s)', data):
+        r'[\n\r](?:(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj\b|'
+        r'trailer(?=[\0\t\n\r\f ]))',
+        data):
       if match.group(1) is not None:
         prev_obj_num = int(match.group(1))
         assert 0 == int(match.group(2))
@@ -2994,6 +3000,7 @@ class PdfData(object):
         garas.append(parsed_font)
       # Extra, not checked: 'UniqueID'
       print parsed_font['FontName']
+    if not garas: return self
     assert len(garas) > 1
     merged_font = garas[0]
     c = len(merged_font['CharStrings'])

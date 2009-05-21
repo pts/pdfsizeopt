@@ -401,3 +401,15 @@ additional compression may be possible with:
    $ grep -a FontName eurotex2006.final.type1c.pdf | grep CMR10
    <</Type/FontDescriptor/FontName/OHUJVM+CMR10/FontBBox[0 -22 813 716]/Flags 4/Ascent 716/CapHeight 716/Descent -22/ItalicAngle 0/StemV 121/MissingWidth 333/CharSet(/A/c/d/e/m/o/one/r/zero)/FontFile3 1422 0 R>>endobj
    <</Type/FontDescriptor/FontName/IXTUXC+CMR10/FontBBox[0 -193 813 683]/Flags 4/Ascent 683/CapHeight 683/Descent -193/ItalicAngle 0/StemV 121/MissingWidth 333/CharSet(/F/P/c/comma/m/period/r)/FontFile3 1423 0 R>>endobj
+* another optimization: remove optional objects (done by Multivalent)
+* another optimization: convert some indirect references to direct (unless
+  the PDF spec forces indirect)
+* TODO: remove objects not needed for rendering:
+  /PTEX.Fullbanner (This is pdfeTeX using libpoppler, Version 3.141592-1.21a-2.2 (Web2C 7.5.4) kpathsea version 3.5.4)
+* hyperref \ref and \pagegeref /Type/Annot; no direct /Page reference
+  (except for OpenAction --> Fit); all are /XYZ references
+* SUXX: hyperref sometimes refers to 1 page before (the \section at the top
+  of the page)
+* PDF annotation and outline target /Names must be in alphabetical order
+* TODO: how much do we save (after Multivalent.jar) if we don't have
+  outlines or bookmarks (hyperref)?
