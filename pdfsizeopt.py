@@ -3577,8 +3577,6 @@ class PdfData(object):
       assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
           'could not convert font %s to Type1C' % obj_num)
       if obj_num == gara_obj_nums[0]:
-        # !!! without this, some characters get lost on some fonts, see
-        #     t.missing -- why?
         type1c_objs[obj_num].head = loaded_obj.head
         type1c_objs[obj_num].stream = loaded_obj.stream
       new_type1c_size += type1c_objs[obj_num].size + self.objs[obj_num].size
@@ -3589,6 +3587,7 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: optimized Type1C fonts to size %s (%s)' % (
         (new_type1c_size, FormatPercent(new_type1c_size, orig_type1c_size))))
+    # !! Unify /FontDescriptor objects.
     return self
 
   @classmethod
@@ -4478,7 +4477,7 @@ def ParseBoolFlag(flag_name, flag_value):
 
 def main(argv):
   print >>sys.stderr, 'info: This is %s v%s.' % (
-      os.path.basename(__file__), __id__)
+      os.path.basename(__file__), __id__.split(' ', 3)[2])
   # Find image converters in script dir first.
   os.environ['PATH'] = '%s:%s' % (
       os.path.dirname(os.path.abspath(argv[0])), os.getenv('PATH', ''))
