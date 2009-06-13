@@ -149,6 +149,9 @@ class PdfObj(object):
       r'(?=[\0\t\n\r\f /%(<>\[\]]))?')
   """Matches `/Length <x>' or `/Length <x> <y> R'."""
 
+  SUBSET_FONT_NAME_PREFIX_RE = re.compile(r'/[A-Z]{6}[+]')
+  """Matches the beginning of a subset font name (starting with slash)."""
+
   def __init__(self, other, objs=None, file_ofs=0):
     """Initialize from other.
 
@@ -2877,7 +2880,7 @@ class PdfData(object):
   dup length 1 gt {/invalidfileaccess /MultipleFontsDefined signalerror} if
   [exch {pop} forall] 0 get  % Convert FontDirectory to the name of our font
   dup /_OrigFontName exch def
-  % stack: <fontname>
+  % stack: <font_name>
   findfont dup length dict copy
   % Let the font name be /Obj68 etc.
   dup /FullName _ObjNumber 10 string cvs
@@ -2917,7 +2920,7 @@ class PdfData(object):
     dup length string cvs 2 index eq  % Need cvs for eq comparison.
     {pop} {undefinefont} ifelse
   } forall
-  pop % <fake-fontname-string>
+  pop % <fake-font-name-string>
   %systemdict /FontDirectory get {pop ===} forall
 
   dup setfont
@@ -3304,10 +3307,11 @@ class PdfData(object):
     are left untouched in target_fd.
 
     Raise:
-      target_font: A PdfObj of /Type/FontDescriptor, will be modified in place.
-      source_font: A PdfObj of /Type/FontDescriptor.
+      target_fd: A PdfObj of /Type/FontDescriptor, will be modified in place.
+      source_fd: A PdfObj of /Type/FontDescriptor.
     Raises:
-      FontsNotMergeable:
+      FontsNotMergeable: If cannot be merged. In that case, target_fd is not
+        modified.
     """
     for key in ('Flags', 'StemH'):
       target_value = target_fd.Get(key)
@@ -3340,6 +3344,24 @@ class PdfData(object):
           target_fd.Set(key, source_value)
 
   @classmethod
+  def GetStrippedPrivate(cls, private_dict):
+    private_dict = dict(private_dict)
+    # TODO(pts): Unify these meaningfully.
+    # Example:
+    #  target={'StemSnapH': [33, 36, 39, 40, 41, 43, 47, 48, 55, 62, 96, 156],
+    #          'StdVW': [114],
+    #          'StdHW': [47],
+    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142, 153, 156]}
+    #  source={'StemSnapH': [33, 36, 39, 40, 43, 47, 48, 53, 55, 96, 117, 156],
+    #          'StdVW': [47],
+    #          'StdHW': [47],
+    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142, 153, 156]}
+    for key in ('StemSnapH', 'StdVW', 'StdHW', 'StemSnapV'):
+      if key in private_dict:
+        del private_dict[key]
+    return private_dict
+
+  @classmethod
   def MergeTwoType1CFonts(cls, target_font, source_font):
     """Merge source_font to target_font, modifying the latter in place.
 
@@ -3363,7 +3385,8 @@ class PdfData(object):
       target_font: A parsed Type1C font dictionary, will be modified in place.
       source_font: A parsed Type1C font dictionary.
     Raises:
-      FontsNotMergeable:
+      FontsNotMergeable: If cannot be merged. In that case, target_fd is not
+        modified.
     """
     assert 'Subrs' not in target_font
     assert 'Subrs' not in target_font['Private']  # !! not mergeable
@@ -3374,12 +3397,17 @@ class PdfData(object):
     assert 'FontBBox' not in target_font
     # !! proper check for FontMatrix floats.
     # We ignore FontInfo and UniqueID.
-    for key in ('FontMatrix', 'Private', 'FontType', 'PaintType'):
+    for key in ('FontMatrix', 'FontType', 'PaintType'):
       target_value = target_font[key]
       source_value = source_font[key]
       if target_value != source_value:
         raise FontsNotMergeable('mismatch in key %s: target=%r source=%r' %
             (key, target_value, source_value))
+    target_value = cls.GetStrippedPrivate(target_font['Private'])
+    source_value = cls.GetStrippedPrivate(source_font['Private'])
+    if target_value != source_value:
+      raise FontsNotMergeable('mismatch in Private: target=%r source=%r' %
+          (target_value, source_value))
     target_cs = target_font['CharStrings']
     source_cs = source_font['CharStrings']
     for name in sorted(source_cs):
@@ -3476,9 +3504,18 @@ class PdfData(object):
         data_tmp_file_name='type1cconv.parsedata.tmp.ps')
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
         (sorted(parsed_fonts), sorted(type1c_objs)))
-    garas = []  # !!!
-    gara_obj_nums = []
-    for obj_num in sorted(parsed_fonts):
+
+    # Dictionary mapping a font group name to a list of obj_nums
+    # (in parsed_fonts).
+    font_groups = {}
+    # Dictionary mapping a font group name to a list of font names in it.
+    font_group_names = {}
+    if do_regenerate_all_fonts:
+      unified_obj_nums = set(type1c_objs)
+    else:
+      unified_obj_nums = set()
+
+    for obj_num in sorted(parsed_fonts):  # !! sort by font name to get exacts
       obj = self.objs[obj_num]  # /Type/FontDescriptor
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
@@ -3492,69 +3529,111 @@ class PdfData(object):
       assert 'CharStrings' in parsed_font
       assert 'Subrs' not in parsed_font  # !! add a test for Subrs, maybe not in toplevel dict; maybe not dumped (because of noexec? -- but other parts of private are dumped)
       assert 'Subrs' not in parsed_font['Private']
+      # Extra, not checked: 'UniqueID'
+      #print parsed_font['FontName']
       if 'FontBBox' in parsed_font:
         # This is part of the /FontDescriptor, we don't need it in the Type1C
         # font.
         del parsed_font['FontBBox']
-      if parsed_font['FontName'].endswith('+GaramondNo8-Reg'):
-        gara_obj_nums.append(obj_num)
-        garas.append(parsed_font)
-      # Extra, not checked: 'UniqueID'
-      #print parsed_font['FontName']
-    if len(garas) < 2:  # !!!
+      font_name = parsed_font['FontName']
+      # TODO(pts): Smarter initial grouping, even if name doesn't match.
+      match = PdfObj.SUBSET_FONT_NAME_PREFIX_RE.match(font_name)
+      if match:
+        font_group = font_name[match.end():]
+      else:
+        font_group = font_name[1:]
+      if font_group in font_groups:
+        font_groups[font_group].append(obj_num)
+      else:
+        font_groups[font_group] = [obj_num]      
+
+    for font_group in sorted(font_groups):
+      group_obj_nums = font_groups[font_group]
+      if len(group_obj_nums) < 2:
+        del font_groups[font_group]
+        continue
+      merged_font = parsed_fonts[group_obj_nums[0]]
+      # /Type/FontDescriptor
+      merged_fontdesc_obj = PdfObj(self.objs[group_obj_nums[0]])
+      assert merged_fontdesc_obj.stream is None
+      orig_char_count = len(merged_font['CharStrings'])
+      #print 'GROUP', font_group, len(group_obj_nums)
+      #print 'BASE   ', merged_font['FontName']
+      i = 1
+      while i < len(group_obj_nums):
+        obj = self.objs[group_obj_nums[i]]  # /Type/FontDescriptor
+        parsed_font = parsed_fonts[group_obj_nums[i]]
+        new_fontdesc_obj = PdfObj(merged_fontdesc_obj)
+        try:
+          self.MergeTwoType1CFontDescriptors(new_fontdesc_obj, obj)
+        except FontsNotMergeable, exc:
+          print >>sys.stderr, (
+              'info: could not merge descs from %s to %s: %s' %
+              (exc, parsed_font['FontName'], merged_font['FontName']))
+          # !! don't just throw away this font, merge with others
+          group_obj_nums.pop(i)
+          continue
+        try:
+          self.MergeTwoType1CFonts(merged_font, parsed_font)
+        except FontsNotMergeable, exc:
+          print >>sys.stderr, (
+              'info: could not merge fonts from %s to %s: %s' %
+              (exc, parsed_font['FontName'], merged_font['FontName']))
+          # !! don't just throw away this font, merge with others
+          group_obj_nums.pop(i)
+          continue
+        merged_fontdesc_obj.head = new_fontdesc_obj.head
+        orig_char_count += len(parsed_font['CharStrings'])
+        i += 1
+
+      if len(group_obj_nums) < 2:  # Just to be sure.
+        del font_groups[font_group]
+        continue
+
+      # pdf_reference_1-7.pdf says /Type/FontDescriptor is required (even if
+      # some software omits it).
+      merged_fontdesc_obj.Set('Type' , '/FontDescriptor')
+      if do_keep_font_optionals:
+        # !! remove more optionals
+        # New Ghostscript doesn't generate /CharSet. We don't generate it
+        # either, unless the user asks for it.
+        merged_fontdesc_obj.Set(
+            'CharSet', PdfObj.EscapeString(''.join(
+                ['/' + name for name in sorted(merged_font['CharStrings'])])))
+
+      self.objs[group_obj_nums[0]].head = merged_fontdesc_obj.head
+      font_group_names[font_group] = [merged_font['FontName']]
+      for i in xrange(1, len(group_obj_nums)):
+        group_obj_num = group_obj_nums[i]
+        obj = self.objs[group_obj_num]  # /Type/FontDescriptor
+        # !! merge /Type/Font objects (including /FirstChar, /LastChar and
+        # /Widths)
+        obj.head = merged_fontdesc_obj.head
+        assert obj.stream is None
+        font_group_names[font_group].append(
+            parsed_fonts[group_obj_nums[i]]['FontName'])
+        del type1c_objs[group_obj_num]
+        del parsed_fonts[group_obj_num]
+        if group_obj_num in unified_obj_nums:
+          unified_obj_nums.remove(group_obj_num)
+        # Don't del `self.objs[group_obj_nums[i]]' yet, because that object may
+        # be referenced from another /Font. self.OptimizeObjs() will clean up
+        # unreachable objs safely.
+      new_char_count = len(merged_font['CharStrings'])
+      unified_obj_nums.add(group_obj_nums[0])
+      print >>sys.stderr, (
+          'info: merged fonts %r, reduced char count from %d  to %d (%s)' %
+          (font_group_names[font_group], orig_char_count, new_char_count,
+           FormatPercent(new_char_count, orig_char_count)))
+
+    if not font_groups:
+      # Could not unify any fonts.
       for obj_num in sorted(type1c_objs):
         type1c_objs[obj_num].FixFontNameInType1C(do_always_recompress=True)
       return self
-    assert len(gara_obj_nums) >= 2
-    merged_font = garas[0]
-    # /Type/FontDescriptor
-    merged_fontdesc_obj = PdfObj(self.objs[gara_obj_nums[0]])
-    orig_char_count = len(merged_font['CharStrings'])
-    for i in xrange(1, len(garas)):
-      obj = self.objs[gara_obj_nums[i]]  # /Type/FontDescriptor
-      orig_char_count += len(garas[i]['CharStrings'])
-      print 'MERGING', garas[i]['FontName']  # !!!
-      # !!! handle exceptions (FontsNotMergeable)
-      self.MergeTwoType1CFontDescriptors(merged_fontdesc_obj, obj)
-      self.MergeTwoType1CFonts(merged_font, garas[i])
-    # pdf_reference_1-7.pdf requires /type/FontDescriptor.
-    merged_fontdesc_obj.Set('Type' , '/FontDescriptor')
-    if do_keep_font_optionals:
-      # !! remove more optionals
-      # New Ghostscript doesn't generate /CharSet. We don't generate it either,
-      # unless the user asks for it.
-      merged_fontdesc_obj.Set(
-          'CharSet', PdfObj.EscapeString(''.join(
-              ['/' + name for name in sorted(merged_font['CharStrings'])])))
-    assert sorted(parsed_fonts) == sorted(type1c_objs), (
-        (sorted(parsed_fonts), sorted(type1c_objs)))
-    if do_regenerate_all_fonts:
-      unified_obj_nums = set(type1c_objs)
-    else:
-      unified_obj_nums = set()
-    unified_obj_nums.add(gara_obj_nums[0])
-    for i in xrange(1, len(garas)):
-      gara_obj_num = gara_obj_nums[i]
-      obj = self.objs[gara_obj_num]  # /Type/FontDescriptor
-      # !! merge /Type/Font objects (including /FirstChar, /LastChar and
-      # /Widths)
-      obj.head = merged_fontdesc_obj.head
-      assert obj.stream is None
-      del type1c_objs[gara_obj_num]
-      del parsed_fonts[gara_obj_num]
-      if gara_obj_num in unified_obj_nums:
-        unified_obj_nums.remove(gara_obj_num)
-      # Don't del `self.objs[gara_obj_nums[i]]' yet, because that object may
-      # be referenced from another /Font. self.OptimizeObjs() will clean up
-      # unreachable objs safely.
-    assert sorted(parsed_fonts) == sorted(type1c_objs), (
-        (sorted(parsed_fonts), sorted(type1c_objs)))
-    new_char_count = len(merged_font['CharStrings'])
-    print >>sys.stderr, ('info: merged fonts like %s from %s to %s chars (%s)' 
-        % (merged_font['FontName'], orig_char_count, new_char_count,
-           FormatPercent(new_char_count, orig_char_count)))
-    self.objs[gara_obj_nums[0]].head = merged_fontdesc_obj.head
 
+    assert sorted(parsed_fonts) == sorted(type1c_objs), (
+        (sorted(parsed_fonts), sorted(type1c_objs)))
     if not unified_obj_nums:
       print >>sys.stderr, 'info: no fonts to regenerate or unify'
       # TODO(pts): Don't recompress if already recompressed (e.g. when
@@ -3600,8 +3679,6 @@ class PdfData(object):
     output_prefix_len = sum(map(len, output))
     for obj_num in sorted(unified_obj_nums):
       output.append('%s 0 obj' % obj_num)
-      if gara_obj_nums[0] == obj_num:
-        assert merged_font is parsed_fonts[obj_num]
       AppendSerialized(parsed_fonts[obj_num], output)
       output.append('endobj\n')
     output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
