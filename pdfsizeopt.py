@@ -1553,6 +1553,8 @@ class PdfObj(object):
     # was used to write this function.
     assert self.Get('Subtype') == '/Type1C'
     data = self.GetUncompressedStream()
+    return  # !!!
+    print 'FFF', repr(data)
     assert ord(data[2]) >= 4
     i0 = i = ord(data[2])  # skip header
     count, off_size = struct.unpack('>HB', data[i : i + 3])
@@ -2515,6 +2517,45 @@ class PdfData(object):
   % Imp: read <streamdict> here (not with `token', but recursively), so
   %      don't redefine `stream'
 } bind def
+
+% Sort an array, from Ghostscript's prfont.ps.
+/Sort {			% <array> <lt-proc> Sort <array>
+	% Heapsort (algorithm 5.2.3H, Knuth vol. 2, p. 146),
+	% modified for 0-origin indexing. */
+  10 dict begin
+  /LT exch def
+  /recs exch def
+  /N recs length def
+  N 1 gt {
+    /l N 2 idiv def
+    /r N 1 sub def {
+      l 0 gt {
+	/l l 1 sub def
+	/R recs l get def
+      } {
+	/R recs r get def
+	recs r recs 0 get put
+	/r r 1 sub def
+	r 0 eq { recs 0 R put exit } if
+      } ifelse
+      /j l def {
+	/i j def
+	/j j dup add 1 add def
+	j r lt {
+	  recs j get recs j 1 add get LT { /j j 1 add def } if
+	} if
+	j r gt { recs i R put exit } if
+	R recs j get LT not { recs i R put exit } if
+	recs i recs j get put
+      } loop
+    } loop
+  } if recs end
+} bind def
+
+/NameSort {
+  {dup length string cvs exch dup length string cvs gt} Sort
+} bind def
+
 % </ProcSet>
 
 '''
@@ -2523,6 +2564,15 @@ class PdfData(object):
 % <ProcSet>
 % PDF Type1 font extraction and typesetter procset
 % by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
+
+% This seems to get ignored for some fonts.
+<<  % !! also in font parsing
+  /CompatibilityLevel 1.4
+  /SubsetFonts false
+  /EmbedAllFonts true
+  /Optimize true
+>> setdistillerparams
+.setpdfwrite
 
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
@@ -2549,6 +2599,18 @@ class PdfData(object):
       getinterval exch concatstrings
       (Obj) exch concatstrings put
   dup dup /FullName get cvn /FontName exch put
+
+  % !!! same for font unification
+  % Replace the /Encoding array with the glyph names in /CharStrings, padded
+  % with /.notdef{}s. This hack is needed for Ghostscript 8.54, which would
+  % sometimes generate two (or more?) PDF font objects if not all characters
+  % are encoded.
+  dup /CharStrings get dup length 256 le {
+    [exch {pop} forall] NameSort
+    [exch aload length 1 255 {pop/.notdef} for]
+    1 index exch /Encoding exch put
+  } {pop} ifelse
+
   %dup /FID undef  % undef not needed.
   % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
   % (for GhostScript 8.54) here, because otherwise Ghostscript would put
@@ -2572,23 +2634,19 @@ class PdfData(object):
   pop % <fake-fontname-string>
   %systemdict /FontDirectory get {pop ===} forall
 
-  % We have to make sure that all characters are on the page -- otherwise
-  % Ghostscript 8.61 becomes too smart and it won't embed the outlier
-  % characters to to page.
-  %0 20 translate  20 0 moveto
-  500 500 moveto
-
-  16 scalefont  dup setfont
-  % We need at least one glypshow to get the font embedded
-  % It makes a few bytes of difference if we include all glyphs or only one,
-  % but it doesn't matter WRT the final result.
-  % TODO(pts): Investigate how many glyphs to show.
-  % 500 500 moveto is needed here, otherwise some characters would be too
-  % far to the right so Ghostscript 8.61 would crop them from the page and
-  % wouldn't include them to the fonts.
-  %dup /CharStrings get {pop 500 500 moveto glyphshow} forall
-  dup /CharStrings get [ exch {pop} forall ] 0 get glyphshow
-
+  dup setfont
+  % TODO(pts): Check for embedding the base 14 fonts.
+  %
+  % * It is not enough to show only a few glyphs, because Ghostscript
+  %   sometimes ignores /SubsetFonts=false
+  % * 200 200 moveto is needed here, otherwise some characters would be too
+  %   far to the right so Ghostscript 8.61 would crop them from the page and
+  %   wouldn't include them to the fonts.
+  % * We have to make sure that all glyphs are on the page -- otherwise
+  %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
+  %   the outliers.
+  dup /CharStrings get [exch {pop} forall] NameSort {
+    newpath 200 200 moveto glyphshow} forall
   pop % <fake-font>
   restore
 } bind def
@@ -2616,6 +2674,7 @@ class PdfData(object):
 
     objs = {}
     font_count = 0
+    duplicate_count = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! TODO(pts): proper PDF token sequence parsing
@@ -2650,7 +2709,12 @@ class PdfData(object):
             assert font_name is not None
             match = re.match(r'/(?:[A-Z]{6}[+])?Obj(\d+)\Z', font_name)
             assert match, 'GS generated non-Obj FontName: %s' % font_name
-            objs[int(match.group(1))] = font_obj
+            name_obj_num = int(match.group(1))
+            if name_obj_num in objs:
+              print >>sys.stderr, 'error: duplicate font %s obj %d' % (
+                  font_name, name_obj_num)
+              duplicate_count += 1
+            objs[name_obj_num] = font_obj
           else:
             objs[obj_num] = font_obj
           font_count += 1
@@ -2658,6 +2722,8 @@ class PdfData(object):
       print >>sys.stderr, 'info: found %s fonts' % font_count
     else:
       print >>sys.stderr, 'info: found %s %s fonts' % (font_count, font_type)
+    assert not duplicate_count, (
+        'found %d duplicate font objs in GS output' % duplicate_count)
     return objs
 
   @classmethod
@@ -2687,15 +2753,8 @@ class PdfData(object):
     EnsureRemoved(pdf_tmp_file_name)
     gs_cmd = (
         'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
-        # Ghostscript 8.54 needs SubsetFonts this up here
-        # for Ghostscript 8.61, <</SubsetFonts ...>>setpagedevice is also OK.
-        '-dSubsetFonts=false '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
-        '-sOutputFile=%s -c "<</CompatibilityLevel 1.4 /EmbedAllFonts true '
-        # Ghostscript removes all characters from fonts outside this range.
-        '/PageSize [1000 1000] '
-        '/ImagingBBox null '  # No effect, characters get clipped.
-        '/Optimize true /SubsetFonts false>>setpagedevice .setpdfwrite" -f %s'
+        '-sOutputFile=%s -f %s'
         % (ShellQuote(pdf_tmp_file_name), ShellQuote(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing Type1CConverter with Ghostscript'
         ': %s' % gs_cmd)
@@ -2918,6 +2977,7 @@ class PdfData(object):
             (obj_num, font_file_obj_num, new_size,
              FormatPercent(new_size, old_size)))
       else:
+        # TODO(pts): How to optimize/unify these?
         print >>sys.stderr, (
             'info: keeping original Type1 font XObject %s,%s, '
             'replacement too large: old size=%s, new size=%s' %
@@ -3124,7 +3184,7 @@ class PdfData(object):
         gara_obj_nums.append(obj_num)
         garas.append(parsed_font)
       # Extra, not checked: 'UniqueID'
-      print parsed_font['FontName']
+      #print parsed_font['FontName']
     if not garas: return self
     assert len(garas) > 1
     merged_font = garas[0]
@@ -4162,10 +4222,11 @@ def main(argv):
     print >>sys.stderr, 'error: too many command-line args\n'
     sys.exit(1)
 
+  # !! selectively disable some tests here
   (PdfData().Load(file_name)
    .FixAllBadNumbers()
    .ConvertType1FontsToType1C()
-   .UnifyType1CFonts() #!!! unstable so far, disabled by default
+   #.UnifyType1CFonts() #!!! unstable so far, disabled by default
    .ConvertInlineImagesToXObjects()
    .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
    .OptimizeObjs()
