@@ -413,3 +413,4 @@ additional compression may be possible with:
 * PDF annotation and outline target /Names must be in alphabetical order
 * TODO: how much do we save (after Multivalent.jar) if we don't have
   outlines or bookmarks (hyperref)?
+* TODO: measure: how much font unification saves? (10K for GaramondNo8-Reg)

@@ -7,7 +7,17 @@
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
 
-"""pdfsizeopt.py: do various PDF size optimizations
+"""pdfsizeopt.py: Convert PDF to PDF to optimize its size.
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 2 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
 
 This Python script implements some techniques for making PDF files smaller.
 It should be used together with pdflatex and tool.pdf.Compress to get a minimal
@@ -20,10 +30,12 @@ sam2p and pngout. Future versions may relax the system requirements.
 
 This script doesn't optimize the cross reference table (using cross reference
 streams in PDF1.5) or the serialization of objects it doesn't modify. Use
-http://multivalent.sf.net/ for that.
+tool.pdf.Compress in Multilvaent.jar from http://multivalent.sf.net/ for that.
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
+
+__id__ = '$Id$'
 
 import getopt
 import os
@@ -2804,10 +2816,9 @@ class PdfData(object):
 % PDF Type1 font extraction and typesetter procset
 % by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
 
-% This seems to get ignored for some fonts.
-<<  % !! also in font parsing
+<<
   /CompatibilityLevel 1.4
-  /SubsetFonts false
+  /SubsetFonts false   % GS ignores this for some fonts, no problem.
   /EmbedAllFonts true
   /Optimize true
 >> setdistillerparams
@@ -2839,7 +2850,6 @@ class PdfData(object):
       (Obj) exch concatstrings put
   dup dup /FullName get cvn /FontName exch put
 
-  % !!! same for font unification
   % Replace the /Encoding array with the glyph names in /CharStrings, padded
   % with /.notdef{}s. This hack is needed for Ghostscript 8.54, which would
   % sometimes generate two (or more?) PDF font objects if not all characters
@@ -2877,7 +2887,7 @@ class PdfData(object):
   % TODO(pts): Check for embedding the base 14 fonts.
   %
   % * It is not enough to show only a few glyphs, because Ghostscript
-  %   sometimes ignores /SubsetFonts=false
+  %   sometimes ignores /SubsetFonts=false .
   % * 200 200 moveto is needed here, otherwise some characters would be too
   %   far to the right so Ghostscript 8.61 would crop them from the page and
   %   wouldn't include them to the fonts.
@@ -3104,7 +3114,14 @@ class PdfData(object):
 % PDF Type1 font extraction and typesetter procset
 % by pts@fazekas.hu at Sun Mar 29 11:19:06 CEST 2009
 
-% !!! remove duplicates
+<<
+  /CompatibilityLevel 1.4
+  /SubsetFonts false   % GS ignores this for some fonts, no problem.
+  /EmbedAllFonts true
+  /Optimize true
+>> setdistillerparams
+.setpdfwrite
+
 /endobj {  % <streamdict> endobj -
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
@@ -3114,15 +3131,34 @@ class PdfData(object):
       getinterval exch concatstrings
       (Obj) exch concatstrings cvn def
   dup /FontName _FontName put
-  dup /Encoding StandardEncoding put  % !! will everything be embedded?
+
+  % Replace the /Encoding array with the glyph names in /CharStrings, padded
+  % with /.notdef{}s. This hack is needed for Ghostscript 8.54, which would
+  % sometimes generate two (or more?) PDF font objects if not all characters
+  % are encoded.
+  % TODO(pts): What if /Encoding longer than 256?
+  dup /CharStrings get
+      [exch {pop} forall] NameSort
+      [exch aload length 1 255 {pop/.notdef} for]
+      1 index exch /Encoding exch put
+
   _FontName exch definefont  % includes findfont
   % TODO: (Type1Generator: ...) print
-  500 500 moveto
-  16 scalefont dup setfont
+  dup setfont
+  % * It is not enough to show only a few glyphs, because Ghostscript
+  %   sometimes ignores /SubsetFonts=false .
+  % * 200 200 moveto is needed here, otherwise some characters would be too
+  %   far to the right so Ghostscript 8.61 would crop them from the page and
+  %   wouldn't include them to the fonts.
+  % * We have to make sure that all glyphs are on the page -- otherwise
+  %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
+  %   the outliers.
+  dup /CharStrings get [exch {pop} forall] NameSort {
+    newpath 200 200 moveto glyphshow} forall
   %dup /CharStrings get {pop dup === glyphshow} forall
-  dup /CharStrings get [ exch {pop} forall ] 0 get glyphshow
+  %dup /CharStrings get [ exch {pop} forall ] 0 get glyphshow
   pop % <font>
-  %showpage % not needed?
+  %showpage % not needed
   restore
 } bind def
 % </ProcSet>
@@ -3510,18 +3546,10 @@ class PdfData(object):
       f.close()
 
     EnsureRemoved(pdf_tmp_file_name)
-    # !! unify command
     gs_cmd = (
         'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
-        # Ghostscript 8.54 needs SubsetFonts this up here
-        # for Ghostscript 8.61, <</SubsetFonts ...>>setpagedevice is also OK.
-        '-dSubsetFonts=false '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
-        '-sOutputFile=%s -c "<</CompatibilityLevel 1.4 /EmbedAllFonts true '
-        # Ghostscript removes all characters from fonts outside this range.
-        '/PageSize [1000 1000] '
-        '/ImagingBBox null '  # No effect, characters get clipped.
-        '/Optimize true /SubsetFonts false>>setpagedevice .setpdfwrite" -f %s'
+        '-sOutputFile=%s -f %s'
         % (ShellQuote(pdf_tmp_file_name), ShellQuote(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing Type1CGenerator with Ghostscript'
         ': %s' % gs_cmd)
@@ -4428,48 +4456,96 @@ class PdfData(object):
     return self
 
 
+BOOL_VALUES = {
+    'on': True,
+    'off': False,
+    'yes': True,
+    'no': False,
+    '1': True,
+    '0': False,
+    'true': True,
+    'false': False
+}
+
+
+def ParseBoolFlag(flag_name, flag_value):
+  flag_value_lower = flag_value.lower()
+  if flag_value_lower not in BOOL_VALUES:
+    raise getopt.GetoptError('option %s=%s needs a bool value' %
+                             (flag_name, flag_value))
+  return BOOL_VALUES[flag_value_lower]
+
+
 def main(argv):
+  print >>sys.stderr, 'info: This is %s v%s.' % (
+      os.path.basename(__file__), __id__)
   # Find image converters in script dir first.
   os.environ['PATH'] = '%s:%s' % (
       os.path.dirname(os.path.abspath(argv[0])), os.getenv('PATH', ''))
 
-  use_pngout = True
-  use_jbig2 = True
-  # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
-  opts, args = getopt.gnu_getopt(argv[1:], '+', [
-      'use-pngout=', 'use-jbig2='])
-  for key, value in opts:
-    if key == '--use-pngout':
-      # !! add =auto (detect binary on path)
-      use_pngout = {'true': True, 'false': False}[value.lower()]
-    if key == '--use-jbig2':
-      # !! add =auto (detect binary on path)
-      use_jbig2 = {'true': True, 'false': False}[value.lower()]
-  if not args:
-    print >>sys.stderr, 'error: missing filename in command-line\n'
-    sys.exit(1)
-  elif len(args) == 1:
-    file_name = args[0]
-    if file_name.endswith('.pdf'):
-      output_file_name = file_name[:-4] + '.type1c.pdf'
+  try:
+    use_pngout = True
+    use_jbig2 = True
+    do_optimize_images = True
+    do_optimize_objs = True
+    do_unify_fonts = True
+    # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
+    opts, args = getopt.gnu_getopt(argv[1:], '+', [
+        'version', 'help',
+        'use-pngout=', 'use-jbig2=',
+        'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
+    for key, value in opts:
+      if key == '--use-pngout':
+        # !! add =auto (detect binary on path)
+        use_pngout = ParseBoolFlag(key, value)
+      elif key == '--use-jbig2':
+        # !! add =auto (detect binary on path)
+        use_jbig2 = ParseBoolFlag(key, value)
+      elif key == '--do-optimize-images':
+        do_optimize_images = ParseBoolFlag(key, value)
+      elif key == '--do-optimize-objs':
+        do_optimize_objs = ParseBoolFlag(key, value)
+      elif key == '--do-unify-fonts':
+        # TODO(pts): Autodetect Ghostscript etc.
+        do_unify_fonts = ParseBoolFlag(key, value)
+      elif key == '--help':
+        # TODO(pts): Implement this.
+        print >>sys.stderr, 'error: --help not implemented'
+        sys.exit(2)
+      elif key == '--version':
+        sys.exit(0)  # printed above
+      else:
+        assert 0, 'unknown option %s' % key
+    if not args:
+      raise getopt.GetoptError('missing filename in command-line')
+    elif len(args) == 1:
+      file_name = args[0]
+      if file_name.endswith('.pdf'):
+        # !! different filename
+        output_file_name = file_name[:-4] + '.type1c.pdf'
+      else:
+        output_file_name = file_name + '.type1c.pdf'
+    elif len(args) == 2:
+      file_name = args[0]
+      output_file_name = args[1]
     else:
-      output_file_name = file_name + '.type1c.pdf'
-  elif len(args) == 2:
-    file_name = args[0]
-    output_file_name = args[1]
-  else:
-    print >>sys.stderr, 'error: too many command-line args\n'
+      raise getopt.GetoptError('too many command-line args')
+  except getopt.GetoptError, exc:
+    print >>sys.stderr, 'error: in command line: %s' % exc
     sys.exit(1)
 
-  # !! selectively disable some tests here
-  (PdfData().Load(file_name)
-   .FixAllBadNumbers()
-   .ConvertType1FontsToType1C()
-   #.UnifyType1CFonts() #!!! unstable so far, disabled by default
-   .ConvertInlineImagesToXObjects()
-   .OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
-   .OptimizeObjs()
-   .Save(output_file_name))
+  pdf = PdfData().Load(file_name)
+  pdf.FixAllBadNumbers()
+  pdf.ConvertType1FontsToType1C()
+  if do_unify_fonts:
+    pdf.UnifyType1CFonts()
+  if do_optimize_images:
+    pdf.ConvertInlineImagesToXObjects()
+    pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
+  if do_optimize_objs:
+    pdf.OptimizeObjs()
+  pdf.Save(output_file_name)
+
 
 if __name__ == '__main__':
   main(sys.argv)
