@@ -648,6 +648,25 @@ class PdfSizeOptTest(unittest.TestCase):
          2: ('<</S(q)/P 1 0 R>>', None),
          1: ('<</S(q)/Q 2 0 R>>', None)}, new_objs)
 
+  def testParseAndSerializeCffDict(self):
+    e = pdfsizeopt.PdfObj.ParseCffDict
+    # TODO(pts): Add more tests.
+    # TODO(pts): PdfObj.ParseCffHeader
+    cff_dict = {
+        12000: [394], 1: [391], 2: [392], 3: [393], 12004: [0],
+        5: [0, -270, 812, 769],
+        12007: ['0.001', 0, '0.000287', '0.001', 0, 0], 15: [281], 16: [245],
+        17: [350], 18: [21, 6489], 12003: [0]
+    }
+    cff_str =  ('f81b01f81c02f81d038bfba2f9c0f99505f81e0c008b0c038b0c'
+                '041e0a001f8b1e0a000287ff1e0a001f8b8b0c07a01c195912f7'
+                'f211f7ad0ff78910'.decode('hex'))
+    cff_str2 = ('f81b01f81c02f81d038bfba2f9c0f99505f7ad0ff78910f7f211'
+                'a01c195912f81e0c008b0c038b0c041e0a001f8b1e0a000287ff'
+                '1e0a001f8b8b0c07'.decode('hex'))
+    self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str))
+    self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str2))
+    self.assertEqual(cff_str2, pdfsizeopt.PdfObj.SerializeCffDict(cff_dict))
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
