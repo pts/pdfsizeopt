@@ -391,6 +391,32 @@ class PdfSizeOptTest(unittest.TestCase):
     obj = pdfsizeopt.PdfObj(
         '42 0 obj<</T()/Length  3>>stream\nABC endstream endobj')
     self.assertEqual('ABC', obj.stream)
+    s = '41 0 obj<</T(>>\nendobj\n)/Length  3>>stream\nABD endstream endobj'
+    t = '42 0 obj<</T 5%>>endobj\n/Length  3>>stream\nABE endstream endobj'
+    end_ofs_out = []
+    obj = pdfsizeopt.PdfObj(s, end_ofs_out=end_ofs_out)
+    self.assertEqual([len(s)], end_ofs_out)
+    self.assertEqual('ABD', obj.stream)
+    end_ofs_out = []
+    obj = pdfsizeopt.PdfObj(t + '\r\n\tANYTHING', end_ofs_out=end_ofs_out)
+    self.assertEqual([len(t) + 1], end_ofs_out)
+    end_ofs_out = []
+    obj = pdfsizeopt.PdfObj(
+        '%s\n%s' % (s, t), start=len(s) + 1, end_ofs_out=end_ofs_out)
+    self.assertEqual('ABE', obj.stream)
+    self.assertEqual([len(s) + 1 + len(t)], end_ofs_out)
+    # Exception because start points to '\n', not an `X Y obj'.
+    self.assertRaises(
+        pdfsizeopt.PdfTokenParseError,
+        pdfsizeopt.PdfObj, '%s\n%s' % (s, t), start=len(s))
+
+    s = '22 0 obj<</Producer(A)/CreationDate(B)/Creator(C)>>\nendobj '
+    t = '23 0 obj'
+    end_ofs_out = []
+    obj = pdfsizeopt.PdfObj(s + t, end_ofs_out=end_ofs_out)
+    self.assertEqual('<</Producer(A)/CreationDate(B)/Creator(C)>>', obj.head)
+    self.assertEqual([len(s)], end_ofs_out) 
+
     # TODO(pts): Add more tests.
 
   def testPdfObjGetSet(self):
@@ -649,7 +675,6 @@ class PdfSizeOptTest(unittest.TestCase):
          1: ('<</S(q)/Q 2 0 R>>', None)}, new_objs)
 
   def testParseAndSerializeCffDict(self):
-    e = pdfsizeopt.PdfObj.ParseCffDict
     # TODO(pts): Add more tests.
     # TODO(pts): PdfObj.ParseCffHeader
     cff_dict = {
@@ -667,6 +692,74 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str))
     self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str2))
     self.assertEqual(cff_str2, pdfsizeopt.PdfObj.SerializeCffDict(cff_dict))
+
+  def testFixPdfFromMultivalent(self):
+    e = pdfsizeopt.PdfData.FixPdfFromMultivalent
+    s = ('%PDF-1.5\n'
+         '%\x90\x84\x86\x8f\n'
+         '1 0 obj<</Type/Pages/Kids[5 0 R]/MediaBox[0 0 419 534]/Count 1>>\n'
+         'endobj\n'
+         '2 0 obj<</Type   /Catalog/Pages 1 0 R>>\n'
+         'endobj\n'
+         '3 0 obj<</Length 30>>stream\n'
+         '\n'
+         'q\n'
+         '419 0 0 534 0 0 cm /S Do\n'
+         'Q\n'
+         '\n'
+         'endstream\n'
+         'endobj\n'
+         '4 0 obj<</Subtype/ImagE/Width 419/Height    534/FilteR/FlateDecode'
+             '/Interpolate false/BitsPerComponent 1/ColorSpace/DeviceGray'
+             '/Length 4/Filter/JPXDecode>>stream\n'
+         'BLAH\n'
+         'endstream\n'
+         'endobj\n'
+         '5 0 obj<</Type/Page/Contents 3 0 R/Resources<</XObject<</S 4 0 R>>>>'
+             '/Parent 1 0 R>>\n'
+         'endobj\n'
+         '6 0 obj<</Type/XRef/W[0 2 0]/Size 7/Root 2 0 R/Compress<<'
+             '/LengthO 7677/SpecO/1.2>>/ID['
+             '(\x87\xfa\x8d\xcdc\x80\xf4y\xa9\x9e\tI\xa0b\xad3)'
+             '(\x8d\\\\\x87\xa1\xbb\t\xae\xe6sU<\x10\x90*I\xf1)'
+             ']/Length 14>>stream\n'
+         '\x00\x00\x00\x0f\x00W\x00\x83\x00\xcf\x1c\x88\x1c\xe3\n'
+         'endstream\n'
+         'endobj\n'
+         'startxref\n'
+         '483\n'
+         '%%EOF\n')
+    t = ('%PDF-1.5\n'
+         '%\x90\x84\x86\x8f\n'
+         '1 0 obj\n'
+         '<</Type/Pages/Kids[5 0 R]/MediaBox[0 0 419 534]/Count 1>>endobj\n'
+         '2 0 obj\n'
+         '<</Type   /Catalog/Pages 1 0 R>>endobj\n'
+         '3 0 obj\n'
+         '<</Length 30>>stream\n'
+         '\n'
+         'q\n'
+         '419 0 0 534 0 0 cm /S Do\n'
+         'Q\n'
+         'endstream endobj\n'
+         '4 0 obj\n'
+         '<</BitsPerComponent 1/ColorSpace/DeviceGray/Filter/FlateDecode'
+             '/Height 534/Interpolate false/Length 4/Subtype/Image/Width 419'
+             '>>stream\n'
+         'BLAHendstream endobj\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n'
+         '5 0 obj\n'
+         '<</Type/Page/Contents 3 0 R/Resources<</XObject<</S 4 0 R>>>>'
+             '/Parent 1 0 R>>endobj\n'
+         '6 0 obj\n'
+         '<</Length 14/Root 2 0 R/Size 7/Type/XRef/W[0 2 0]>>stream\n'
+         '\x00\x00\x00\x0f\x00W\x00\x83\x00\xcf\x1c\x88\x1c\xe3'
+             'endstream endobj\n'
+         'startxref\n'
+         '483\n'
+         '%%EOF\n')
+    self.assertEqual(t, e(s))
+    # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
+
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

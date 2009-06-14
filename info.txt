@@ -414,3 +414,5 @@ additional compression may be possible with:
 * TODO: how much do we save (after Multivalent.jar) if we don't have
   outlines or bookmarks (hyperref)?
 * TODO: measure: how much font unification saves? (10K for GaramondNo8-Reg)
+* TODO: doc: Multivalent.jar /DecodeParms<</Predictor 12/Columns 5>> on
+  /Type/XRef
