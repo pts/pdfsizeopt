@@ -80,6 +80,21 @@ def EnsureRemoved(file_name):
     assert not os.path.exists(file_name)
 
 
+def FindOnPath(file_name):
+  """Find file_name on $PATH, and return the full pathname or None."""
+  # TODO(pts): Make this work on non-Unix systems.
+  for item in os.getenv('PATH', '/bin:/usr/bin').split(':'):
+    if not item:
+      item = '.'
+    path_name = '%s/%s' % (item, file_name)
+    try:
+      os.stat(path_name)
+      return path_name
+    except OSError:
+      pass
+  return None
+
+
 class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
@@ -1610,7 +1625,7 @@ class PdfObj(object):
       return zlib.decompress(self.stream)
     if not is_gs_ok:
       raise FilterNotImplementedError('filter not implemented: ' + filter)
-    tmp_file_name = 'type1cconf.filter.tmp.bin'
+    tmp_file_name = 'pso.filter.tmp.bin'
     f = open(tmp_file_name, 'w')
     write_ok = False
     try:
@@ -3355,7 +3370,7 @@ class PdfData(object):
     """Convert all Type1 fonts to Type1C in self, returns self."""
     # !! proper tmp prefix
     type1c_objs = self.GenerateType1CFontsFromType1(
-        self.GetFonts('Type1'), 'type1cconv.tmp.ps', 'type1cconv.tmp.pdf')
+        self.GetFonts('Type1'), 'pso.conv.tmp.ps', 'pso.conv.tmp.pdf')
     for obj_num in type1c_objs:
       obj = self.objs[obj_num]
       assert str(obj.Get('FontName')).startswith('/')
@@ -3588,8 +3603,8 @@ class PdfData(object):
           duplicate_count)
 
     parsed_fonts = self.ParseType1CFonts(
-        objs=type1c_objs, ps_tmp_file_name='type1cconv.parse.tmp.ps',
-        data_tmp_file_name='type1cconv.parsedata.tmp.ps')
+        objs=type1c_objs, ps_tmp_file_name='pso.conv.parse.tmp.ps',
+        data_tmp_file_name='pso.conv.parsedata.tmp.ps')
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
         (sorted(parsed_fonts), sorted(type1c_objs)))
 
@@ -3770,8 +3785,8 @@ class PdfData(object):
       AppendSerialized(parsed_fonts[obj_num], output)
       output.append('endobj\n')
     output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
-    ps_tmp_file_name = 'type1cconv.type1cgen.tmp.ps'
-    pdf_tmp_file_name = 'type1cconv.type1cgen.tmp.pdf'
+    ps_tmp_file_name = 'pso.conv.gen.tmp.ps'
+    pdf_tmp_file_name = 'pso.conv.gen.tmp.pdf'
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing Type1CGenerator (%s font bytes) to: %s'
         % (len(output_str) - output_prefix_len, ps_tmp_file_name))
@@ -3825,8 +3840,8 @@ class PdfData(object):
         (sorted(parsed_fonts), sorted(type1c_objs)))
     if do_double_check_missing_glyphs:
       parsed2_fonts = self.ParseType1CFonts(
-          objs=loaded_objs, ps_tmp_file_name='type1cconv.parse2.tmp.ps',
-          data_tmp_file_name='type1cconv.parse2data.tmp.ps')
+          objs=loaded_objs, ps_tmp_file_name='pso.conv.parse2.tmp.ps',
+          data_tmp_file_name='pso.conv.parse2data.tmp.ps')
       assert sorted(parsed_fonts) == sorted(type1c_objs), (
           'font obj number list mismatch: loaded=%r expected=%s' %
           (sorted(parsed_fonts), sorted(type1c_objs)))
@@ -4319,7 +4334,7 @@ class PdfData(object):
         device_image_objs[gs_device][obj_num] = obj
       else:
         images[obj_num].append(('parse', (image2.SavePng(
-            file_name='type1cconv-%d.parse.png' % obj_num))))
+            file_name='pso.conv-%d.parse.png' % obj_num))))
         if image1.compression == 'none':
           image1.idat = zlib.compress(image1.idat, 9)
           image1.compression = 'zip'
@@ -4336,13 +4351,13 @@ class PdfData(object):
 
     # Render images which we couldn't convert in-process.
     for gs_device in sorted(device_image_objs):
-      ps_tmp_file_name = 'type1cconv.%s.tmp.ps' % gs_device
+      ps_tmp_file_name = 'pso.conv.%s.tmp.ps' % gs_device
       objs = device_image_objs[gs_device]
       if objs:
         # Dictionary mapping object numbers to /Image PdfObj{}s.
         rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern='type1cconv-%%04d.%s.tmp.png' % gs_device)
+            png_tmp_file_pattern='pso.conv-%%04d.%s.tmp.png' % gs_device)
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
           images[obj_num].append(
@@ -4378,7 +4393,7 @@ class PdfData(object):
         #    (or just add .gz support?)
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
-            targetfn='type1cconv-%d.sam2p-np.pdf' % obj_num,
+            targetfn='pso.conv-%d.sam2p-np.pdf' % obj_num,
             # We specify -s here to explicitly exclue SF_Opaque for single-color
             # images.
             # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
@@ -4401,7 +4416,7 @@ class PdfData(object):
         else:
           obj_images.append(self.ConvertImage(
               sourcefn=rendered_image_file_name,
-              targetfn='type1cconv-%d.sam2p-pr.png' % obj_num,
+              targetfn='pso.conv-%d.sam2p-pr.png' % obj_num,
               cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
               cmd_name='sam2p_pr'))
           if (use_jbig2 and obj_images[-1][1].bpc == 1 and
@@ -4411,24 +4426,23 @@ class PdfData(object):
             if obj_images[-1][1].color_type != 'gray':
               # This changes obj_images[-1].file_name as well.
               obj_images[-1][1].SavePng(
-                  file_name='type1cconv-%d.gray.png' % obj_num, do_force_gray=True)
+                  file_name='pso.conv-%d.gray.png' % obj_num, do_force_gray=True)
             obj_images[-1][1].idat = self.ConvertImage(
                 sourcefn=obj_images[-1][1].file_name,
-                targetfn='type1cconv-%d.jbig2' % obj_num,
+                targetfn='pso.conv-%d.jbig2' % obj_num,
                 cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
                 cmd_name='jbig2', do_just_read=True)[1]
             obj_images[-1][1].compression = 'jbig2'
-            obj_images[-1][1].file_name = 'type1cconv-%d.jbig2' % obj_num
+            obj_images[-1][1].file_name = 'pso.conv-%d.jbig2' % obj_num
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
-          # !! rename type1cconv and .type1c in temporary filenames
           # !! TODO(pts): Find better pngout binary file name.
           # TODO(pts): Try optipng as well (-o5?)
           if use_pngout:
             obj_images.append(self.ConvertImage(
                 sourcefn=rendered_image_file_name,
-                targetfn='type1cconv-%d.pngout.png' % obj_num,
-                cmd_pattern='pngout-linux-pentium4-static '
+                targetfn='pso.conv-%d.pngout.png' % obj_num,
+                cmd_pattern='pngout '
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout'))
 
@@ -4812,7 +4826,7 @@ class PdfData(object):
     """Save this PDF to file_name, return self."""
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
-    in_pdf_tmp_file_name = 'type1cconv.mi.tmp.pdf'
+    in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
 
     assert in_pdf_tmp_file_name.endswith('.pdf')
     # This is what Multivalent.jar generates.
@@ -4828,7 +4842,24 @@ class PdfData(object):
     self.file_name = orig_file_name
     self.file_size = orig_file_size
     EnsureRemoved(out_pdf_tmp_file_name)
-    multivalent_cmd = 'java -cp Multivalent.jar tool.pdf.Compress %s' % (
+
+    multivalent_jar = FindOnPath('Multivalent.jar')
+    if multivalent_jar is None:
+      for item in os.getenv('CLASSPATH', '').split(':'):
+        if not item:
+          continue
+        if item.endswith('/Multivalent.jar'):
+          multivalent_jar = item
+          break
+    if not multivalent_jar:
+      print >>sys.stderr, (
+          'error: Multilvalent.jar not found. Make sure it is on the $PATH, '
+          'or it is one of the files on the $CLASSPATH.')
+      assert 0, 'Multivalent.jar not found, see above'
+    assert ':' not in multivalent_jar  # $CLASSPATH separator
+
+    multivalent_cmd = 'java -cp %s tool.pdf.Compress %s' % (
+        ShellQuoteFileName(multivalent_jar),
         ShellQuoteFileName(in_pdf_tmp_file_name))
     print >>sys.stderr, (
         'info: executing Multivalent to optimize PDF: %s' % multivalent_cmd)
@@ -4843,7 +4874,7 @@ class PdfData(object):
       print >>sys.stderr, 'info: Multivalent has not created output: ' % (
           out_pdf_tmp_file_name)
       assert 0, 'Multivalent failed (no output)'
-    #!!os.remove(in_pdf_tmp_file_name)
+    os.remove(in_pdf_tmp_file_name)
 
     f = open(out_pdf_tmp_file_name)
     try:
@@ -4856,7 +4887,7 @@ class PdfData(object):
         (out_pdf_tmp_file_name,
          out_data_size, FormatPercent(out_data_size, in_data_size)))
     data = self.FixPdfFromMultivalent(data)
-    #!!os.remove(out_pdf_tmp_file_name)
+    os.remove(out_pdf_tmp_file_name)
 
     print >>sys.stderr, 'info: saving PDF to: %s' % (
         file_name)
@@ -4959,9 +4990,9 @@ def main(argv):
       file_name = args[0]
       if file_name.endswith('.pdf'):
         # !! different filename
-        output_file_name = file_name[:-4] + '.type1c.pdf'
+        output_file_name = file_name[:-4] + '.pso.pdf'
       else:
-        output_file_name = file_name + '.type1c.pdf'
+        output_file_name = file_name + '.pso.pdf'
     elif len(args) == 2:
       file_name = args[0]
       output_file_name = args[1]
