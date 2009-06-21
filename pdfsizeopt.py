@@ -4682,15 +4682,14 @@ class PdfData(object):
 
       head = PdfObj.PDF_SIMPLE_REF_RE.sub(ReplacementRef, head_minus)
       assert not refs_to_rev
-      
+
       head = PdfObj.PDF_HEX_STRING_OR_DICT_RE.sub(
-          lambda match: (match.group(1) and PdfObj.EscapeString(
+          lambda match: (match.group(1) is not None and PdfObj.EscapeString(
               match.group(1).decode('hex')) or '<<'), head)
       obj = PdfObj(None)
       obj.head = head
       obj.stream = stream
       objs_ret[obj_num_map.get(obj_num, obj_num)] = obj
-      # !! fix CFF as well (ObjNNN is part of the CFF)
 
     return objs_ret
 
@@ -4874,7 +4873,6 @@ class PdfData(object):
       print >>sys.stderr, 'info: Multivalent has not created output: ' % (
           out_pdf_tmp_file_name)
       assert 0, 'Multivalent failed (no output)'
-    os.remove(in_pdf_tmp_file_name)
 
     f = open(out_pdf_tmp_file_name)
     try:
@@ -4886,7 +4884,10 @@ class PdfData(object):
         'info: Multivalent generated %s of %d bytes (%s)' %
         (out_pdf_tmp_file_name,
          out_data_size, FormatPercent(out_data_size, in_data_size)))
+    assert out_data_size, (
+        'Multivalent generated empty output (see its error above)')
     data = self.FixPdfFromMultivalent(data)
+    os.remove(in_pdf_tmp_file_name)
     os.remove(out_pdf_tmp_file_name)
 
     print >>sys.stderr, 'info: saving PDF to: %s' % (

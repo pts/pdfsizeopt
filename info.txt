@@ -380,6 +380,16 @@ additional compression may be possible with:
   * how to fix pdfr_;
     private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
 * \cite http://websiteoptimization.com/speed/tweak/pdf/
+  uses Advanced / PDF optimizer in Acrobat 8
+  uses PDF Enhancer 3.1 (pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
+    good: Linux command-line version also available
+    good: extra reduction (see lme_v6.pdf) by applying pdfe first, then
+      pdfsizeopt.py (then with Multivalent.jar)
+    good: doesn't degrade quality by default
+    SUXX: not open source, needs payment
+    SUXX: useless error message:
+     An error has occurred:  expected a dictionary object
+  other software: PDF Shrink http://www.apagoinc.com/prod_home.php?prod_id=30
 * how to find embedded glyphs in PDF:
   pdftops type1cconv.tmp.pdf - | perl -ne 'if (/^currentfile eexec$/) { die
   if $N; $N=1 } elsif (/^cleartomark/) { $N=2 } elsif ($N==1) { print }' |
@@ -416,3 +426,11 @@ additional compression may be possible with:
 * TODO: measure: how much font unification saves? (10K for GaramondNo8-Reg)
 * TODO: doc: Multivalent.jar /DecodeParms<</Predictor 12/Columns 5>> on
   /Type/XRef
+* doc: font unification is useful after PDF concatenation and image
+  embedding
+* doc: acroread and gs 8 need /Encoding in /Font
+* doc: gs 8.54 cannot always display /JBIG2Decode properly (minitex.pdf);
+  --> upgrade to 8.61
+* doc: gs 8.54 cannot parse all xref; --> upgrade to 8.61
+* TODO: feature: run ./pdfe as first step pdfsizeopt.py
+* TODO: diagnose why ./pdfe cannot export eurotex2006-final.pdf

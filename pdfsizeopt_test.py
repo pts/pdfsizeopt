@@ -674,6 +674,20 @@ class PdfSizeOptTest(unittest.TestCase):
          2: ('<</S(q)/P 1 0 R>>', None),
          1: ('<</S(q)/Q 2 0 R>>', None)}, new_objs)
 
+  def testFindEqclassesString(self):
+    pdf = pdfsizeopt.PdfData()
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<</A[3 0 R]>>endobj')
+    pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</A()/B<>/C(:)/D<3a3A4>>>endobj')
+    pdf.objs['trailer'] = pdf.trailer
+    new_objs = pdfsizeopt.PdfData.FindEqclasses(
+        pdf.objs, do_remove_unused=True, do_renumber=True)
+    for obj_num in new_objs:
+      new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
+    self.assertEqual(
+        {'trailer': ('<</A[1 0 R]>>', None),
+         1: ('<</A()/B()/C(:)/D(::@)>>', None)}, new_objs)
+
   def testParseAndSerializeCffDict(self):
     # TODO(pts): Add more tests.
     # TODO(pts): PdfObj.ParseCffHeader
