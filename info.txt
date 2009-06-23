@@ -381,11 +381,14 @@ additional compression may be possible with:
     private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
 * \cite http://websiteoptimization.com/speed/tweak/pdf/
   uses Advanced / PDF optimizer in Acrobat 8
-  uses PDF Enhancer 3.1 (pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
+  uses PDF Enhancer 3.1 (server edition: pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
+    features: http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
     good: Linux command-line version also available
     good: extra reduction (see lme_v6.pdf) by applying pdfe first, then
       pdfsizeopt.py (then with Multivalent.jar)
     good: doesn't degrade quality by default
+    good: highly configurable (even for lossy)
+    good: can concatenate and split as well
     SUXX: not open source, needs payment
     SUXX: useless error message:
      An error has occurred:  expected a dictionary object

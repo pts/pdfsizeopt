@@ -178,6 +178,17 @@ class PdfObj(object):
       r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z')
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
 
+  PDF_VERSION_HEADER_RE = re.compile(r'\A%PDF-(1[.]\d)\s')
+  """Matches the header with the version at the beginning of the PDF."""
+
+  PDF_TRAILER_RE = re.compile(
+      r'(?s)trailer[\0\t\n\r\f ]*<<(.*?)>>'
+      r'[\0\t\n\r\f ]*startxref[\0\t\n\r\f ]')
+  """Matches from 'trailer' to 'startxref'."""
+
+  TRAILER_WORD_RE = re.compile(r'[\0\t\n\r\f ](trailer[\0\t\n\r\f ]*<<)')
+  """Matches whitespace, the wirt 'trailer' and some more chars."""
+
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None):
     """Initialize from other.
 
@@ -598,6 +609,23 @@ class PdfObj(object):
             data, end_ofs_out[0] - 1, end)
       elif match.group(2):  # endobj or stream
         return match.end(2)
+
+  @classmethod
+  def ParseTrailer(cls, data, start=0):
+    """Parse PDF trailer at offset start."""
+    # TODO(pts): Add unit test.
+    # TODO(pts): Proper PDF token sequence parsing, for the end of the dict.
+    scanner = PdfObj.PDF_TRAILER_RE.scanner(data, start)
+    match = scanner.match()
+    if not match:
+      raise PdfTokenParseError('bad trailer data: %r' % data[start : start + 256])
+    trailer_obj = PdfObj(None)
+    # TODO(pts): No need to strip with proper PDF token sequence parsing.
+    trailer_obj.head = '<<%s>>' % match.group(1).strip(
+        PdfObj.PDF_WHITESPACE_CHARS)
+    trailer_obj.Set('XRefStm', None)
+    # We don't remove 'Prev' here, the caller might be interested.
+    return trailer_obj
 
   @classmethod
   def ParseSimpleValue(cls, data):
@@ -2499,6 +2527,7 @@ class ImageData(object):
     return self
 
 
+
 class PdfData(object):
 
   __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size']
@@ -2533,8 +2562,9 @@ class PdfData(object):
     print >>sys.stderr, 'info: loaded PDF of %s bytes' % len(data)
     self.file_name = f.name
     self.file_size = len(data)
-    match = re.match(r'^%PDF-(1[.]\d)\s', data)
-    assert match, 'uncrecognized PDF signature'
+    match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
+    if not match:
+      raise PdfTokenParseError('uncrecognized PDF signature %r' % data[0: 16])
     self.version = match.group(1)
     self.objs = {}
     self.trailer = None
@@ -2550,15 +2580,9 @@ class PdfData(object):
     assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
     print >>sys.stderr, 'info: separated to %s objs' % (len(obj_starts) - 1)
     last_ofs = trailer_ofs = obj_starts.pop('trailer')
-    trailer_data = data[trailer_ofs: trailer_ofs + 8192]
-    match = re.match('(?s)trailer\s+<<(.*?)>>\s*startxref\s', trailer_data)
-    assert match, 'bad trailer data: %r' % trailer_data
-    self.trailer = PdfObj(None)
-    # TODO(pts): No need to strip with proper PDF token sequence parsing
-    self.trailer.head = '<<%s>>' % match.group(1).strip(
-        PdfObj.PDF_WHITESPACE_CHARS)
+    self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
     self.trailer.Set('Prev', None)
-    self.trailer.Set('XRefStm', None)
+
     if 'xref' in obj_starts:
       last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
 
@@ -2671,12 +2695,15 @@ class PdfData(object):
       # Keep only the very first trailer.
       obj_starts.setdefault('trailer', xref_ofs)
 
-      trailer_data = data[xref_ofs: xref_ofs + 8192]
-      match = re.match('(?s)trailer\s+(<<.*?>>)\s*startxref\s', trailer_data)
-      assert match, 'bad trailer data: %r' % trailer_data
-      match = re.search('/Prev\s+(\d+)', match.group(1))
-      if not match: break
-      xref_ofs = int(match.group(1))
+      # TODO(pts): How to test this?
+      try:
+        xref_ofs = PdfObj.ParseTrailer(data, start=xref_ofs).Get('Prev')
+      except PdfTokenParseError, exc:
+        raise PdfXrefError(str(exc))
+      if xref_ofs is None:
+        break
+      if not isinstance(xref_ofs, int) and not isinstance(xref_ofs, long):
+        raise PdfXrefError('/Prev xref offset not an int: %r' % xref_ofs)
     return obj_starts
 
   @classmethod
@@ -4727,6 +4754,92 @@ class PdfData(object):
     self.objs.update(new_objs)
     return self
 
+  def ParsePdfSequentially(self, data, file_name=None):
+    """Parse a PDF file contents to self sequentially.
+
+    This method overrides the contents of self from data.
+
+    This method is a bit smarter (and more relaxed) than Load, because it
+    can parse a PDF with a cross reference stream (/Type/XRef; instead of a cross
+    reference table). It doesn't understand the cross reference stream,
+    however. It also doesn't decode object streams (/Type/ObjStm).
+
+    Returns:
+      self.
+    Raises:
+      PdfTokenParseError: On error, the state of self is unknown, it may be
+        partially filled.
+    """
+    match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
+    if not match:
+      raise PdfTokenParseError('uncrecognized PDF signature %r' % data[0: 16])
+    self.version = match.group(1)
+    self.objs.clear()
+    self.trailer = None
+    self.file_name = file_name
+    self.file_size = len(data)
+    i = 0
+    end_ofs_out = []
+    if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
+      scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
+      i = scanner.match().end()  # always matches
+    # !! keep PDF header + binary comments
+    obj_num_by_ofs = {}
+    obj_start_ofss = set()
+    objs = []
+    obj_nums = []
+
+    while True:
+      if i >= len(data):
+        raise PdfTokenParseError('unexpeted EOF in PDF')
+      if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
+        scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
+        i = scanner.match().end()  # always matches
+      del end_ofs_out[:]
+      prefix = data[i : i + 16]
+      if prefix.startswith('startxref'):
+        scanner = PdfObj.PDF_STARTXREF_RE.scanner(data, i - 1)
+        match = scanner.match()
+        if not match:
+          raise PdfTokenParseError('startxref syntax error at ofs=%d' % i)
+        startxref_ofs = int(match.group(1))
+        startxref_obj_num = obj_num_by_ofs.get(startxref_ofs)
+        if startxref_obj_num is None:
+          raise PdfTokenParseError(
+              'startxref points to unknown obj ofs %d' % startxref_ofs)
+        self.trailer = self.objs.pop(obj_num)
+        if self.trailer.Get('Type') != '/XRef':
+          raise PdfTokenParseError('no cross reference stream or table')
+        self.trailer = pdf_obj
+        break
+      if prefix.startswith('xref'):
+        # !!! what if multiple cross-reference tables (test this, maybe pdf_reference?)
+        scanner = PdfObj.TRAILER_WORD_RE.scanner(data, i)
+        match = scanner.search()
+        if not match:
+          raise PdfTokenParseError('cannot find trailer after xref')
+        self.trailer = PdfObj.ParseTrailer(data, start=match.start(1))
+        self.trailer.Set('Prev', None)
+        break
+      if prefix.startswith('trailer'):
+        raise PdfTokenParseError(
+            'unexpected trailer at ofs=%d' % i)
+      pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i)
+      head = pdf_obj.head
+      obj_start_ofss.add(i)
+      scanner = PdfObj.NONNEGATIVE_INT_RE.scanner(data, i)
+      match = scanner.match()
+      assert match
+      obj_num = int(match.group(1))
+      self.objs[obj_num] = pdf_obj
+      obj_num_by_ofs[i] = obj_num
+      assert end_ofs_out[0] > i
+      i = end_ofs_out[0]
+
+    # !! test this
+    return self
+
+
   @classmethod
   def FixPdfFromMultivalent(cls, data):
     """Fix PDF contents file in data, generated by Mulitvalent.jar."""
@@ -4738,8 +4851,8 @@ class PdfData(object):
       scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
       i = scanner.match().end()  # always matches
     # Keep initial comments, including the '%PDF-' header.
-    # TODO(pts): Keep less (PDF header and %ABCD binary comment) once we can
-    # change offsets.
+    # TODO(pts): Keep less (only the PDF header and %ABCD binary comment)
+    # once we can change offsets.
     output = [data[:i]]
     output_size = 0
     output_size_idx = 0
@@ -4813,7 +4926,8 @@ class PdfData(object):
     if startxref_ofs not in obj_start_ofss:
       raise PdfTokenParseError(
           'startxref points to unknown obj ofs %d' % startxref_ofs)
-    # We don't change startxref ofs, since we have haven't change
+    # We don't change startxref ofs, since we have haven't changed any offsets.
+    # TODO(pts): Regenerate the xref stream from the new objects.
     output.append('startxref\n%d\n' % startxref_ofs)
     output.append('%%EOF\n')
     if total_padding_size > 0:
