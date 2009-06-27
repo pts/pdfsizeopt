@@ -5298,11 +5298,15 @@ def ParseBoolFlag(flag_name, flag_value):
 
 
 def main(argv):
-  print >>sys.stderr, 'info: This is %s v%s.' % (
+  print >>sys.stderr, 'info: This is %s r%s.' % (
       os.path.basename(__file__), __id__.split(' ', 3)[2])
   # Find image converters in script dir first.
   os.environ['PATH'] = '%s:%s' % (
       os.path.dirname(os.path.abspath(__file__)), os.getenv('PATH', ''))
+  if not argv:
+    argv = [__file__]
+  if len(argv) == 1:
+    argv.append('--help')
 
   try:
     use_pngout = True
@@ -5354,6 +5358,12 @@ def main(argv):
       elif key == '--do-regenerate-all-fonts':
         do_regenerate_all_fonts = ParseBoolFlag(key, value)
       elif key == '--help':
+        print >>sys.stderr, (
+            'info: usage for statistics computation: %s --stats <input.pdf>' %
+            argv[0])
+        print >>sys.stderr, (
+            'info: usage for size optimization: %s [<flag>...] '
+            '<input.pdf> [<output.pdf>]' % argv[0])
         # TODO(pts): Implement this.
         print >>sys.stderr, 'error: --help not implemented'
         sys.exit(2)
