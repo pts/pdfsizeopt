@@ -99,6 +99,14 @@ class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
 
+class PdfIndirectLengthError(PdfTokenParseError):
+  """Raised if an obj stream /Length is an unresolvable indirect reference.
+
+  The attribute length_obj_num might be set to the object number holding the
+  length.  
+  """
+
+
 class PdfTokenTruncated(Error):
   """Raised if a string is only a prefix of a PDF token sequence."""
 
@@ -156,20 +164,30 @@ class PdfObj(object):
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f /%<>\[\](])')
   """Matches the generation number and the 'R'."""
 
-  LENGTH_OF_STREAM_RE = re.compile(
-      r'/Length(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
-      r'(?=[\0\t\n\r\f /%(<>\[\]])(?:'
+  PDF_NUMBER_OR_REF_RE_STR = (
+      r'(-?\d+)(?=[\0\t\n\r\f /%(<>\[\]])(?:'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R'
-      r'(?=[\0\t\n\r\f /%(<>\[\]]))?')
+      r'(?=[\0\t\n\r\f /%(<>\[\]]|\Z))?')
+  PDF_NUMBER_OR_REF_RE = re.compile(PDF_NUMBER_OR_REF_RE_STR)
+  """Matches a number or an <x> <y> R."""
+
+  LENGTH_OF_STREAM_RE = re.compile(
+      r'/Length(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+' + PDF_NUMBER_OR_REF_RE_STR)
   """Matches `/Length <x>' or `/Length <x> <y> R'."""
 
   SUBSET_FONT_NAME_PREFIX_RE = re.compile(r'/[A-Z]{6}[+]')
   """Matches the beginning of a subset font name (starting with slash)."""
 
-  PDF_OBJ_DEF_RE = re.compile(
-      r'\d+[\0\t\n\r\f ]+0[\0\t\n\r\f ]+obj\b[\0\t\n\r\f ]*')
+  PDF_OBJ_DEF_RE_STR = (
+      r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
+      r'(?=[\0\t\n\r\f /<\[({])[\0\t\n\r\f ]*')
+  PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
   """Matches an `obj' definition no leading, with trailing whitespace."""
+
+  PDF_OBJ_DEF_OR_XREF_RE = re.compile(
+      PDF_OBJ_DEF_RE_STR + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
+  """Matches an `obj' definition, xref or startxref."""
 
   NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
   """Matches and captures a nonneagative integer."""
@@ -182,14 +200,18 @@ class PdfObj(object):
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
-      r'(?s)trailer[\0\t\n\r\f ]*<<(.*?)>>'
-      r'[\0\t\n\r\f ]*startxref[\0\t\n\r\f ]')
+      r'(?s)trailer[\0\t\n\r\f ]*(<<.*?>>'
+      r'[\0\t\n\r\f ]*)startxref[\0\t\n\r\f ]')
   """Matches from 'trailer' to 'startxref'."""
 
-  TRAILER_WORD_RE = re.compile(r'[\0\t\n\r\f ](trailer[\0\t\n\r\f ]*<<)')
+  PDF_TRAILER_WORD_RE = re.compile(r'[\0\t\n\r\f ](trailer[\0\t\n\r\f ]*<<)')
   """Matches whitespace, the wirt 'trailer' and some more chars."""
 
-  def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None):
+  PDF_FONT_FILE_KEYS = ('FontFile', 'FontFile2', 'FontFile3')
+  """Tuple of keys in /Type/FontDescriptor referring to the font data obj."""
+
+  def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
+               obj_starts=None):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
@@ -227,7 +249,8 @@ class PdfObj(object):
       match = scanner.match()
       if not match:
         raise PdfTokenParseError(
-            'X Y obj expected at ofs=%s' % file_ofs)
+            'X Y obj expected, got %r at ofs=%s' %
+            (other[start : start + 32], file_ofs))
       skip_obj_number_idx = match.end()
       stream_start_idx = None
 
@@ -306,11 +329,14 @@ class PdfObj(object):
             raise PdfTokenParseError(
                 'obj num %d >= 0 expected for indirect /Length at ofs=%s' %
                 (obj_num, file_ofs))
+          if not objs or obj_num not in objs:
+            exc = PdfIndirectLengthError(
+                'missing obj for indirect /Length %d 0 R at ofs=%s' %
+                (obj_num, file_ofs))
+            exc.length_obj_num = obj_num
+            raise exc
           try:
             stream_length = int(objs[obj_num].head)
-          except KeyError:
-            raise PdfTokenParseError(
-                'indirect /Length not found at ofs=%s' % file_ofs)
           except ValueError:
             raise PdfTokenParseError(
                 'indirect /Length not an integer at ofs=%s' % file_ofs)
@@ -611,7 +637,7 @@ class PdfObj(object):
         return match.end(2)
 
   @classmethod
-  def ParseTrailer(cls, data, start=0):
+  def ParseTrailer(cls, data, start=0, end_ofs_out=None):
     """Parse PDF trailer at offset start."""
     # TODO(pts): Add unit test.
     # TODO(pts): Proper PDF token sequence parsing, for the end of the dict.
@@ -620,9 +646,11 @@ class PdfObj(object):
     if not match:
       raise PdfTokenParseError(
           'bad trailer data: %r' % data[start : start + 256])
+    if end_ofs_out is not None:
+      end_ofs_out.append(match.end(1))
     trailer_obj = PdfObj(None)
     # TODO(pts): No need to strip with proper PDF token sequence parsing.
-    trailer_obj.head = '<<%s>>' % match.group(1).strip(
+    trailer_obj.head = match.group(1).strip(
         PdfObj.PDF_WHITESPACE_CHARS)
     trailer_obj.Set('XRefStm', None)
     # We don't remove 'Prev' here, the caller might be interested.
@@ -4774,8 +4802,8 @@ class PdfData(object):
         (if any) and the trailer offset.
       obj_num_by_ofs_out: None or dict that will be populated with object
         offsets mapped by object numbers.
-      setitem_callback: None or function taking obj_num and pdf_obj as
-        arguments. The default implementation extends self.objs.
+      setitem_callback: None or function taking obj_num, pdf_obj and enf_ofs
+        as arguments. The default implementation extends self.objs.
     Returns:
       self.
     Raises:
@@ -4788,10 +4816,11 @@ class PdfData(object):
     elif not isinstance(obj_num_by_ofs_out, dict):
       raise TypeError
 
-    def DefaultSetItem(obj_num, pdf_obj):
-      if obj_num in self.objs:
-        raise PdfTokenParseError('duplicate object number %s' % obj_num)
-      self.objs[obj_num] = pdf_obj
+    def DefaultSetItem(obj_num, pdf_obj, unused_end_ofs):
+      if obj_num is not None:
+        if obj_num in self.objs:
+          raise PdfTokenParseError('duplicate object number %s' % obj_num)
+        self.objs[obj_num] = pdf_obj
 
     if setitem_callback is None:
       setitem_callback = DefaultSetItem
@@ -4817,18 +4846,32 @@ class PdfData(object):
     self.file_size = len(data)
     i = 0
     end_ofs_out = []
-    if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
-      scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
-      i = scanner.match().end()  # always matches
+    # None or a dict mapping object numbers to their start offsets in data.
+    obj_starts = None
+    length_objs = {}
+
     while True:
       if i >= len(data):
         raise PdfTokenParseError('unexpeted EOF in PDF')
+      i0 = i
       if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
         scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
         i = scanner.match().end()  # always matches
+
+      scanner = PdfObj.PDF_OBJ_DEF_OR_XREF_RE.scanner(data, i)
+      match = scanner.search()
+      if not match:
+        raise PdfTokenParseError(
+            'next obj or xref or startxref not found at ofs=%d' % i)
+      i = match.start()
+      if i0 != i:
+        # Report wasted bytes between objs.
+        setitem_callback(None, data[i0 : i], None)
+
       del end_ofs_out[:]
       prefix = data[i : i + 16]
       if prefix.startswith('startxref'):
+        offsets_out.append(i)  # startxref
         scanner = PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1)
         match = scanner.match()
         if not match:
@@ -4840,23 +4883,53 @@ class PdfData(object):
           raise PdfTokenParseError('no cross reference stream or table')
         break
       if prefix.startswith('xref'):
-        # !!! what if multiple cross-reference tables (test this, maybe pdf_reference?)
-        scanner = PdfObj.TRAILER_WORD_RE.scanner(data, i)
+        i0 = i
+        scanner = PdfObj.PDF_TRAILER_WORD_RE.scanner(data, i)
         match = scanner.search()
         if not match:
           raise PdfTokenParseError('cannot find trailer after xref')
         if offsets_out is not None:
-          offsets_out.append(i)
-        i = match.start(1)
-        self.trailer = PdfObj.ParseTrailer(data, start=i)
-        if offsets_out is not None:
-          offsets_out.append(i)
+          offsets_out.append(i)  # xref
+          i = match.start(1)
+          del end_ofs_out[:]
+          self.trailer = PdfObj.ParseTrailer(
+              data, start=i, end_ofs_out=end_ofs_out)
+          offsets_out.append(i)  # trailer
+          offsets_out.append(end_ofs_out[0])  # startxref
+        else:
+          i = match.start(1)
+          del end_ofs_out[:]
+          self.trailer = PdfObj.ParseTrailer(
+              data, start=i, end_ofs_out=end_ofs_out)
         self.trailer.Set('Prev', None)
-        break
+        i = end_ofs_out[0]
+        scanner = PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1)
+        if scanner.match():
+          break
+        # We reach this point in case of a linearized PDF. We usually have
+        # `startxref <offset> %%EOF' here, and then we get new objs.
+        if data[i : i + 9].startswith('startxref'):
+          # TODO(pts): Add more, till `%%EOF'.
+          i += 9
+        setitem_callback(None, data[i0 : i], 'linearized')
+        continue
       if prefix.startswith('trailer'):
         raise PdfTokenParseError(
             'unexpected trailer at ofs=%d' % i)
-      pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i)
+      try:
+        pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i,
+                         objs=length_objs)
+      except PdfIndirectLengthError, exc:
+        # For testing: eurotex2006.final.pdf and lme_v6.pdf
+        if obj_starts is None:
+          obj_starts = self.ParseUsingXref(data)
+        # TODO(pts): Cache length_objs.
+        j = obj_starts[exc.length_obj_num]
+        if exc.length_obj_num not in length_objs:
+          length_objs[exc.length_obj_num] = PdfObj(
+              data, start=j, file_ofs=j)
+        pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i,
+                         objs=length_objs)
       if offsets_out is not None:
         offsets_out.append(i)
       scanner = PdfObj.NONNEGATIVE_INT_RE.scanner(data, i)
@@ -4868,21 +4941,192 @@ class PdfData(object):
         self.trailer = pdf_obj
       assert end_ofs_out[0] > i
       i = end_ofs_out[0]
-      setitem_callback(obj_num, pdf_obj)  # self.objs[obj_num] = pdf_obj
+      setitem_callback(obj_num, pdf_obj, i)  # self.objs[obj_num] = pdf_obj
 
     # !! add support for `/Length X 0 R' by parsing the xref table first (for testing: lme_v6.pdf).
     # !! test this
     return self
 
+  @classmethod
+  def ComputePdfStatistics(cls, file_name):
+    """Compute statistics for the specified PDF file."""
+    print >>sys.stderr, 'info: computing statistics for PDF: %s' % file_name
+    f = open(file_name, 'rb')
+    try:
+      data = f.read()
+    finally:
+      f.close()
+    print >>sys.stderr, 'info: PDF size is %s bytes' % len(data)
+
+    offsets_out = []
+    offsets_idx = [0]
+    obj_num_by_ofs_out = {}
+    trailer_obj_num = [None]
+    trailer_size = [None]
+    # All values are in bytes.
+    stats = {
+        'image_objs': 0,
+        # This includes the PDF header, `startxref' and what follows, plus
+        # space wasted in comments between objs. 
+        'separator_data': len(data),
+        'xref': 0,
+        'trailer': 0,
+        'other_objs': 0,
+        'wasted_between_objs': 0,
+        'header': 0,
+        'contents_objs': 0,
+        'font_data_objs': 0,
+        'linearized_xref': 0,
+    }
+    obj_size_by_num = {}
+    contents_obj_nums = set()
+    font_data_obj_nums = set()
+
+    def AddRefToSet(ref_data, set_obj):
+      if not isinstance(ref_data, str):
+        raise PdfTokenParseError('not a reference (in a string)')
+      if ref_data.startswith('['):
+        ref_items = PdfObj.ParseArray(ref_data)
+      else:
+        ref_items = [ref_data]
+      for ref_data in ref_items:
+        match = PdfObj.PDF_NUMBER_OR_REF_RE.match(ref_data)
+        if not match:
+          raise PdfTokenParseError(
+              'not a reference (or number) for %r' % (ref_data,))
+        assert match.group(1) is not None
+        if match.group(2) is None:
+          raise PdfTokenParseError('invalid ref %r' % (ref_data,))
+        if int(match.group(2)) != 0:
+          raise PdfTokenParseError(
+              'invalid ref geneartion in %r' % (ref_data,))
+        set_obj.add(int(match.group(1)))
+
+    pdf = PdfData()
+
+    def SetItemCallback(obj_num, pdf_obj, end_ofs):
+      if obj_num is None:
+        assert isinstance(pdf_obj, str)
+        if not offsets_out:
+          stats['header'] += len(pdf_obj)
+        elif end_ofs == 'linearized':
+          # For testing: inkscape_manual.pdf
+          stats['linearized_xref'] += len(pdf_obj)
+        else:
+          stats['wasted_between_objs'] += len(pdf_obj)
+        stats['separator_data'] -= len(pdf_obj)
+        return
+      obj_ofs = offsets_out[-1]
+      offsets_idx[0] = len(offsets_out)
+      obj_size_by_num[obj_num] = obj_size = end_ofs - obj_ofs
+      # The object spans from start_ofs to end_ofs.
+      stats['separator_data'] -= obj_size
+      if pdf.trailer is pdf_obj:
+        assert pdf.trailer.stream is not None
+        # Usually 0 unless there are duplicates.
+        stats['other_objs'] += stats['trailer'] + stats['xref']
+        trailer_obj_num[0] = obj_num
+        stats['xref'] = len(pdf.trailer.stream) + 20
+        stats['trailer'] = obj_size - stats['xref']
+      elif pdf_obj.head.startswith('<<'):
+        if pdf_obj.Get('Type') == '/ObjStm':
+          # We have to parse this to find /Contents and /FontFile*
+          # references.
+
+          # Object stream parsing makes statting pdf_reference_1-7.pdf very
+          # slow.
+          # TODO(pts): Figure out why other_objs consume more than 50% in
+          # pdf_reference_1-7.pdf.
+
+          obj_data = pdf_obj.GetUncompressedStream()
+          for head in PdfObj.ParseArray('[%s]' % obj_data):
+            if isinstance(head, str) and head.startswith('<<'):
+              dict_obj = PdfObj.ParseDict(head)
+              if (dict_obj.get('Type') == '/Page' and
+                  'Contents' in dict_obj):
+                AddRefToSet(dict_obj['Contents'], contents_obj_nums)
+              if dict_obj.get('Type') in ('/FontDescriptor', None):
+                for key in PdfObj.PDF_FONT_FILE_KEYS:
+                  ref_data = dict_obj.get(key)
+                  if isinstance(ref_data, str):
+                    try:
+                      AddRefToSet(ref_data, font_data_obj_nums)
+                    except PdfTokenParseError:
+                      pass
+        elif (pdf_obj.Get('Type') == '/Page' and
+              pdf_obj.Get('Contents') is not None):
+          AddRefToSet(pdf_obj.Get('Contents'), contents_obj_nums)
+
+        # Some PDFs generated by early pdftexs have /Type/FontDescriptor
+        # missing.
+        if pdf_obj.Get('Type') in ('/FontDescriptor', None):
+          for key in PdfObj.PDF_FONT_FILE_KEYS:
+            ref_data = pdf_obj.Get(key)
+            if isinstance(ref_data, str):
+              try:
+                AddRefToSet(ref_data, font_data_obj_nums)
+              except PdfTokenParseError:
+                pass
+
+        if pdf_obj.Get('Subtype') == '/Image':
+          stats['image_objs'] += obj_size
+        else:
+          stats['other_objs'] += obj_size
+      else:
+        stats['other_objs'] += obj_size
+
+    pdf.ParseSequentially(
+        data=data, file_name=file_name, offsets_out=offsets_out,
+        obj_num_by_ofs_out=obj_num_by_ofs_out,
+        setitem_callback=SetItemCallback)
+
+    for obj_num in sorted(contents_obj_nums):
+      obj_size = obj_size_by_num.get(obj_num)
+      if obj_size is not None:
+        stats['contents_objs'] += obj_size
+        stats['other_objs'] -= obj_size
+
+    for obj_num in sorted(font_data_obj_nums):
+      obj_size = obj_size_by_num.get(obj_num)
+      if obj_size is not None:
+        stats['font_data_objs'] += obj_size
+        stats['other_objs'] -= obj_size
+
+    if trailer_obj_num[0] is None:
+      assert len(offsets_out) == offsets_idx[0] + 3
+      assert stats['trailer'] == 0
+      assert stats['xref'] == 0
+      stats['xref'] += offsets_out[-2] - offsets_out[-3]
+      stats['separator_data'] -= offsets_out[-2] - offsets_out[-3]
+      stats['trailer'] += offsets_out[-1] - offsets_out[-2]
+      stats['separator_data'] -= offsets_out[-1] - offsets_out[-2]
+    else:
+      # With cross reference stream.
+      # For testing: any Multivalent output
+      assert len(offsets_out) == offsets_idx[0] + 1
+      assert stats['trailer'] > 0
+      assert stats['xref'] > 0
+
+    for key in sorted(stats):
+      print >>sys.stderr, 'info: stat %s = %s bytes (%s)' % (
+          key, stats[key], FormatPercent(stats[key], len(data)))
+    print >>sys.stderr, 'info: end of stats'
+    sum_stats = sum(stats.values())
+    assert sum_stats == len(data), (
+        'stats size mismatch: total_stats_size=%r, file_size=%r' %
+        (sum_stats, len(data)))
+    return stats
 
   @classmethod
   def FixPdfFromMultivalent(cls, data):
     """Fix PDF contents file in data, generated by Mulitvalent.jar."""
     offsets_out = []
     obj_num_by_ofs_out = {}
+    # TODO(pts): Use a setitem_callback here to save memory.
     pdf = PdfData().ParseSequentially(
         data=data, offsets_out=offsets_out,
         obj_num_by_ofs_out=obj_num_by_ofs_out)
+    offsets_out.pop()  # offset of `startxref'
     if pdf.trailer.stream is None:
       raise PdfTokenParseError('expected xref stream from Multivalent')
     if pdf.trailer.Get('Type') != '/XRef':
@@ -4903,7 +5147,8 @@ class PdfData(object):
       head = pdf_obj.head
 
       # We use substring search only to speed up the real match with Get.
-      if ('/Subtype/ImagE' in head and
+      if (head.startswith('<<') and
+          '/Subtype/ImagE' in head and
           ('/FilteR/' in head or '/FilteR[' in head)):
         subtype = pdf_obj.Get('Subtype')
         filtercap = pdf_obj.Get('FilteR')
@@ -5073,10 +5318,11 @@ def main(argv):
     # with Ghostscript.
     do_regenerate_all_fonts = True
     do_double_check_missing_glyphs = False
+    mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
     opts, args = getopt.gnu_getopt(argv[1:], '+', [
-        'version', 'help',
+        'version', 'help', 'stats',
         'use-pngout=', 'use-jbig2=', 'use-multivalent=',
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
@@ -5084,7 +5330,9 @@ def main(argv):
         'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
 
     for key, value in opts:
-      if key == '--use-pngout':
+      if key == '--stats':
+        mode = 'stats'
+      elif key == '--use-pngout':
         # !! add =auto (detect binary on path)
         use_pngout = ParseBoolFlag(key, value)
       elif key == '--use-jbig2':
@@ -5113,6 +5361,15 @@ def main(argv):
         sys.exit(0)  # printed above
       else:
         assert 0, 'unknown option %s' % key
+
+    if mode == 'stats':
+      if not args:
+        raise getopt.GetoptError('missing filename in command-line')
+      elif len(args) > 1:
+        raise getopt.GetoptError('too many arguments')
+      PdfData.ComputePdfStatistics(file_name=args[0])
+      return
+
     if not args:
       raise getopt.GetoptError('missing filename in command-line')
     elif len(args) == 1:
