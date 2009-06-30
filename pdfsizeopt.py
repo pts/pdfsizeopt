@@ -2181,10 +2181,11 @@ class ImageData(object):
     """Update the /Subtype/Image PDF XObject from self."""
     if not isinstance(pdf_obj, PdfObj): raise TypeError
     pdf_image_data = self.GetPdfImageData()
-    # !! parse pdf_obj., implement PdfObj.Get (with references?), .Set with None
     if do_check_dimensions:
-      assert pdf_obj.Get('Width') == pdf_image_data['Width']
-      assert pdf_obj.Get('Height') == pdf_image_data['Height']
+      assert pdf_obj.Get('Width') == pdf_image_data['Width'], (
+          'image Width mismatch: %r vs %r' % (pdf_obj.head, pdf_image_data))
+      assert pdf_obj.Get('Height') == pdf_image_data['Height'], (
+          'image Height mismatch: %r vs %r' % (pdf_obj.head, pdf_image_data))
     else:
       pdf_obj.Set('Width', pdf_image_data['Width'])
       pdf_obj.Set('Height', pdf_image_data['Height'])
@@ -4249,6 +4250,7 @@ class PdfData(object):
     device_image_objs = {'png16m': {}, 'pnggray': {}, 'pngmono': {}}
     image_count = 0
     image_total_size = 0
+    # Maps object numbers to ('method', ImageData) tuples.
     images = {}
     # Maps /XImage (head, stream) pairs to object numbers.
     by_orig_data = {}
@@ -4430,7 +4432,9 @@ class PdfData(object):
       # !! TODO(pts): Don't load all images to memory (maximum 2).
       obj = self.objs[obj_num]
       obj_images = images[obj_num]
-
+      for method, image in obj_images:
+        assert obj.Get('Width') == image.width
+        assert obj.Get('Height') == image.height
       rendered_tuple = obj_images[-1][1].ToDataTuple()
       target_image = by_rendered_tuple.get(rendered_tuple)
       if target_image is not None:  # We have already rendered this image.
@@ -4439,9 +4443,10 @@ class PdfData(object):
         # sam2p again.
         print >>sys.stderr, (
             'info: using already rendered image for obj %s' % obj_num)
-        if target_image is None:
-          continue  # keep original image
+        assert obj.Get('Width') == target_image.width
+        assert obj.Get('Height') == target_image.height
         obj_images.append(('#prev-rendered-best', target_image))
+        image_tuple = target_image.ToDataTuple()
       else:
         rendered_image_file_name = obj_images[-1][1].file_name
         # TODO(pts): use KZIP or something to further optimize the ZIP stream
@@ -4461,14 +4466,15 @@ class PdfData(object):
 
         image_tuple = obj_images[-1][1].ToDataTuple()
         target_image = by_image_tuple.get(image_tuple)
+        assert image_tuple[00] == obj.Get('Width')
+        assert image_tuple[01] == obj.Get('Height')
+        target_image = by_image_tuple.get(image_tuple)
         if target_image is not None:  # We have already optimized this image.
           # For testing: pts2.ziplzw.pdf
           # The latest sam2p is deterministic, so the bytes of the file
           # produced by sam2p depends only on the RGB image data.
           print >>sys.stderr, (
               'info: using already processed image for obj %s' % obj_num)
-          if target_image is None:
-            continue  # keep original image
           obj_images.append(('#prev-sam2p-best', target_image))
         else:
           obj_images.append(self.ConvertImage(
@@ -4502,11 +4508,13 @@ class PdfData(object):
                 cmd_pattern='pngout '
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout'))
+          # TODO(pts): For very small (10x10) images, try uncompressed too.
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
       for cmd_name, image_data in obj_images:
         new_obj = PdfObj(obj)
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
+          # We can't use this optimized image, so we skip it.
           if cmd_name != 'gs':  # no warning for what was rendered by Ghostscript
             print >>sys.stderr, (
                 'warning: skipping bpc=%s color_type=%s file_name=%r '
@@ -4517,6 +4525,15 @@ class PdfData(object):
           image_data.UpdatePdfObj(new_obj)
           obj_infos.append([new_obj.size, cmd_name, image_data.file_name,
                             new_obj, image_data])
+
+      assert obj.Get('Width') == image_tuple[0]
+      assert obj.Get('Height') == image_tuple[1]
+      assert obj.Get('Width') == rendered_tuple[0]
+      assert obj.Get('Height') == rendered_tuple[1]
+      for obj_info in obj_infos:
+        if obj_info[4] is not None:
+          assert obj_info[4].width == obj.Get('Width')
+          assert obj_info[4].height == obj.Get('Height')
 
       # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
       # properly ([0] first)) if one of them is an object. So we implement
@@ -4531,7 +4548,7 @@ class PdfData(object):
       method_sizes = ','.join(
           ['%s:%s' % (obj_info[1], obj_info[0]) for obj_info in obj_infos])
 
-      if obj_infos[0][3] is obj:
+      if obj_infos[0][4] is None:
         # TODO(pts): Diagnose this: why can't we generate a smaller image?
         # !! Originals in eurotex2006.final.pdf tend to be smaller here because
         #    they have ColorSpace in a separate XObject.
@@ -4540,6 +4557,7 @@ class PdfData(object):
             'replacements too large: %s' %
             (obj_num, method_sizes))
       else:
+        assert obj_infos[0][3] is not obj
         print >>sys.stderr, (
             'info: optimized image XObject %s file_name=%s '
             'size=%s (%s) methods=%s' %
@@ -4549,9 +4567,16 @@ class PdfData(object):
         if ('/JBIG2Decode' in (obj_infos[0][3].Get('Filter') or '') and
             self.version < '1.4'):
           self.version = '1.4'
-        self.objs[obj_num] = obj_infos[0][3]
-      by_rendered_tuple[rendered_tuple] = obj_infos[0][4]
-      by_image_tuple[image_tuple] = obj_infos[0][4]
+        assert obj_infos[0][3].Get('Width') == obj.Get('Width')
+        assert obj_infos[0][3].Get('Height') == obj.Get('Height')
+        self.objs[obj_num] = obj = obj_infos[0][3]
+
+      if obj_infos[0][4] is not None:
+        by_rendered_tuple[rendered_tuple] = obj_infos[0][4]
+        by_image_tuple[image_tuple] = obj_infos[0][4]
+        # TODO(pts): !! Cache something if obj_infos[0][4] is None, seperate
+        # case for len(obj_info) == 1.
+        # TODO(pts): Investigate why the original image can be the smallest.
       del obj_images[:]  # free memory occupied by unchosen images
     print >>sys.stderr, 'info: saved %s bytes (%s) on images' % (
         bytes_saved, FormatPercent(bytes_saved, image_total_size))
