@@ -1,0 +1,150 @@
+% by pts@fazekas.hu at Sat Jul 11 12:01:05 CEST 2009
+
+\documentclass{article}
+%\usepackage[latin2]{inputenc}% !! check
+\usepackage{t1enc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+
+\def\cmd{\textsf}
+\def\pkg{\textsf}
+
+
+\begin{document}
+
+\section{What is PDF?}
+
+PDF is a popular document file format designed for printing and on-screen
+viewing. PDF faithfully preserves the design elements of the document, such
+as fonts, line breaks, page breaks, exact spacing, text layout, vector
+graphics and image resolution. Thus the author of a PDF document has
+precise control over the document's appearance -- no matter what operating
+system or renderer software is used for viewing or printing the PDF. From
+the viewer's prespecive, a PDF document is a sequence of rectangular pages
+containing text, vector graphics and images. In addition to that, some
+rectangular page regions can be marked as hyperlinks, and Unicode
+annotations can be added as well to the regions, so text can be copy-pasted
+from the documents. (Usually the copy-paste yields only a sequence of
+characters, with all formatting and positioning lost. Depending on the
+software and the annotation, the bold and italics properties can be
+preserved.) A table of contents can be added as well, which has a tree
+structure, and each node of the tree consists of an unformatted caption and
+a hyperlink within the document.
+
+Additional features of PDF include forms (the user fills some fields with
+data, clicks on the submit button, and the data is sent to a server in an
+HTTP request), event handlers in JavaScript, embedded multimedia files,
+encryption and access protection.
+
+\section{How to create PDF}
+
+Since PDF doesn't contain semantic information about the document (such as
+in which order the document should be read, which regions are titles, how
+are the tables built and how are the charts generated), word processors and
+typesetting systems usually can export to PDF, but they have their own file
+format which preserves semantics. PDF is usually not involved while the
+author is composing (or typeseting) the document, but once a version of a
+document is ready, a PDF can be exported and distributed. Should the author
+distribute the document in the native file format of the word processor, he
+might risk that the document doesn't get rendered as he intended, due to
+software version differences or because slightly different fonts are
+installed on the rendering computer, or the page layout settings in the word
+processor are different.
+
+Most word processors and drawing programs and image editors support
+exporting as PDF. It is also possible to generate a PDF even if the software
+doesn't have a PDF export feature. For example, it may be possible to
+install a printer driver, which generates PDF instead of sending the
+document to a real printer. (For example, on Windows, PDFCreator
+\cite{pdfcreator} is such an open-source driver.) Some old programs can emit
+PostScript, but not PDF. The \cmd{ps2pdf} \cite{ps2df} tool (part of
+Ghostcript) can be used to convert the PostScript to PDF.
+
+For \TeX{} documents there are several options for PDF generation. One
+traditional approach is \TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
+using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
+\cmd{ps2pdf} for creating the PDF file. One can convert directly from DVI to
+PDF, using e.g.\ \cmd{dvipdfm} \cite{dvipdfm}. The single-step approach is
+processing the \TeX{} source with pdf\TeX{} \cite{pdftex}, which generates
+PDF without any intermediate files. We recommend using pdf\TeX{} whenever
+possible, because it creates a small PDF file, it is fast, and it supports
+the most PDF features without compromises. For example, the other approaches
+cannot break the line in the middle of a hyperlink, but pdf\TeX{} can even
+hyphenate the link text automatically.
+
+Unfortunately, some graphics packages (such as \pkg{psfrag} and
+\pkg{pstricks}) require a PostScript backend, and pdf\TeX{} doesn't provide
+that. We recommend typesetting new graphics with TikZ \cite{tikz} if possible
+(which fully supports pdf\TeX{}), and converting other graphics to PDF,
+possibly typesetting label captions using \TeX{}, as outlined in
+\cite{psfrag-in-pdf}. Inkscape users can use \pkg{textext} \cite{textext}
+within Inkscape to make \TeX{} typeset the captions.
+
+With pdf\TeX{}, it is possible to reuse existing PDF files by embedding
+parts of them to the document. The \texttt{\string\includegraphics} command
+of the standard \pkg{graphicx} \LaTeX{}-package accept a PDF as the image
+file. In this case, the first page of the specified PDF will be used as a
+rectangular image. For multi-page inclusions, the \pkg{pdfpages}
+\LaTeX{}-package can be used. Please note that due to a limitation in
+pdf\TeX{}, hyperlinks and outlines (table of contents) in the embedded PDF
+will be lost.
+
+\section{Motivation}
+
+Our goal is to reduce the file size of PDF documents, focusing on PDF files
+created from \TeX{} documents. Having smaller PDF files reduces download
+times, web hosting costs and storage costs as well. Although there is no
+urgent need for reducing PDF storage costs is for personal use (since hard
+drives in modern PCs are large enough), storage costs are significant for
+publishing houses, print shops, e-book stores and hosting services,
+libraries and archives \cite{multivalent-article}.
+Usually lots of copies and backups are made of PDF
+files originating from such places, saving 20\% of the file size right after
+generating the PDF would save 20\% of all future costs associated with the
+file.
+
+Although e-book readers can store lots of documents (e.g.\ a 4\,GB e-book
+reader can store 800 PDF books of 5\,MB average reasonable file size), they
+get full quickly if we don't pay attention to efficient PDF generation. One
+can easily get a PDF file 5 times larger than reasonable by using
+inefficient software to generate it, or not setting the export settings
+properly. Upgrading or changing the generator software is not always
+feasible. A PDF recompressor becomes useful in these cases.
+
+It is not our goal to propose alternative file formats, which support a more
+compact document representation or more agressive compression than PDF. An
+example for such an approach is the Multivalent \emph{compact} file format
+\cite{multivalent-compact}, which can be generated from a PDF using the
+Multivalent tools, and it can be converted back to a regular PDF with these
+tools as well. One of the merits of PDF is that it has a definitive, widely
+accepted and implemented, freely available
+specification \cite{pdfref} (and version 1.7 is
+even ISO standard \cite{pdf-iso}), so if 20 years later we want to
+print the document we've create today, then a well-documented and
+standardized format such as PDF is a natural choice. (Please note, however,
+that the PDF specification is not self-contained, it refers to other
+specifications, e.g.\ for some compression algorithms and font formats.)
+
+An alternative document file format is DjVu (\cite{djvu}), whose most
+important limitation compared to PDF is that it doesn't support vector
+graphics. Due to the sophisticated image segmentation and compression, a
+600\,DPI DjVu file is usually smaller than the coressponding PDF document
+containing text with embedded vector fonts and vector graphics. Since the
+DjVu file format uses very different technologies than PDF, one can archive
+both the PDF and the DjVu version of the same document, in case a decent
+renderer won't be available for one of the formats decades later.
+
+\section{References}
+
+!! \cite all
+
+@psfrag-in-pdf{
+  url=http://brunoj.wordpress.com/2007/07/12/producing-high-quality-eps-and-pdf-diagrams-for-mathematics/
+}
+
+@iso-pdf{
+PDF 1.7 is ISO 32000
+meta-link: http://www.theinquirer.net/inquirer/news/1030411/pdf-approved-iso-32000
+}
+
+\end{document}

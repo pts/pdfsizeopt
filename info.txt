@@ -437,3 +437,44 @@ additional compression may be possible with:
 * doc: gs 8.54 cannot parse all xref; --> upgrade to 8.61
 * TODO: feature: run ./pdfe as first step pdfsizeopt.py
 * TODO: diagnose why ./pdfe cannot export eurotex2006-final.pdf
+  (even after conversion with Multivalent.jar, try single-page
+  /mnt/tardis/warez/tmp/pdfe.bad.pdf
+  error message: expected a dictionary object
+* doc: packJPG: http://www.elektronik.htw-aalen.de/packjpg/
+  TODO: \cite 2007
+  theoretical average maximum JPEG compression ratio: -18%
+  -21% on 3072x2304 JPEG photos
+  ZIP gives -0.03% on JPEG
+* \cite http://www.verypdf.com/pdfinfoeditor/compression.htm
+  pdfcompress comamnd-line tool
+  emovemetadata=1
+  removejavascript=1
+  removethumb=1
+  removecomment=1
+  removeembeddedfile=1
+  removebookmarks=1
+  removeprivatedata=1
+  removenamesdestination=1
+  removeform=1
+  compressstream=1
+  all documented here: http://www.verypdf.com/pdfinfoeditor/pdfcompress.htm
+  Advanced PDF Tools v2.0; $38 USD for GUI, $79 for the command-line
+  Win32 only, works in Wine
+  it says This is trial version, it can only process first half of pages.
+* TODO doc: investigate JPEG without (or trivial Huffman) + /FlateDecode
+  with predictor
+  http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
+  A JPEG file contains up to 4 huffman tables that define the mapping
+  between 1 and 16 bits) and the code values (which is an 8-bit byte).
+* PDF 1.4 2001 JBIG2; Adobe Reader 5.0
+* PDF 1.5 2003 JPEG2000; linked multimedia; object streams;
+  cross reference streams; Adobe Reader 6.0
+* info: Advanced / Optimize PDF in Acrobat Pro 9 is quite slow
+  SUXX: An error was encountered while processing images
+  (when image transformations were disabled)
+* PDF Enhancer doesn't emit cross reference streams or object streams
+* PDF Enhancer the advanced server edition is older:
+    pdfenhancer version 3.2b2, Build Date Sep 15 2007, SPDF 1122r
+  than the server edition:
+    pdfenhancer version 3.2.5, Build Date Jun  4 2008, SPDF 1122r
+* TODO: measure PDF and DjVu file sizes
