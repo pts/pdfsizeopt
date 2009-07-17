@@ -17,11 +17,11 @@
 PDF is a popular document file format designed for printing and on-screen
 viewing. PDF faithfully preserves the design elements of the document, such
 as fonts, line breaks, page breaks, exact spacing, text layout, vector
-graphics and image resolution. Thus the author of a PDF document has
-precise control over the document's appearance -- no matter what operating
-system or renderer software is used for viewing or printing the PDF. From
-the viewer's prespecive, a PDF document is a sequence of rectangular pages
-containing text, vector graphics and images. In addition to that, some
+graphics and image resolution. Thus the author of a PDF document has precise
+control over the document's appearance -- no matter what operating system or
+renderer software is used for viewing or printing the PDF. From the viewer's
+prespecive, a PDF document is a sequence of rectangular pages containing
+text, vector graphics and pixel-based images. In addition to that, some
 rectangular page regions can be marked as hyperlinks, and Unicode
 annotations can be added as well to the regions, so text can be copy-pasted
 from the documents. (Usually the copy-paste yields only a sequence of
@@ -111,7 +111,8 @@ inefficient software to generate it, or not setting the export settings
 properly. Upgrading or changing the generator software is not always
 feasible. A PDF recompressor becomes useful in these cases.
 
-It is not our goal to propose alternative file formats, which support a more
+It is not our goal to propose or use
+alternative file formats, which support a more
 compact document representation or more agressive compression than PDF. An
 example for such an approach is the Multivalent \emph{compact} file format
 \cite{multivalent-compact}, which can be generated from a PDF using the
@@ -124,19 +125,134 @@ print the document we've create today, then a well-documented and
 standardized format such as PDF is a natural choice. (Please note, however,
 that the PDF specification is not self-contained, it refers to other
 specifications, e.g.\ for some compression algorithms and font formats.)
+Another alternative document format is is DjVu (see in Section
+\ref{related-work}).
 
-An alternative document file format is DjVu (\cite{djvu}), whose most
-important limitation compared to PDF is that it doesn't support vector
-graphics. Due to the sophisticated image segmentation and compression, a
-600\,DPI DjVu file is usually smaller than the coressponding PDF document
-containing text with embedded vector fonts and vector graphics. Since the
-DjVu file format uses very different technologies than PDF, one can archive
-both the PDF and the DjVu version of the same document, in case a decent
-renderer won't be available for one of the formats decades later.
+It is possible to save space in a PDF by removing non-printed information
+such as hyperlinks, document outline elements, forms, text-to-Unicode
+mapping or user annotations. Removing these does not affect the output when
+the PDF is printed, but it degrades the user experience when the PDF is
+viewed on a computer, and it may also degrade navigation and searchability.
+Another option is to remove (unembed fonts). In such a case, the PDF viewer
+will pick a font with similar metrics if the font is not installed on the
+viewer machine. Please note that unembedding the font doesn't change the
+horizontal distance between glyphs, so the page layout will remain the
+same, but maybe glpyhs will look funny or hard-to-read. Yet another option
+to save space is to reduce the resolution of the embedded images. We will
+not use any of the techniques mentioned in this paragraph, because our goal
+is to reduce redundancy and make the byte representation more effective,
+while preserving visual and semantic information in the document.
+
+\section{PDF file structure}
+
+It is possible to save space in the PDF by serializing the same information
+more efficiently and/or using better compression. This section gives a
+high-level introductions to the data structures and their serialization in
+the PDF file, focusing on size optimization. For a full description of the
+PDF file format, see \cite{pdfref}.
+
+PDF supports integer, real number, boolean, null, string and name as
+simple data types. A string a sequence of 8-bit bytes. A name is also a
+sequence of 8-bit bytes, usually a concatenation of a few English words in
+CamelCase, often used as a dictionary key (e.g. \texttt{/MediaBox}) or an
+enumeration value (e.g. \texttt{/DeviceGray}). Composite data types are the
+list and the dictionary. A dictionary is an unordered sequence of key--value
+pairs, where keys must be names. Values in dictionaries and list items can
+be primitive or composite. There is a simple serialization of values to
+8-bit strings, compatible with PostScript LanguageLevel\,2. For example,
+\textt{\hbox{<}</Integer 5 /Real -6.7 /String ((C)2009\textbackslash))
+/StringHex <Face>
+/Boolean true /Name /Foo /List [3 4 5]\hnox{>}>} defines a dictionary
+containing values of various types. All data types are immutable.
+
+It is possible to define a value for future use by defining an
+\emph{object.} For example, \texttt{12 0 obj [/PDF/Text] endobj} defines
+object number 12 to be an array of two items (\texttt{/PDF} and
+\texttt{/Text}). The number 0 in the definition is the so-called generation
+number, referring to version of the incrementally updated PDF file this
+object was created in. Since most of the tools just create a new PDF instead
+of updating parts of an existing one, we can assumme for simplicity that the
+generation number is always zero. Once an object is defined it is possible
+to refer to it (e.g.\ \texttt{12 0 R}) instead of typing its value. It is
+possible to define self-referential lists and dictionaries using object
+definitions. The PDF specification requires some PDF structure elements
+(such as the \texttt{/FontDescriptor} value) be an indindirect reference,
+i.e.\ defined as an object, and then referred to.
+
+A PDF file contains a header, a list of objects, a \emph{trailer}
+dictionary, cross-reference information (offsets of object definitions,
+sorted by object number), and the end-of-file marker. The header contains
+the PDF version (PDF-1.7 being the latest). All of the file elements above
+except for the PDF version, the list of objects and the trailer are
+redundant, and can be regegenerated if lost. The parsing of the PDF starts
+at the trailer dictionary. Its \texttt{/Root} value refers to the catalog
+dictionary object, whose \texttt{/Pages} value refers to a dictionary object
+containing the list of pages. The interpretation of each object depends on
+the reference path which leads to that object from the trailer. In addition
+to that, dicitionary objects may have the \texttt{/Type} and/or
+\texttt{/Subtype} value indicating the interpretation. For example,
+\texttt{\hbox{<}</Subtype/Image ...\hbox{>}>} defines a pixel-based image.
+
+In addition to the data types above, PDF supports streams as well. A
+\emph{stream} object is a dictionary augmented by the stream data, which is
+a byte sequence. The syntax is \texttt{... ... obj << ... >> stream ...
+endstream endobj}, where the stream data starts right after the keyword
+\texttt{stream}. The stream data can be compressed or otherwise encoded
+(such as in hex). The \texttt{/Filter} and \texttt{/DecodeParms} values in
+the dictionary specify how the uncompress/\allowbreak decode the stream data.
+It possible the specify multiple uncompress/\allowbreak decode filters,
+e.g.\ \texttt{/Filter [/ASCIIHexDecode /FlateDecode]} says that the bytes
+aftter \texttt{stream} should be decoded as a hex string, and then
+uncompressed using PDF's ZIP implementation. The three most common uses for
+streams are: image pixel data, embedded font files and content streams.
+A content stream contains the instructions to draw the contents of page. The
+stream data is ASCII, with a syntax similar to PostScript, but with
+different operators. For example, \texttt{BT/F 20 Tf 1 0 0 1 9 9  
+Tm(Hello world)Tj ET} in a content stream draws the text ``Hello World''
+with the font \texttt{/F}...
+
+!!!
+
+ glyph definition, 
+
+
+It is possible to define a set of objects. 
+
+!! ASCII-repr string hex shorter
+!! ASCIIHexDecode shorter
+!! why is content stream compression good?
+
+!! base 14: cp `kpsewhich pdftex_ndl14.map` pdftex.map
+pdftexDownloadBase14 false in updmap.cfg
+
+!! dvipdfm creates a bit smaller PDF than pdftex
+
+\section{Related work}\label{related-work}
+
+An alternative document file format is DjVu (\cite{djvu,djvu-tutorial}),
+whose most important limitation compared to PDF is that it doesn't support
+vector graphics. Due to the sophisticated image layer separation and
+compression, the size of a 600\,DPI DjVu file is comparable to the
+coressponding optimized PDF document. If the PDF contains maily images (such
+as a sequence of scanned sheets), the DjVu file will become slightly smaller
+than the PDF file. If the PDF contains text with embedded vector fonts and
+vector graphics, the DjVu file can be about 3 times larger than the PDF.
+Of course these ratios depend on the software used for encoding as well.
+There are only a few DjVu encoders available: \cmd{pdf2djvu} and
+\cmd{djvudigital} are free, and Document\,Express is a commercial
+application.
+
+Since the DjVu file format uses very different technologies than PDF, one
+can archive both the PDF and the DjVu version of the same document, in case
+a decent renderer won't be available for one of the formats decades later.
+
+!! more related work
 
 \section{References}
 
 !! \cite all
+
+!! \cite the PDF optimization article and all from info.txt
 
 @psfrag-in-pdf{
   url=http://brunoj.wordpress.com/2007/07/12/producing-high-quality-eps-and-pdf-diagrams-for-mathematics/
@@ -145,6 +261,10 @@ renderer won't be available for one of the formats decades later.
 @iso-pdf{
 PDF 1.7 is ISO 32000
 meta-link: http://www.theinquirer.net/inquirer/news/1030411/pdf-approved-iso-32000
+}
+
+@djvu-tutorial{
+http://www.djvuzone.org/support/tutorial/chapter-intro.html
 }
 
 \end{document}
