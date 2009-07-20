@@ -479,3 +479,4 @@ additional compression may be possible with:
     pdfenhancer version 3.2.5, Build Date Jun  4 2008, SPDF 1122r
 * TODO: measure PDF and DjVu file sizes
 * TODO doc: how to make sure /Times is embedded
+* TODO group the objects in an object stream by type
