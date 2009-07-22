@@ -4,11 +4,27 @@
 %\usepackage[latin2]{inputenc}% !! check
 \usepackage{t1enc}
 \usepackage{lmodern}
-\usepackage{mplogo}
+\usepackage{mflogo}
+\usepackage{booktabs}
 \usepackage[english]{babel}
 
 \def\cmd{\textsf}
 \def\pkg{\textsf}
+
+%** Like \caption, but above the table, with \abovecaptionskip and
+%** \belowcaptionskip swapped.
+\def\captiontop#1{%
+  \advance\abovecaptionskip-\belowcaptionskip
+  \advance\belowcaptionskip\abovecaptionskip
+  \advance\abovecaptionskip-\belowcaptionskip
+  \abovecaptionskip-\abovecaptionskip
+  \caption{#1}%
+  \advance\abovecaptionskip-\belowcaptionskip
+  \advance\belowcaptionskip\abovecaptionskip
+  \advance\abovecaptionskip-\belowcaptionskip
+  \abovecaptionskip-\abovecaptionskip
+}
+
 
 % Make \textunderscore and \_ shorter for font family lmr and lmss.
 \makeatletter
@@ -285,15 +301,24 @@ uncompressed.
 \section{How to compile a \TeX{} document to a small PDF}\label{tex-to-pdf}
 
 \paragraph{Pick the best PDF generation method}
+!! refer to the table
 
-!! usepackage[dvipdfm]{graphicx}
-!! usepackage[dvipdfm]{hyperref}
-
-!! 
--rw-r--r-- 1 pts eng 2283510 Jul 22 14:42 texbook.pdf
--rw-r--r-- 1 pts eng 2269821 Jul 21 14:38 texbook_dvipdfm.pdf
--rw-r--r-- 1 pts eng 2007012 Jul 21 15:06 texbook_dvipdfmx.pdf
--rw-r--r-- 1 pts eng 3485081 Jul 22 14:41 texbook_dvips.pdf
+\begin{table}
+\captiontop{Output file sizes of PDF generation from The \TeX{}book, with
+various methods. The PDF was optimized with \cmd{pdfsizeopt.py}, then with
+Multivalent}\label{tab:texbook-to-pdf}
+\par\noindent\hfil
+\begin{tabular}{@{}lrr@{}}
+\toprule
+                  &&\emph{optimized}\\
+\emph{method}     &\emph{PDF bytes}&\emph{PDF bytes}\\\midrule
+pdf\TeX           &2283510 &1806887\\
+\cmd{dvipdfm}     &2269821 &1787039\\
+\cmd{dvipdfmx}    &2007012 &1800270\\
+\cmd{dvips}$+$\cmd{ps2pdf}      &3485081 &3181869\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 One traditional approach converts
 \TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
@@ -305,10 +330,24 @@ quite new, it may be missing from other
 \TeX{} distributions. The single-step approach is
 processing the \TeX{} source with pdf\TeX{} \cite{pdftex}, which generates
 PDF without any intermediate files. We recommend using pdf\TeX{} whenever
-possible, because it creates a small PDF file, it is fast, and it supports
-the most PDF features without compromises. For example, the other approaches
+possible, because it creates a small PDF file (although not the smallest,
+see also Table \ref{tab:texbook-to-pdf}), it is fast, it supports
+the most PDF features without compromises, it integrates nicely with the
+editors \TeX{}Shop and \TeX{}works, and there are no intermediate steps where
+something could go wrong (e.g.\ images misaligned or not properly sized).
+
+Here are some features which are not provided by all of the methods.
+!!
+
+
+For example, the other approaches
 cannot break the line in the middle of a hyperlink, but pdf\TeX{} can even
 hyphenate the link text automatically.
+
+Here are 
+
+
+!! put this to its own section
 
 Unfortunately, some graphics packages (such as \pkg{psfrag} and
 \pkg{pstricks}) require a PostScript backend such as \cmd{dvips},
@@ -323,33 +362,29 @@ support text captions typeset by \TeX{}. Inkscape users can use
 captions.
 
 The \texttt{\string\includegraphics} command of the standard \pkg{graphicx}
-\LaTeX{}-package accepts a PDF as the image file. With \cmd{dvipdfm(x)},
-one also needs a \texttt{.bb} file containing the bounding box. This can be
-generated with the \cmd{ebb} command, shipping with \cmd{dvipdfm(x)}. Or, it
-is possible to use the \pkg{pts-graphics-helper} package
-\cite{pts-graphics-helper}.
+\LaTeX{}-package accepts a PDF as the image file. In this case, the first
+page of the specified PDF will be used as a rectangular image. With
+\cmd{dvipdfm(x)}, one also needs a \texttt{.bb} file containing the bounding
+box. This can be generated with the \cmd{ebb} command, shipping with
+\cmd{dvipdfm(x)}. Or, it is possible to use the \pkg{pts-graphics-helper}
+package \cite{pts-graphics-helper}, which can find the PDF bounding box
+directly (most of the time).
 
+\pkg{dvipdfm(x)} contains special support for embedding figures created by
+\MP{}. For pdf\TeX{}, the \pkg{graphicx} package loads \pkg{supp-pdf.tex},
+which can parse the output of \MP{}, and embed it to the document.
+Unfortunately, the \pkg{graphicx} package is not smart enough to recognize
+\MP{} output files (\texttt{jobname.1}, \texttt{jobname.2} etc.) by
+extension. The \pkg{pts-graphics-helper} package \cite{pts-graphics-helper}
+overcomes this limitation by defining \texttt{\string\includegraphicsmps},
+which can be used in place of \texttt{\string\includegraphics} for including
+figures created by \MP{}. The packages works consistently with
+\pkg{dvipdfm(x)} and pdf\TeX{}.
 
-
-
-
-
-
-
- (For \cmd{p
-We recommend typesetting new graphics with TikZ \cite{tikz} if possible
-(which fully supports pdf\TeX{}), and converting other graphics to PDF,
-possibly typesetting label captions using \TeX{}, as outlined in
-\cite{psfrag-in-pdf}. 
-
-With pdf\TeX{}, it is possible to reuse existing PDF files by embedding
-parts of them to the document.  In this case, the first page of the specified PDF will be used as a
-rectangular image. For multi-page inclusions, the \pkg{pdfpages}
-\LaTeX{}-package can be used. Please note that due to a limitation in
-pdf\TeX{}, hyperlinks and outlines (table of contents) in the embedded PDF
-will be lost.
-
-
+With pdf\TeX{}, it is possible to embed page regions from an external PDF,
+using the \pkg{pdfpages} \LaTeX{}-package. Please note that due to a
+limitation in pdf\TeX{}, hyperlinks and outlines (table of contents) in the
+embedded PDF will be lost.
 
 \paragraph{Omit the base 14 fonts} The base 14 fonts are Times (in 4 styles,
 Helvetica (in 4 styles), Courier (in 4 styles), Symbol and Zapf Dingbats.
