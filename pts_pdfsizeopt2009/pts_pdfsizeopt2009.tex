@@ -1,6 +1,6 @@
 % by pts@fazekas.hu at Sat Jul 11 12:01:05 CEST 2009
 
-\documentclass{article}
+\documentclass{ltugproc}
 %\usepackage[latin2]{inputenc}% !! check
 \usepackage{t1enc}
 \usepackage{lmodern}
@@ -9,10 +9,27 @@
 \def\cmd{\textsf}
 \def\pkg{\textsf}
 
+\author{P\'eter Szab\'o}
+\title{Optimizing PDF output size of \TeX{} documents}
+
+\begin{abstract}
+There are several tools to generate PDF output from a \TeX{} document. By
+choosing the appropriate tools and configuring them properly, it is possible
+to reduce the PDF output size by a factor of 5 or even more, thus reducing
+document download times, hosting and archiving costs. In the article we
+enumerate the most common tools, and show how to configure them to reduce
+the size of text, fonts and images embedded into the final PDF.
+
+We also analyze image compression in detail, and present a new tool called
+\cmd{pdfsizeopt} which optimizes the size of embedded images and Type\,1
+fonts.
+\end{abstract}
 
 \begin{document}
 
-\section{What is PDF?}
+\maketitle
+
+\section{What does a PDF document contain}
 
 PDF is a popular document file format designed for printing and on-screen
 viewing. PDF faithfully preserves the design elements of the document, such
@@ -20,7 +37,7 @@ as fonts, line breaks, page breaks, exact spacing, text layout, vector
 graphics and image resolution. Thus the author of a PDF document has precise
 control over the document's appearance -- no matter what operating system or
 renderer software is used for viewing or printing the PDF. From the viewer's
-prespecive, a PDF document is a sequence of rectangular pages containing
+prespective, a PDF document is a sequence of rectangular pages containing
 text, vector graphics and pixel-based images. In addition to that, some
 rectangular page regions can be marked as hyperlinks, and Unicode
 annotations can be added as well to the regions, so text can be copy-pasted
@@ -259,7 +276,80 @@ most of the PDF file can be stored in compressed streams. Only a few dozen
 byte of headers and end-of-file markers, and the stream dictionaries remain
 uncompressed.
 
-\section{How to save space in a PDF}
+\section{How to compile a \TeX{} document to a small PDF}
+
+!! dvipdfmx
+
+!! unembed base 14 fonts (Why Adobe?)
+
+% !! dvipdfmx doesn't accept:
+%   ptmr8r Times-Roman "TeXBase1Encoding ReEncodeFont" <8r.enc
+% accepts:
+%   ptmr8r 8r Times-Roman
+
+psfrag, pstricks don't work
+
+\paragraph{Omit the base 14 fonts} The base 14 fonts are Times (in 4 styles,
+Helvetica (in 4 styles), Courier (in 4 styles), Symbol and Zapf Dingbats.
+To reduce the size of the PDF, it is possible to omit them from the
+PDF file, because PDF viewers tend to have them. However, omitting the base 14
+fonts is deprecated since PDF\,1.5. Adobe Reader 6.0 or newer,
+and other PDF viewers (such as \cmd{xpdf} and \cmd{evince}) don't contain
+those fonts either, but they can find them as system fonts. On Debian-based
+Linux systems, those fonts are in the \pkg{gsfonts} package.
+
+In \TeX\,Live, the directives \emph{pdftexDownloadBase14} and
+\emph{dvipdfmDownloadBase14} etc.\ in the config file
+\texttt{texmf-config/web2c/updmap.cfg} specify whether to embed the base 14
+fonts. After modifying this config file (either the system-wide or the one in
+\texttt{\$HOME/.texlive2008}) and running the \cmd{updmap} command, the
+following font map files would be created:
+
+\begin{description}
+
+\item[pdftex\_dl14.map] Font map file for pdf\TeX{} with the base 14 fonts
+  embedded. This is the default.
+\item[pdftex\_ndl14.map] Font map file for pdf\TeX{} with the base 14 fonts
+  omitted.
+\item[pdftex.map] Font map file used by pdf\TeX{} by default.
+Identical to one of the two above, based on the
+\emph{pdftexDownloadBase14} setting.
+\item[dvipdfm\_dl14.map] Font map file for \cmd{dvipdfm(x)} with the base 14
+  fonts embedded. This is the default.
+\item[dvipdfm\_ndl14.map] Font map file for \cmd{dvipdfm(x)} with the base 14
+  fonts omitted.
+\item[dvipdfm.map] Font map file used by \cmd{dvipdfm(x)} by default.
+Identical to one of the two above, based on the
+\emph{dvipdfmDownloadBase14} setting.
+
+\end{description}
+
+It is possible to specify the base 14 embedding settings without modifying
+config files or generating \texttt{.map} files. Example command line for
+pdf\TeX{}: \texttt{pdflatex "\pdfmapfile{pdftex\_ndl14.map}\input" doc.tex}.
+However, this will display a warning \emph{No flags specified for
+non-embedded font}. To get rid of this, use
+\texttt{pdflatex "\pdfmapfile{=pdftex\_ndl14_extraflag.map}\input" doc.tex}
+instead. Get the \emph{.map} file from \cite{pdfsizeopt-extra}.
+
+
+
+
+map files \texttt{pdftex_dl14.map}
+
+To omit the the base 14 fonts, one should use a font \texttt{.map} file, which
+doesn't contain the \texttt{.pfb} font file names for those fonts.
+
+
+
+!! how to omit 
+
+!! dvipdfmx -f pdftex\_ndl14.map -f dvipdfmx\_ndl14_extra.map
+
+% !! pdflatex "\pdfmapfile{=pdftex_ndl14.map}\input" thello
+
+
+\section{How to save space in an existing PDF}
 
 !! give details
 !! who implements what
@@ -283,6 +373,9 @@ uncompressed.
 \paragraph{Eliminate duplicate images, based on pixel value}
 
 \paragraph{Convert Type\,1 fonts to CFF}
+
+!! \texttt{/Subtype/Type1C}
+pdf\TeX{} and \cmd{dvipdfm} create Type\,1; dvipdfmx creates Type\,1C.
 
 \paragraph{Unify font subsets}
 
@@ -312,6 +405,7 @@ uncompressed.
 !! ASCII-repr string hex shorter
 !! ASCIIHexDecode shorter
 !! why is content stream compression good?
+!! dvipdfmx instead of dvipdfm
 
 !! base 14: cp `kpsewhich pdftex\_ndl14.map` pdftex.map
 pdftexDownloadBase14 false in updmap.cfg
@@ -356,6 +450,15 @@ meta-link: http://www.theinquirer.net/inquirer/news/1030411/pdf-approved-iso-320
 
 @djvu-tutorial{
 http://www.djvuzone.org/support/tutorial/chapter-intro.html
+}
+
+!!
+@dvipdfmx{
+http://project.ktug.or.kr/dvipdfmx/
+}
+
+@pdfsizeopt-extra{
+
 }
 
 \end{document}
