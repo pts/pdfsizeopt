@@ -4,10 +4,39 @@
 %\usepackage[latin2]{inputenc}% !! check
 \usepackage{t1enc}
 \usepackage{lmodern}
+\usepackage{mplogo}
 \usepackage[english]{babel}
 
 \def\cmd{\textsf}
 \def\pkg{\textsf}
+
+% Make \textunderscore and \_ shorter for font family lmr and lmss.
+\makeatletter
+\edef\pts@getfontfamily#1/#2/#3\hfuzz#4{\def#4{#2}}
+\def\pts@@fontfamily@lmr{lmr}
+  \edef\pts@@fontfamily@lmr{%
+    \expandafter\strip@prefix\meaning\pts@@fontfamily@lmr}
+\def\pts@@fontfamily@lmss{lmss}
+  \edef\pts@@fontfamily@lmss{%
+    \expandafter\strip@prefix\meaning\pts@@fontfamily@lmss}
+%** Define #1 to the name of the active font family.
+\def\pts@def@fontfamily#1{%
+  \expandafter\expandafter\expandafter\pts@getfontfamily
+      \expandafter\string\the\font///\hfuzz#1%
+}
+\let\pts@@orig@textunderscore\textunderscore
+\DeclareRobustCommand\textunderscore{%
+  \begingroup\pts@def@fontfamily\reserved@a
+  \ifx\reserved@a\pts@@fontfamily@lmr
+    \endgroup\vrule width1ex height0pt depth0.4pt\relax
+  \else\ifx\reserved@a\pts@@fontfamily@lmss
+    \endgroup\vrule width1ex height0pt depth0.4pt\relax
+  \else
+    \endgroup\pts@@orig@textunderscore
+  \fi\fi
+}
+
+
 
 \author{P\'eter Szab\'o}
 \title{Optimizing PDF output size of \TeX{} documents}
@@ -77,38 +106,15 @@ document to a real printer. (For example, on Windows, PDFCreator
 PostScript, but not PDF. The \cmd{ps2pdf} \cite{ps2df} tool (part of
 Ghostcript) can be used to convert the PostScript to PDF.
 
-For \TeX{} documents there are several options for PDF generation. One
-traditional approach is \TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
-using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
-\cmd{ps2pdf} for creating the PDF file. One can convert directly from DVI to
-PDF, using e.g.\ \cmd{dvipdfm} \cite{dvipdfm}. The single-step approach is
-processing the \TeX{} source with pdf\TeX{} \cite{pdftex}, which generates
-PDF without any intermediate files. We recommend using pdf\TeX{} whenever
-possible, because it creates a small PDF file, it is fast, and it supports
-the most PDF features without compromises. For example, the other approaches
-cannot break the line in the middle of a hyperlink, but pdf\TeX{} can even
-hyphenate the link text automatically.
-
-Unfortunately, some graphics packages (such as \pkg{psfrag} and
-\pkg{pstricks}) require a PostScript backend, and pdf\TeX{} doesn't provide
-that. We recommend typesetting new graphics with TikZ \cite{tikz} if possible
-(which fully supports pdf\TeX{}), and converting other graphics to PDF,
-possibly typesetting label captions using \TeX{}, as outlined in
-\cite{psfrag-in-pdf}. Inkscape users can use \pkg{textext} \cite{textext}
-within Inkscape to make \TeX{} typeset the captions.
-
-With pdf\TeX{}, it is possible to reuse existing PDF files by embedding
-parts of them to the document. The \texttt{\string\includegraphics} command
-of the standard \pkg{graphicx} \LaTeX{}-package accept a PDF as the image
-file. In this case, the first page of the specified PDF will be used as a
-rectangular image. For multi-page inclusions, the \pkg{pdfpages}
-\LaTeX{}-package can be used. Please note that due to a limitation in
-pdf\TeX{}, hyperlinks and outlines (table of contents) in the embedded PDF
-will be lost.
+There are several options for PDF generation from
+\TeX{} documents, including
+pdf\TeX{}, \cmd{dvipdfmx} and \cmd{dvips} $+$ \cmd{ps2pdf}. Depending on how
+the document uses hyperlinks and PostScript programming in graphics, some of
+these would not work. See the details in Section \ref{tex-to-pdf}.
 
 \section{Motivation}
 
-Our goal is to reduce the file size of PDF documents, focusing on PDF files
+Our goal is to reduce the size of PDF files, focusing on those
 created from \TeX{} documents. Having smaller PDF files reduces download
 times, web hosting costs and storage costs as well. Although there is no
 urgent need for reducing PDF storage costs is for personal use (since hard
@@ -276,18 +282,74 @@ most of the PDF file can be stored in compressed streams. Only a few dozen
 byte of headers and end-of-file markers, and the stream dictionaries remain
 uncompressed.
 
-\section{How to compile a \TeX{} document to a small PDF}
+\section{How to compile a \TeX{} document to a small PDF}\label{tex-to-pdf}
 
-!! dvipdfmx
+\paragraph{Pick the best PDF generation method}
 
-!! unembed base 14 fonts (Why Adobe?)
+!! usepackage[dvipdfm]{graphicx}
+!! usepackage[dvipdfm]{hyperref}
 
-% !! dvipdfmx doesn't accept:
-%   ptmr8r Times-Roman "TeXBase1Encoding ReEncodeFont" <8r.enc
-% accepts:
-%   ptmr8r 8r Times-Roman
+!! 
+-rw-r--r-- 1 pts eng 2283510 Jul 22 14:42 texbook.pdf
+-rw-r--r-- 1 pts eng 2269821 Jul 21 14:38 texbook_dvipdfm.pdf
+-rw-r--r-- 1 pts eng 2007012 Jul 21 15:06 texbook_dvipdfmx.pdf
+-rw-r--r-- 1 pts eng 3485081 Jul 22 14:41 texbook_dvips.pdf
 
-psfrag, pstricks don't work
+One traditional approach converts
+\TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
+using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
+\cmd{ps2pdf} for creating the PDF file. One can convert directly from DVI to
+PDF, using e.g.\ \cmd{dvipdfmx} \cite{dvipdfmx} (or its precedessor,
+\cmd{dvipdfm}). \cmd{dvipdfmx} is part of \TeX{}\,Live 2008, but since it's
+quite new, it may be missing from other
+\TeX{} distributions. The single-step approach is
+processing the \TeX{} source with pdf\TeX{} \cite{pdftex}, which generates
+PDF without any intermediate files. We recommend using pdf\TeX{} whenever
+possible, because it creates a small PDF file, it is fast, and it supports
+the most PDF features without compromises. For example, the other approaches
+cannot break the line in the middle of a hyperlink, but pdf\TeX{} can even
+hyphenate the link text automatically.
+
+Unfortunately, some graphics packages (such as \pkg{psfrag} and
+\pkg{pstricks}) require a PostScript backend such as \cmd{dvips},
+and pdf\TeX{} or \cmd{dvipdfmx} don't provide that. See
+\cite{pstricks-pdfoutput} for a list of workarounds. They rely running
+\cmd{dvips} on the graphics, possibly converting its output to PDF, and then
+including those files in the main compilation. Most of the extra work can be
+avoided if graphics are created as external PDF files (without text
+replacements), TikZ \cite{tikz} figures or \MP{} figures. TikZ and \MP{}
+support text captions typeset by \TeX{}. Inkscape users can use
+\pkg{textext} \cite{textext} within Inkscape to make \TeX{} typeset the
+captions.
+
+The \texttt{\string\includegraphics} command of the standard \pkg{graphicx}
+\LaTeX{}-package accepts a PDF as the image file. With \cmd{dvipdfm(x)},
+one also needs a \texttt{.bb} file containing the bounding box. This can be
+generated with the \cmd{ebb} command, shipping with \cmd{dvipdfm(x)}. Or, it
+is possible to use the \pkg{pts-graphics-helper} package
+\cite{pts-graphics-helper}.
+
+
+
+
+
+
+
+
+ (For \cmd{p
+We recommend typesetting new graphics with TikZ \cite{tikz} if possible
+(which fully supports pdf\TeX{}), and converting other graphics to PDF,
+possibly typesetting label captions using \TeX{}, as outlined in
+\cite{psfrag-in-pdf}. 
+
+With pdf\TeX{}, it is possible to reuse existing PDF files by embedding
+parts of them to the document.  In this case, the first page of the specified PDF will be used as a
+rectangular image. For multi-page inclusions, the \pkg{pdfpages}
+\LaTeX{}-package can be used. Please note that due to a limitation in
+pdf\TeX{}, hyperlinks and outlines (table of contents) in the embedded PDF
+will be lost.
+
+
 
 \paragraph{Omit the base 14 fonts} The base 14 fonts are Times (in 4 styles,
 Helvetica (in 4 styles), Courier (in 4 styles), Symbol and Zapf Dingbats.
@@ -326,28 +388,25 @@ Identical to one of the two above, based on the
 
 It is possible to specify the base 14 embedding settings without modifying
 config files or generating \texttt{.map} files. Example command line for
-pdf\TeX{}: \texttt{pdflatex "\pdfmapfile{pdftex\_ndl14.map}\input" doc.tex}.
+pdf\TeX{}: \texttt{pdflatex "\string\pdfmapfile{pdftex\_ndl14.map}\string\input"
+doc.tex}.
 However, this will display a warning \emph{No flags specified for
 non-embedded font}. To get rid of this, use
-\texttt{pdflatex "\pdfmapfile{=pdftex\_ndl14_extraflag.map}\input" doc.tex}
-instead. Get the \emph{.map} file from \cite{pdfsizeopt-extra}.
+\texttt{pdflatex "\string\pdfmapfile{=pdftex\_ndl14\_extraflag.map}\string\input"
+doc.tex}
+instead. Get the \texttt{.map} file from \cite{pdfsizeopt-extra}.
 
-
-
-
-map files \texttt{pdftex_dl14.map}
-
-To omit the the base 14 fonts, one should use a font \texttt{.map} file, which
-doesn't contain the \texttt{.pfb} font file names for those fonts.
-
-
-
-!! how to omit 
-
-!! dvipdfmx -f pdftex\_ndl14.map -f dvipdfmx\_ndl14_extra.map
-
-% !! pdflatex "\pdfmapfile{=pdftex_ndl14.map}\input" thello
-
+The \texttt{.map} file syntax for \cmd{dvipdfm} is different, but
+\cmd{dvipdfmx} can use a \texttt{.map} file of pdf\TeX{} syntax. Example:
+\texttt{dvipdfmx -f pdftex\_dl14.map doc.dvi}. Please note that
+\cmd{dvipdfm} loads the \emph{.map} files specified in \pkg{dvipdfmx.cfg}
+first, and the \texttt{.map} files loaded with the \texttt{-f} flag override
+entries loaded previously, from the config file. To have the base 14 fonts
+omitted, run \texttt{dvipdfmx -f pdftex\_ndl14.map -f
+dvipdfmx\_ndl14\_extra.map dok.tex}. Get the last \texttt{.map} file from
+\cite{pdfsizeopt-extra}. Without \pkg{dvipdfmx\_ndl14\_extra.map}, a bug in
+\cmd{dvipdfm} prevents it from writing a PDF file without the font -- it
+would embed a rendered bitmap font instead.
 
 \section{How to save space in an existing PDF}
 
@@ -439,10 +498,6 @@ a decent renderer won't be available for one of the formats decades later.
 
 !! \cite the PDF optimization article and all from info.txt
 
-@psfrag-in-pdf{
-  url=http://brunoj.wordpress.com/2007/07/12/producing-high-quality-eps-and-pdf-diagrams-for-mathematics/
-}
-
 @iso-pdf{
 PDF 1.7 is ISO 32000
 meta-link: http://www.theinquirer.net/inquirer/news/1030411/pdf-approved-iso-32000
@@ -457,8 +512,18 @@ http://www.djvuzone.org/support/tutorial/chapter-intro.html
 http://project.ktug.or.kr/dvipdfmx/
 }
 
+% !! # in the URL
 @pdfsizeopt-extra{
+%http://code.google.com/p/pdfsizeopt/source/browse/#svn/trunk/extra
+}
 
+% !! # in the URL
+@pts-graphics-helper{
+%http://code.google.com/p/pdfsizeopt/source/browse/#svn/trunk/extra
+}
+
+@pstricks-pdfoutput{
+http://tug.org/PSTricks/main.cgi?file=pdf/pdfoutput
 }
 
 \end{document}

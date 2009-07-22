@@ -1,0 +1,123 @@
+%
+% pts-graphics-helper.sty: consistent LaTeX PDF graphics inclusion
+% by pts@fazekas.hu at Wed Jul 22 16:28:39 CEST 2009
+%
+% Features:
+%
+% * consistent pdflatex and dvipdfm(x) behavior
+% * \includegraphicsmps for including METAPOST output like foo.1, foo.2 etc.
+% * find the bounding box of embedded PDF files without the need for parsing
+%   a .bb file
+%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{pts-graphics-helper}[2009/07/02 v0.01 graphics inclusion]
+
+\expandafter\ifx\csname pdfoutput\endcsname\relax
+  \chardef\pdfoutput0 \fi
+
+\ifnum\pdfoutput>0
+  \PassOptionsToPackage{pdftex}{graphicx}
+  \PassOptionsToPackage{pdftex}{hyperref}
+\else
+  \PassOptionsToPackage{dvipdfm}{graphicx}
+  \PassOptionsToPackage{dvipdfm}{hyperref}
+\fi
+
+\expandafter\ifx\csname ver@graphics.sty\endcsname\relax\else
+  \PackageError{pts-graphics-helper}{Please load graphics-helper.sty before graphics.sty}\@ehc
+\fi
+\expandafter\ifx\csname ver@hyperref.sty\endcsname\relax\else
+  \PackageError{pts-graphics-helper}{Please load graphics-helper.sty before hyperref.sty}\@ehc
+\fi
+
+\let\includegraphicsmps\@undefined
+
+%** Usage: like \includegraphics
+%** Example: \includgraphicsmps[width=5cm]{mpspic.6}
+\newcommand\includegraphicsmps[2][]{%
+  \begingroup
+  \ifx\Ginclude@mps\@undefined  % for dvipdfm
+        \@namedef{Gin@rule@*}##1{{eps}{\Gin@ext}{##1}}%
+  \else \@namedef{Gin@rule@*}##1{{mps}{\Gin@ext}{##1}}\fi
+  \includegraphics[#1]{#2}%
+  \endgroup
+}
+
+% Like \@for, but splits on `/'. Based on \@for defined in latex.ltx.
+\def\@forslashnoop#1\@@#2#3{}
+\long\def\@forslash#1:=#2\do#3{%
+  \expandafter\def\expandafter\@forslashtmp\expandafter{#2}%
+  \ifx\@forslashtmp\@empty \else
+    \expandafter\@forslashloop#2/\@nil/\@nil\@@#1{#3}\fi}
+\long\def\@forslashloop#1/#2/#3\@@#4#5{\def#4{#1}\ifx #4\@nnil \else
+       #5\def#4{#2}\ifx #4\@nnil \else#5\@iforslashloop #3\@@#4{#5}\fi\fi}
+\long\def\@iforslashloop#1/#2\@@#3#4{\def#3{#1}\ifx #3\@nnil
+       \expandafter\@forslashnoop \else
+      #4\relax\expandafter\@iforslashloop\fi#2\@@#3{#4}}
+
+\def\pgh@@mediabox{MediaBox}
+\edef\pgh@@mediabox{\expandafter\strip@prefix\meaning\pgh@@mediabox}%
+\def\pgh@@mediaboxspc{MediaBox }
+\edef\pgh@@mediaboxspc{\expandafter\strip@prefix\meaning\pgh@@mediaboxspc}%
+
+\def\pgh@find@mediabox#1[#2]#3\\{%
+  \def\reserved@a{#1}%
+  \ifx\reserved@a\pgh@@mediabox
+    \Gin@bboxtrue
+    \Gread@false
+    \gdef\@gtempa{#2 }%
+  \else\ifx\reserved@a\pgh@@mediaboxspc
+    \Gin@bboxtrue
+    \Gread@false
+    \gdef\@gtempa{#2 }%
+  \fi\fi
+}
+
+%** @param #1 a line read from the .pdf file
+\long\def\pgh@find@bb#1\\{%
+  \@forslash\reserved@a:=-#1\do{%
+    \ifGread@\expandafter\pgh@find@mediabox\reserved@a[]\\\fi
+  }%
+}
+
+%** @param #1 filename.pdf
+\def\pgh@readepspdfbb#1{%
+  \begingroup
+  \Gread@true
+  \def\Gread@true{%
+    \@tempcnta=0
+    \loop\ifnum\@tempcnta<256
+      \catcode\@tempcnta=12
+      \advance\@tempcnta\@ne
+    \repeat
+    \catcode0=10 \catcode9=10 \catcode10=10
+    \catcode11=10 \catcode12=10 \catcode13=10 \catcode32=10
+    \catcode\string`\%=14  % comment
+    % TeX's eyes always split the line at character 10.
+    % So we cannot detect a MediaBox if it contains a newline.
+  }%
+  \let\Gread@find@bb\pgh@find@bb
+  \Gread@eps{#1}%
+  \endgroup
+  \expandafter\Gread@parse@bb\@gtempa\\% parse again, after \endgroup above
+}
+
+\def\pgh@@dvipdfmdef{dvipdfm.def}
+\edef\pgh@@dvipdfmdef{\expandafter\strip@prefix\meaning\pgh@@dvipdfmdef}%
+
+\def\pgh@fixpdfbbread{%
+  \ifnum\pdfoutput>0 \else
+    \edef\reserved@a{\expandafter\strip@prefix\meaning\Gin@driver}%
+    \ifx\reserved@a\pgh@@dvipdfmdef
+      % Find the PDF bounding box (first occurrence of /MediaBox in file)
+      % without a .bb file.
+      \@namedef{Gin@rule@.pdf}##1{{epspdfbb}{\Gin@ext}{##1}}%
+      \def\Ginclude@epspdfbb{\Ginclude@eps}%
+      \def\Gread@epspdfbb{\pgh@readepspdfbb}%
+    \fi
+  \fi
+}
+
+\AtBeginDocument\pgh@fixpdfbbread
+
+\endinput
