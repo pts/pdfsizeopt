@@ -6,6 +6,7 @@
 \usepackage{lmodern}
 \usepackage{mflogo}
 \usepackage{booktabs}
+\usepackage{graphicx}
 \usepackage[english]{babel}
 
 \def\cmd{\textsf}
@@ -126,7 +127,7 @@ There are several options for PDF generation from
 \TeX{} documents, including
 pdf\TeX{}, \cmd{dvipdfmx} and \cmd{dvips} $+$ \cmd{ps2pdf}. Depending on how
 the document uses hyperlinks and PostScript programming in graphics, some of
-these would not work. See the details in Section \ref{tex-to-pdf}.
+these would not work. See the details in Section~\ref{tex-to-pdf}.
 
 \section{Motivation}
 
@@ -164,8 +165,8 @@ print the document we've create today, then a well-documented and
 standardized format such as PDF is a natural choice. (Please note, however,
 that the PDF specification is not self-contained, it refers to other
 specifications, e.g.\ for some compression algorithms and font formats.)
-Another alternative document format is is DjVu (see in Section
-\ref{related-work}).
+Another alternative document format is is DjVu (see in
+Section~\ref{related-work}).
 
 It is possible to save space in a PDF by removing non-printed information
 such as hyperlinks, document outline elements, forms, text-to-Unicode
@@ -300,14 +301,26 @@ uncompressed.
 
 \section{How to compile a \TeX{} document to a small PDF}\label{tex-to-pdf}
 
+This section enumerates the most common tools which can generate a PDF from
+a \texttt{.tex} source, explains how to enforce the proper compression and
+font settings, and gives advice how to prepare vector and pixel-based images
+so they don't become unnecessarily large.
+
 \paragraph{Pick the best PDF generation method}
-!! refer to the table
+Table~\ref{tab:method-feature} lists features of the 3 most common methods
+(also called as \emph{drivers}) which produce a PDF from a \TeX{} document,
+and Table~\ref{tab:texbook-to-pdf} compares the file size whey produce when
+compiling the \TeX{}book. There is no single best driver because of the
+different feature sets, but looking at how large the output of \cmd{dvips}
+is, the preliminary conclusion would be to use pdf\TeX{}
+or \cmd{dvipdfm(x)} except if advanced PostScript features are needed (such
+as for \pkg{psfrag} and \pkg{pstricks}).
 
 \begin{table}
 \captiontop{Output file sizes of PDF generation from The \TeX{}book, with
 various methods. The PDF was optimized with \cmd{pdfsizeopt.py}, then with
 Multivalent}\label{tab:texbook-to-pdf}
-\par\noindent\hfil
+\par\small\noindent\hfil
 \begin{tabular}{@{}lrr@{}}
 \toprule
                   &&\emph{optimized}\\
@@ -320,34 +333,99 @@ pdf\TeX           &2283510 &1806887\\
 \end{tabular}
 \end{table}
 
-One traditional approach converts
+\begin{table}
+\captiontop{Features supported by various PDF output
+methods}\label{tab:method-feature}
+\par\small\noindent\hfil
+\begin{tabular}{@{}llll@{}}
+\toprule
+\emph{Feature}        & pdf\TeX   & \cmd{dvipdfm(x)} & \cmd{dvips} \\\midrule
+\pkg{hyperref}        & +         & +                & +           \\
+TikZ                  & +         & +                & +           \\
+\pkg{beamer.cls}      & +         & $+^o$            & $+^u$       \\
+include PDF           & +         & $+^b$            & +           \\
+embed bitmap font     & +         & +                & +           \\
+embed Type\,1 font    & +         & +                & +           \\
+[2ex]
+embed TrueType font   & +         & +                & $-$         \\
+include EPS           & $-$       & +                & +           \\
+include JPEG          & +         & $+^x$            & $-$         \\
+include PNG           & +         & $+^x$            & $-$         \\
+include \MP           & $+^m$     & $+^m$            & $+^r$       \\
+\pkg{psfrag}          & $-^f$     & $-^f$            & +           \\
+\pkg{pstricks}        & $-^f$     & $-^f$            & +           \\
+\pkg{pdfpages}        & +         & $-$              & $-$         \\
+line break in link    & +         & +                & $-$         \\
+\bottomrule
+\end{tabular}
+\par\bigskip
+\par\noindent \emph{b:} bounding box detection with \cmd{extractbb} or
+  \pkg{pts-graphics-helper}
+\par\noindent \emph{f:} see \cite{pstricks-pdfoutput} for workarounds
+\par\noindent \emph{m:} convenient with \texttt{\string\includegraphicsmps}
+  defined in \pkg{pts-graphics-helper}
+\par\noindent \emph{r:} rename file to \texttt{.eps} manually
+\par\noindent \emph{o:} with \texttt{\string\documentclass[dvipdfm]\{beamer\}}
+\par\noindent \emph{u:} use \texttt{dvips -t unknown doc.dvi} to get the paper
+size right.
+\par\noindent \emph{x:} with \texttt{\string\usepackage[dvipdfmx]\{graphics\}}
+  and shell escape running \cmd{extractbb}
+\end{table}
+
+We continue with presenting and analyzing the methods mentioned.
+
+\begin{description}
+
+\item[dvips] This approach converts
 \TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
 using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
-\cmd{ps2pdf} for creating the PDF file. One can convert directly from DVI to
-PDF, using e.g.\ \cmd{dvipdfmx} \cite{dvipdfmx} (or its precedessor,
-\cmd{dvipdfm}). \cmd{dvipdfmx} is part of \TeX{}\,Live 2008, but since it's
-quite new, it may be missing from other
-\TeX{} distributions. The single-step approach is
-processing the \TeX{} source with pdf\TeX{} \cite{pdftex}, which generates
-PDF without any intermediate files. We recommend using pdf\TeX{} whenever
-possible, because it creates a small PDF file (although not the smallest,
-see also Table \ref{tab:texbook-to-pdf}), it is fast, it supports
-the most PDF features without compromises, it integrates nicely with the
-editors \TeX{}Shop and \TeX{}works, and there are no intermediate steps where
-something could go wrong (e.g.\ images misaligned or not properly sized).
+\cmd{ps2pdf} (part of Ghostscript) for creating the PDF file. Example
+command-lines for compiling \texttt{doc.tex} to \texttt{doc.pdf}:
+\begin{verbatim}
+$ latex doc
+$ dvips doc
+$ ps2pdf14 doc.ps
+\end{verbatim}%$
 
-Here are some features which are not provided by all of the methods.
-!!
+\item[dvipdfmx] The tool \cmd{dvipdfmx} \cite{dvipdfmx} converts from
+DVI to PDF, producing a very small output file. \cmd{dvipdfmx} is part of \TeX{}\,Live 2008, but since it's
+quite new, it may be missing from other \TeX{} distributions. Its
+precedessor, \cmd{dvipdfm} has not been updated since March 2007. Notable
+new features in \cmd{dvipdfmx} are: support for non-latin scripts and fonts;
+emitting the Type\,1 fonts in CFF (that's the main reason for the size
+difference in Table~\ref{tab:method-feature}); parsing pdf\TeX{}-style font
+\texttt{.map} files. Example command-lines:
+\begin{verbatim}
+$ latex doc
+$ dvipdfmx doc
+\end{verbatim}
 
+\item[pdf\TeX] The commands \cmd{pdftex} or \cmd{pdflatex}  \cite{pdftex}
+generate PDF directly from the \texttt{.tex} source, without any intermediate
+files. An important advantage of pdf\TeX{} over the other methods is that it
+integrates nicely with the editors \TeX{}\-Shop and \TeX{}works. The
+single-step approach ensures that there would be no glitches
+(e.g.\ images misaligned or not properly sized)
+because the tools are not integrated properly.
+Example command-line:
+\begin{verbatim}
+$ pdflatex doc
+\end{verbatim}%$
+~
 
-For example, the other approaches
-cannot break the line in the middle of a hyperlink, but pdf\TeX{} can even
-hyphenate the link text automatically.
+\end{description}
 
-Here are 
-
-
-!! put this to its own section
+\noindent The command \texttt{latex doc} is run for both \cmd{dvips} and
+\cmd{dvipdfm(x)}. Since these two drivers expect a bit different
+\texttt{\string\special}s in the DVI file, the driver name has to be
+communicated to the \TeX{} macros generating the \texttt{\string\special}s.
+For \LaTeX{}, \cmd{dvips} is the default. To get \cmd{dvipdfm(x)} right,
+pass \texttt{dvipdfm} (or \texttt{dvipdfmx}) as an option to
+\texttt{\string\documentclass} or to both
+\texttt{\string\usepackage\{graphicx\}} and
+\texttt{\string\usepackage\{hyperref\}}. Loading the package
+\pkg{pts-graphics-helper} \cite{pts-graphics-helper} sets up \cmd{dvipdfm}
+as default unless the document is compiled with \cmd{pdflatex}.
 
 Unfortunately, some graphics packages (such as \pkg{psfrag} and
 \pkg{pstricks}) require a PostScript backend such as \cmd{dvips},
@@ -364,8 +442,9 @@ captions.
 The \texttt{\string\includegraphics} command of the standard \pkg{graphicx}
 \LaTeX{}-package accepts a PDF as the image file. In this case, the first
 page of the specified PDF will be used as a rectangular image. With
-\cmd{dvipdfm(x)}, one also needs a \texttt{.bb} file containing the bounding
-box. This can be generated with the \cmd{ebb} command, shipping with
+\cmd{dvipdfm(x)}, one also needs a \texttt{.bb} (or \texttt{.bbx}) file
+containing the bounding
+box. This can be generated with the \cmd{extractbb} command, shipping with
 \cmd{dvipdfm(x)}. Or, it is possible to use the \pkg{pts-graphics-helper}
 package \cite{pts-graphics-helper}, which can find the PDF bounding box
 directly (most of the time).
@@ -385,6 +464,173 @@ With pdf\TeX{}, it is possible to embed page regions from an external PDF,
 using the \pkg{pdfpages} \LaTeX{}-package. Please note that due to a
 limitation in pdf\TeX{}, hyperlinks and outlines (table of contents) in the
 embedded PDF will be lost.
+
+Although \cmd{dvipdfm(x)} supports PNG and JPEG image inclusion, calculating
+the bounding box may be cumbersome. It is recommended that all external
+images should be converted to PDF first. The recommended software for that
+conversion is \cmd{sam2p} \cite{sam2p}, which creates a small PDF (or EPS)
+quickly.
+
+Considering all of the above, we recommend using pdf\TeX{} for compiling
+\TeX{} documents to PDF. If, for some
+reason, using pdf\TeX{} is not feasible, we recommend \cmd{dvipdfmx} from
+\TeX{}\,Live 2008 or later. If a 1\% decrease in file size is worth the
+trouble of getting fonts right, we we recommend \cmd{dvipdfm}.
+In all the cases above, the final PDF should be optimized with
+\cmd{pdfsizeopt.py} (see later).
+
+\paragraph{Set the ZIP compression level to maximum}
+
+For pdf\TeX{}, the assignment \texttt{\string\pdfcompresslevel9} select
+maximum PDF compression. With \TeX{}\,Live 2008, this is the default. Here
+is how to specify it on the command-line:
+\texttt{pdflatex "\string\pdfcompresslevel9 \string\input" doc}.
+For \cmd{dvipdfm(x)}, the command-line flag \texttt{-z9} can be used to
+maximize compression. This is also the default.
+
+Please note that PDF supports redundancy elimination in many different
+levels (see in Section~\ref{existing}). Setting the ZIP compression level is
+only one of those.
+
+\paragraph{Generate object streams and cross-reference streams}
+
+pdf\TeX{} can generate object streams and cross-reference streams to save
+about 10\% of the PDF file size, or even more if the file contains lots of
+hyperlinks. (The actual saving depends on the file
+structure.) Example command-line for enabling it:
+\texttt{pdflatex "\string\pdfminorversion5 \string\pdfobjcompresslevel3
+\string\input" doc}. Please note, however, that if you optimize with
+Multivalent (see in Section~\ref{optimize}), setting this doesn't
+make any difference, because Multivalent will emit more efficient streams
+anyway.
+
+\paragraph{Get rid of complex graphics}
+
+Some computer algebra programs and vector modeling tools emit very large
+PDF (or similar vector graphics) files. This can be because they draw the
+graphics of too many little parts (e.g.\ they draw a sphere using several
+thousand triangles), or they draw too many parts which would
+be invisible anyway, because other parts cover them. Converting or
+optimizing such PDF files usually doesn't help, because the optimizers are not
+smart enough to rearrange the drawing instructions, and then skip some of
+them. A good rule of thumb is that if a figure in an optimized PDF file is
+larger than the corresponding PNG file rendered in 600\,DPI, then the
+figure is too complex. To reduce the file size, it is recommended to 
+export the figure as a PNG (or JPEG) image from the program, and embed that
+bitmap image.
+
+\paragraph{Downsample high-resolution images}
+
+For most printers it doesn't make a visible difference to print in a
+resolution higher than 600\,DPI. Sometimes even the difference between
+300\,DPI and 600\,DPI is negligable. So converting the embedded images down
+to 300\,DPI may save significant space without too much quality degradation.
+Downsampling before the image is included is a bit of manual work
+for each image, but there are lot of free software tools to do that (such as
+GIMP \cite{gimp} and the \cmd{convert} tool of ImageMagick \cmd{imagemagick}).
+It is possible to downsample after the PDF has been created, for example
+with the commercial software PDF Enhancher \cite{pdf-enhancer} or Adobe
+Acrobat. \cmd{ps2pdf}
+(using Ghostscript's \texttt{-dDEVICE=pdfwrite} \cite{pdfwrite-params}) can
+read PDF files, and downsample images within as well, but it usually grows
+other parts of the file too much (15\% increase in file size for The
+\TeX{}book), and it may lose some information (it does
+keep hypherlinks and the document outline, though).
+
+\paragraph{Crop large images}
+
+If only parts of a large image contain useful and relevant information, one
+can save space by cropping the image.
+
+\paragraph{Choose the JPEG quality}
+
+When using JPEG (or JPEG2000) compression, there is a dradeoff between
+quality and file size. Most JPEG encoders based on libjpeg accept an integer
+quality value between 1 and 100. For true color photos, a quality below 40
+produces a severely degraded, hard-to-recognize image, with 75 we get some
+harmless glitches, and with 85 the degradation is hard to notice. If the
+document contains lots of large JPEG images, it is worth reencoding those
+with a lower quality setting to get a smaller PDF file. PDF enhancer can
+reencode JPEG images in an existing PDF, but sometimes not all the images
+hae to be reencoded. With GIMP it is possible to get a real-time preview of
+the quality degradation before saving, by moving the quality slider.
+
+Please note that some cameras don't encode JPEG files efficiently when
+saving to the memory card, and it is possible to save a lot of space by
+reencoding on the computer, even with high quality settings.
+
+\paragraph{Embed vector fonts instead of bitmap fonts}
+
+Most fonts used with \TeX{} nowadays are available in Type\,1 vector format.
+(These fonts include the Computer Modern families, the Latin Modern families,
+the URW versions of the base 14 and some other Adobe fonts,
+the \TeX{} Gyre families, the Vera families, the Palatino family, the
+corresponding math fonts, and some symbol and drawing fonts.) This is a
+signifcant shift from the original \TeX{} (+ \cmd{dvips}) concept, which used
+bitmap fonts generated by \MF{}. While drivers still support embedding
+bitmap fonts to the PDF, this is not recommended, because bitmaps (at 600
+DPI) are larger than their vector equivalent, they render more slowly and
+they look uglier in some PDF viewers.
+
+\begin{table}
+\captiontop{Font \texttt{.map} files used by various drivers and their
+symlink targets (default first) in \TeX{}\,Live 2008}\label{tab:mapfiles}
+\par\small\noindent\hfil
+\begin{tabular}{@{}ll@{}}
+\toprule
+\emph{Driver} & Font \texttt{.map} file\\
+\midrule
+\cmd{xdvi} & \pkg{ps2pk.map} \\
+\cmd{dvips}& \pkg{psfonts.map} $\to$\\
+           & \pkg{psfonts\_t1.map} $|$ (\pkg{psfonts\_pk.map}) \\
+pdf\TeX{}  & \pkg{pdftex.map} $\to$\\
+           & \pkg{pdftex\_dl14.map} $|$ (\pkg{pdftex\_ndl14.map}) \\
+\cmd{dvipdfm(x)}& \pkg{dvipdfm.map} $\to$\\
+                & \pkg{dvipdfm\_dl14.map} $|$ (\pkg{dvipdfm\_ndl14.map}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+If a font is missing from the font \texttt{.map} file, drivers tend to
+generate a bitmap font automatically, and embed that. To make sure this
+didn't happen, it is possible detect the presence of bitmap fonts in a PDF
+by running \texttt{grep -a "/Subtype */Type3" doc.pdf}. Here is how to
+instruct pdf\TeX{} to use bitmap fonts only (for debugging purposes):
+\texttt{pdflatex "\string\pdfmapfile{}\string\input" doc}.
+The most common
+reason for the driver not finding a corresponding vector font is that the
+\texttt{.map} file is wrong or the wrong map file is used. With
+\TeX{}\,Live, the \cmd{updmap} tool can be used to regenerate the
+\texttt{.map} files for the user, and the \cmd{updmap-sys} command
+regenerates the system-level \texttt{.map} files. Table~\ref{tab:mapfiles}
+shows which driver reads which \texttt{.map} file. Copying over
+\pkg{pdftex\_dl14.map} to the current directory as the driver-specific
+\texttt{.map} file
+usually makes the driver find the font. Old \TeX{} distributions had quite
+a lot of problems finding fonts, upgrading to \TeX{}Live\,2008 or newer is
+strongly recommended.
+
+Some other popular fonts (such as the Microsoft web fonts) are available in
+TrueType, which is another vector format. \cmd{dvipdfm(x)} and pdf\TeX{} can
+embed TrueType fonts, but \cmd{dvips} can't (it just dumps the
+\texttt{.ttf} file to the \texttt{.ps} file, rendering it unparsable).
+
+OpenType fonts with advanced features such as script and feature selection
+and glyph substitution are supported by Unicode-aware \TeX{}-derivatives
+such as \XeTeX{}. \cmd{dvipdfmx} also supports OpenType fonts.
+
+\paragraph{Encode Type\,1 fonts as CFF}
+
+CFF \cite{cff} is an alternative, compact, highly compressible binary font
+format that can represent Type\,1 font data without loss. By embedding
+vector fonts in CFF (\texttt{/Subtype /Type1C}) instead of Type\,1, one can
+save significant portion of the PDF file, especially if the document is 10
+pages or less (e.g.\ reducing the PDFfile size from 200\,kB to 50\,kB).
+\cmd{dvipdfmx} does this by default, the other drivers (pdf\TeX{},
+\cmd{dvipdfm}, \cmd{ps2pdf} with \cmd{dvips}) don't support CFF embedding so
+far. If you optimize the PDF with \cmd{pdfsizeopt.py}, you don't have to pay
+attention to CFF embedding, because \cmd{pdfsizeopt.py} converts Type\,1
+fonts in the PDF to CFF.
 
 \paragraph{Omit the base 14 fonts} The base 14 fonts are Times (in 4 styles,
 Helvetica (in 4 styles), Courier (in 4 styles), Symbol and Zapf Dingbats.
@@ -422,7 +668,7 @@ Identical to one of the two above, based on the
 \end{description}
 
 It is possible to specify the base 14 embedding settings without modifying
-config files or generating \texttt{.map} files. Example command line for
+config files or generating \texttt{.map} files. Example command-line for
 pdf\TeX{}: \texttt{pdflatex "\string\pdfmapfile{pdftex\_ndl14.map}\string\input"
 doc.tex}.
 However, this will display a warning \emph{No flags specified for
@@ -443,22 +689,68 @@ dvipdfmx\_ndl14\_extra.map dok.tex}. Get the last \texttt{.map} file from
 \cmd{dvipdfm} prevents it from writing a PDF file without the font -- it
 would embed a rendered bitmap font instead.
 
-\section{How to save space in an existing PDF}
+\section{How to save space in an existing PDF}\label{existing}
 
 !! give details
-!! who implements what
+!! table on who implements what
 !! what is new work in pdfsizeopt.py
 !! what does pdflatex and dvipdfm implement
 
-\paragraph{Use cross-reference streams}
+\paragraph{Use cross-reference streams and compress them with the $y$-predictor}
+
+Each offset entry in an (uncompressed) cross-reference table consumes 20
+bytes. This can be reduced by using compressed cross-reference streams, and
+enabling the $y$-predictor. A reduction factor of 180 is possible if the
+PDF file contains many objects (e.g.\ more than $10^5$ objects in
+\emph{pdfref}, with less than 12000 bytes in the cross-reference stream).
+
+The reason why the $y$-predictor can make a difference of a factor of 2 or
+even more is the following.
+The $y$-predictor encodes each byte in a rectangular array of bytes by
+subtracting the original byte above the current byte from the current byte.
+So if each row of the rectangular array contains an object offset, and the
+offsets are increasing, then most of the bytes in the output of the
+$y$-predictor would have a small absolute value, mostly zero. Thus the
+output of the $y$-predictor can be compressed more efficiently with ZIP than
+the original byte array.
+
+Some tools such as Multivalent implement the $y$-predictor with PNG
+predictor 12, but using TIFF predictor 2 avoids stuffing in the extra byte
+per each row -- \cmd{pdfsizeopt.py} does that.
 
 \paragraph{Use object streams}
 
+It is possible to save space in the PDF by concatenating small (non-stream)
+objects to an object stream, and compressing the stream as a whole. One can
+even sort objects by type first, so similar objects will be placed next to
+each other, and they will fit to the 32\,kB long ZIP compression window.
+
+Please note that both object streams and cross-reference streams are
+PDF\,1.5 features, and cross-reference streams must be also used when object
+streams are used.
+
 \paragraph{Use better stream compression}
+
+In PDF any stream can be compressed with any compression filter (or a
+combination of filters). ZIP is the most efficient general-purpose
+compression, which is recommended for compressing content streams, object
+streams, cross-reference streams and font data streams (such as CFF).
+For images, however, there are specialized filters (see later in this
+section).
+
+Most PDF generators (such as \cmd{dvipdfm(x)} and pdf\TeX{}) and
+optimization tools (such as Multivalent)
+use the \pkg{zlib} code for general-purpose ZIP compression.
+\pkg{zlib} lets the user specify the \emph{effort} parameter between 0 (no
+compression) and 9 (slowest compression, smallest output) to balance
+compression speed versus compressed data size. There are, however
+alternative ZIP compressor implementations (such as KZIP \cite{kzip}), which
+privide an even higher effort -- but the author doesn't know of any PDF
+optimizers using those algorithms.
 
 \paragraph{Recompress images}
 
-\paragraph{Eliminate duplicate objects}
+\paragraph{Unify duplicate objects}
 
 \paragraph{Reorganize content streams}
 
@@ -491,6 +783,123 @@ pdf\TeX{} and \cmd{dvipdfm} create Type\,1; dvipdfmx creates Type\,1C.
 
 \paragraph{Convert some inline images to objects}
 
+\section{PDF size optimization tools}
+!!
+!! show pdfsizeopt.py
+!! explain that pdfsizeopt.py doesn't support content streams or cross-reference streams
+
+\paragraph{ps2pdf}
+
+
+\begin{table}
+\captiontop{PDF optimization efficiency
+of PDF Enhancer}\label{tab:eff-pdfe}
+\par\small\noindent\hfil
+\advance\tabcolsep-2pt  % Prevent overfull \hbox.
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+% !! why is Multivalent alone better on pdf_reference_1-7? what about extra
+%    compression
+\emph{document} & \emph{input} & \emph{pdfe} & \emph{epsom} & \emph{psom} \\\midrule
+cff         &   521909 &   229953 & &   180987    !!  \\
+beamer1     &   832319 &   756971 & &   317351    !! \\
+eu2006      &  8411464 &  failed  & &  4812306    !! \\
+inkscape    & 18245172 & 14613044 & & 13944481    !! \\
+lme2006     &  2703119 &  2263227 & &  2033582    !! \\
+pdfref      & 32472771 & 23794114 & & 11237663    !! \\
+pgf2        &  3783193 &  3498756 & &  2438261    !! \\
+texbook     &  2280769 &  2273410 & &  1806887    !! \\
+tuzv        &   337764 &   338316 & &   146414   !! \\
+\bottomrule
+\end{tabular}
+\par\bigskip
+\par\noindent All numeric values are in bytes.
+\par\noindent\emph{pdfe:} PDF Enhancer 3.2.5 (1122r) server edition
+\par\noindent\emph{epsom:} PDF Enhancer $+$ \cmd{pdfsizeopt.py} $+$ Multivalent
+\par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
+\end{table}
+
+
+\paragraph{PDF Enhancer}
+
+!! menu name: Adobe Acrobat Pro 9 / Advanced / PDF Optimizer
+!! Table~\ref{tab:eff-pdfe}
+!! only the advanced server edition supports JBIG2
+
+\begin{table}
+\captiontop{PDF optimization efficiency
+of Adobe Acrobat Pro 9}\label{tab:eff-a9}
+\par\small\noindent\hfil
+\advance\tabcolsep-2pt  % Prevent overfull \hbox.
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\emph{document} & \emph{input} & \emph{a9p4} & \emph{a9p5} & \emph{psom} \\\midrule
+cff         &   521909 &   548181 &   329315 &   180987 \\
+beamer1     &   832319 &   431936 &   334841 &   317351 \\
+eu2006      &  8411464 &  8115676 &  7991997 &  4812306 \\
+inkscape    & 18245172 & 14283567 & 13962583 & 13944481 \\
+lme2006     &  2703119 &  2410603 &  2279985 &  2033582 \\
+pdfref      & 32472771 & 23217668 & 20208419 & 11237663 \\
+pgf2        &  3783193 &   failed &   failed &  2438261 \\
+texbook     &  2280769 &  2314025 &  2150899 &  1806887 \\
+tuzv        &   337764 &   344215 &   328843 &   146414 \\
+\bottomrule
+\end{tabular}
+\par\bigskip
+\par\noindent All numeric values are in bytes.
+\par\noindent\emph{a9p4:} Adobe Acrobat Pro 9 creating PDF\,1.4
+\par\noindent\emph{a9p5:} Adobe Acrobat Pro 9 creating PDF\,1.5
+\par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
+\end{table}
+
+!! which document is which
+!! inkscape: lots of small images
+
+\paragraph{Adobe Acrobat}
+
+See Table~\ref{tab:eff-a9}.
+
+
+\begin{table}
+\captiontop{PDF optimization efficiency
+of Multivalent\,20060102}\label{tab:eff-multivalent}
+\par\small\noindent\hfil
+\advance\tabcolsep-2pt  % Prevent overfull \hbox.
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+% !! why is Multivalent alone better on pdf_reference_1-7? what about extra
+%    compression
+\emph{document} & \emph{input} & \emph{multi} & \emph{psom} & \emph{pso} \\\midrule
+cff         &   521909 &    181178 &    180987 &   230675 \\
+beamer1     &   832319 &    341732 &    317351 &   443253 \\
+eu2006      &  8411464 &   7198149 &   4812306 &  4993913 \\
+inkscape    & 18245172 &  13976597 &  13944481 & 17183194 \\
+lme2006     &  2703119 &   2285956 &   2033582 &  2349035 \\
+pdfref      & 32472771 &  11235006 &  \emph{11237663} & 23413875 \\
+pgf2        &  3783193 &   2584180 &   2438261 &  3449386 \\
+texbook     &  2280769 &   2057755 &   1806887 &  1992958 \\
+tuzv        &   337764 &    314508 &    146414 &   166863 \\
+\bottomrule
+\end{tabular}
+\par\bigskip
+\par\noindent All numeric values are in bytes.
+\par\noindent\emph{multi:} Multivalent\,20060102 \emph{tool.pdf.Compress}
+\par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
+\par\noindent\emph{pso:} \cmd{pdfsizeopt.py} without Multivalent
+\end{table}
+
+
+\paragraph{Multivalent tool.pdf.Compress}
+
+!! does recompress ZIPs
+!! Table~\ref{tab:eff-multivalent}
+%!! Multivalent alone is better on pdf_reference_1-7
+!! Example command line (creates optimized PDF as \texttt{doc-o.pdf}):
+\texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}
+
+
+\section{Suggested optimization workflow}\label{optimize}
+!!
 
 \section{!! TODO}
 
@@ -559,6 +968,10 @@ http://project.ktug.or.kr/dvipdfmx/
 
 @pstricks-pdfoutput{
 http://tug.org/PSTricks/main.cgi?file=pdf/pdfoutput
+}
+
+@pdf-enhancer{
+%http://www.apagoinc.com/prod_home.php?prod_id=2
 }
 
 \end{document}
