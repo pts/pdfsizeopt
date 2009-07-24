@@ -1770,7 +1770,7 @@ class PdfObj(object):
         'o closefile quit\'' %
         (ShellQuoteFileName(tmp_file_name), filter, decodeparms_pair))
     print >>sys.stderr, (
-        'info: decomressing %d bytes with Ghostscript '
+        'info: decompressing %d bytes with Ghostscript '
         '/Filter%s%s' % (len(self.stream), filter, decodeparms_pair))
     f = os.popen(gs_defilter_cmd)
     data = f.read()  # TODO(pts): Handle IOError etc.
