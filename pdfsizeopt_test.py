@@ -774,6 +774,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(t, e(s))
     # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
 
+  def testPermissiveZlibDecompress(self):
+    pass
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

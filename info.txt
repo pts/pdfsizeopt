@@ -480,3 +480,8 @@ additional compression may be possible with:
 * TODO: measure PDF and DjVu file sizes
 * TODO doc: how to make sure /Times is embedded
 * TODO group the objects in an object stream by type
+* PDF allows obj{}s separated by \r instead of \n; e.g. pdfe creates such
+  objects
+* TODO: investigate uninflatable.fla created from pts2e.pdfe.pdf
+  GhostScript /FlateDecode can extract it, pdftops can display it, but
+  zlib with Python and Ruby give Z_BUF_ERROR.

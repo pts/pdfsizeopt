@@ -507,7 +507,7 @@ class PdfObj(object):
         self._head = None  # self.__GetHead will regenerate it.
 
   def SetStreamAndCompress(self, data, may_keep_old=False,
-                           predictor_width=None):
+                           predictor_width=None, pdf=None):
     """Set self.stream, compress it and set Length, Filter and DecodeParms)."""
     # TODO(pts): Implement TIFF predictor_width (previous line). Does it help?
     if not isinstance(data, str):
@@ -531,6 +531,7 @@ class PdfObj(object):
       if predictor_width is not None:
         assert isinstance(predictor_width, int)
         assert len(data) % predictor_width == 0
+
         output = []
         output.append('\x00')  # no-predictor mark
         output.append(data[:predictor_width])
@@ -543,12 +544,31 @@ class PdfObj(object):
             b[j] = (b[j] - ord(data[k + j])) & 255
           output.append(b.tostring())
           i += predictor_width
-        items.append([None, 'zip-pred', PdfObj(self)])
+        items.append([None, 'zip-pred10', PdfObj(self)])
         items[-1][2].stream = zlib.compress(''.join(output), 9)
         items[-1][2].Set('Length', len(items[-1][2].stream))
         items[-1][2].Set('Filter', '/FlateDecode')
         items[-1][2].Set('DecodeParms',
                          '<</Predictor 10/Columns %d>>' % predictor_width)
+        items[-1][0] = items[-1][2].size
+
+        output = []
+        output.append(data[:predictor_width])
+        i = predictor_width
+        while i < len(data):
+          b = array.array('B', data[i : i + predictor_width])
+          k = i - predictor_width
+          for j in xrange(predictor_width):  # Implement the y predictor.
+            b[j] = (b[j] - ord(data[k + j])) & 255
+          output.append(b.tostring())
+          i += predictor_width
+        items.append([None, 'zip-pred2', PdfObj(self)])
+        items[-1][2].stream = zlib.compress(''.join(output), 9)
+        items[-1][2].Set('Length', len(items[-1][2].stream))
+        items[-1][2].Set('Filter', '/FlateDecode')
+        items[-1][2].Set('DecodeParms',
+                         '<</Predictor 2/Colors %d/Columns %d>>' %
+                         (predictor_width, len(data) / predictor_width))
         items[-1][0] = items[-1][2].size
 
       if may_keep_old:
@@ -566,6 +586,9 @@ class PdfObj(object):
       self.Set('Length', len(self.stream))
       self.Set('Filter', items[0][2].Get('Filter'))
       self.Set('DecodeParms', items[0][2].Get('DecodeParms'))
+      if (pdf and items[0][1] == 'zip-pred2' and predictor_width > 4 and
+          pdf.version < '1.3'):
+        pdf.version = '1.3'
 
   PDF_SIMPLE_VALUE_RE = re.compile(
       r'(?s)[\0\t\n\r\f ]*('
@@ -2292,7 +2315,7 @@ class ImageData(object):
       # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
       return self
     elif self.compression == 'zip':
-      idat = zlib.decompress(self.idat)
+      idat = zlib.decompress(self.idat)  # raises zlib.error
     elif self.compression == 'none':
       idat = self.idat
     else:
@@ -4447,7 +4470,7 @@ class PdfData(object):
       # Try to convert to PNG in-process. If we can't, schedule rendering with
       # Ghostscript. 
       try:
-        # Both LoadPdfImageObj and CompressToZipPng an raise FormatUnsupported.
+        # Both LoadPdfImageObj and CompressToZipPng raise FormatUnsupported.
         image1 = ImageData().LoadPdfImageObj(obj=obj, do_zip=False)
         if not image1.CanBePngImage(do_ignore_compression=True):
           raise FormatUnsupported('cannot save to PNG')
@@ -5241,6 +5264,7 @@ class PdfData(object):
       raise PdfTokenParseError('expected xref stream from Multivalent')
     if pdf.trailer.Get('Type') != '/XRef':
       raise PdfTokenParseError('expected /Type/XRef from Multivalent')
+    pdf.version = max(pdf.version, '1.5')
 
     # Keep initial comments, including the '%PDF-' header.
     output = ['%PDF-', pdf.version, '\n%\xD0\xD4\xC5\xD0\n']
@@ -5358,7 +5382,7 @@ class PdfData(object):
         # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
         pdf_obj.SetStreamAndCompress(
             xref_out, may_keep_old=(xref_out == xref_data),
-            predictor_width=sum(widths))
+            predictor_width=sum(widths), pdf=None)
         print >>sys.stderr, (
             'info: compressed xref stream from %s to %s bytes (%s)' %
             (len(xref_out), pdf_obj.size,
@@ -5373,6 +5397,9 @@ class PdfData(object):
         raise PdfOptimizeError('size of obj %s has grown from %s to %s bytes' %
                                (obj_num, obj_size, obj_out_size))
 
+    if pdf.version != output[1]:  # upgraded because of the xref
+      assert len(pdf.version) == len(output[1])
+      output[1] = pdf.version
     assert trailer_ofs == offsets_out[-2]
     output.append('startxref\n%d\n' % out_ofs_by_num[trailer_obj_num])
     output.append('%%EOF\n')
