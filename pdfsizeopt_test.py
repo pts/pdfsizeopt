@@ -7,6 +7,7 @@
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
 
 import sys
+import zlib
 import unittest
 
 import pdfsizeopt
@@ -775,7 +776,15 @@ class PdfSizeOptTest(unittest.TestCase):
     # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
 
   def testPermissiveZlibDecompress(self):
-    pass  # !!
+    e = pdfsizeopt.PermissiveZlibDecompress
+    data = 'Hello, World!' * 42
+    compressed = zlib.compress(data, 9)
+    self.assertEqual(data, e(compressed))
+    self.assertEqual(data, e(compressed[:-1]))
+    self.assertEqual(data, e(compressed[:-2]))
+    self.assertEqual(data, e(compressed[:-3]))
+    self.assertEqual(data, e(compressed[:-4]))
+    self.assertRaises(zlib.error, e, compressed[:-5])
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

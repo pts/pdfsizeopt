@@ -104,6 +104,8 @@ def PermissiveZlibDecompress(data):
       being possibly truncated (to 0, 1, 2, 3 or 4 bytes).
   Returns:
     String containing the uncompressed data.
+  Raises:
+    zlib.error:
   """
   try:
     return zlib.decompress(data)
@@ -122,7 +124,6 @@ def PermissiveZlibDecompress(data):
           return zlib.decompress(data + adler32_data[1:])
         except zlib.error:
           return zlib.decompress(data + adler32_data)
-
 
 
 class PdfOptimizeError(Error):
@@ -1797,7 +1798,7 @@ class PdfObj(object):
     if filter is None: return self.stream
     decodeparms = self.Get('DecodeParms') or ''
     if filter == '/FlateDecode' and '/Predictor' not in decodeparms:
-      return zlib.decompress(self.stream)
+      return PermissiveZlibDecompress(self.stream)
     if not is_gs_ok:
       raise FilterNotImplementedError('filter not implemented: ' + filter)
     tmp_file_name = 'pso.filter.tmp.bin'
@@ -2344,7 +2345,7 @@ class ImageData(object):
       # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
       return self
     elif self.compression == 'zip':
-      idat = zlib.decompress(self.idat)  # raises zlib.error
+      idat = PermissiveZlibDecompress(self.idat)  # raises zlib.error
     elif self.compression == 'none':
       idat = self.idat
     else:

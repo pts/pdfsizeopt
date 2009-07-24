@@ -485,3 +485,5 @@ additional compression may be possible with:
 * TODO: investigate uninflatable.fla created from pts2e.pdfe.pdf
   GhostScript /FlateDecode can extract it, pdftops can display it, but
   zlib with Python and Ruby give Z_BUF_ERROR.
+* ``pdfenhancer version 3.2.5, Build Date Jun  4 2008, SPDF 1122r'' creates
+  invalid images for pts2e.pdf as input.
