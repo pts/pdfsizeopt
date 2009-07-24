@@ -96,6 +96,35 @@ def FindOnPath(file_name):
   return None
 
 
+def PermissiveZlibDecompress(data):
+  """Decompress (inflate) an RFC 1950 deflated string, maybe w/o checksum.
+
+  Args:
+    data: String containing RFC 1950 deflated data, the 4-byte ADLER32 checksum
+      being possibly truncated (to 0, 1, 2, 3 or 4 bytes).
+  Returns:
+    String containing the uncompressed data.
+  """
+  try:
+    return zlib.decompress(data)
+  except zlib.error:
+    # This works if the ADLER32 is truncated, but it raises zlib.error on any
+    # other error.
+    uncompressed = zlib.decompressobj().decompress(data)
+    adler32_data = struct.pack('>L', zlib.adler32(uncompressed))
+    try:
+      return zlib.decompress(data + adler32_data[3:])
+    except zlib.error:
+      try:
+        return zlib.decompress(data + adler32_data[2:])
+      except zlib.error:
+        try:
+          return zlib.decompress(data + adler32_data[1:])
+        except zlib.error:
+          return zlib.decompress(data + adler32_data)
+
+
+
 class PdfOptimizeError(Error):
   """Raised if an expected optimization couldn't be performed."""
 
@@ -5363,7 +5392,12 @@ class PdfData(object):
           if f0 == 1 and f1 > 0:
             # For testing: pgfmanual.pdf has generation number == 255 here:
             #assert f2 == 0  # generation number
-            assert in_ofs_by_num[ref_obj_num] == f1
+            fx = in_ofs_by_num[ref_obj_num]
+            # TODO(pts): Make it work for w1 > 8 ('Q' is max 8)
+            assert  fx == f1, (
+                 'expected %d (%r), read %d (%r) in xref stream at %d' %
+                 (fx, struct.pack('>Q', fx)[-w1:],
+                  f1, struct.pack('>Q', f1)[-w1:], i - w2 - w1))
             fo = out_ofs_by_num[ref_obj_num]
             if f1 != fo:  # Update the object offset in the xref stream.
               # TODO(pts): Optimize this.

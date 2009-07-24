@@ -737,14 +737,14 @@ class PdfSizeOptTest(unittest.TestCase):
              '(\x87\xfa\x8d\xcdc\x80\xf4y\xa9\x9e\tI\xa0b\xad3)'
              '(\x8d\\\\\x87\xa1\xbb\t\xae\xe6sU<\x10\x90*I\xf1)'
              ']/Length 14>>stream\n'
-         '\x00\x00\x00\x0f\x00W\x00\x83\x00\xcf\x1c\x88\x1c\xe3\n'
+         '\x00\x00\x00\x0f\x00W\x00\x86\x00\xd2\x01\x88\x01\xe3\n'
          'endstream\n'
          'endobj\n'
          'startxref\n'
          '483\n'
          '%%EOF\n')
     t = ('%PDF-1.5\n'
-         '%\x90\x84\x86\x8f\n'
+         '%\xd0\xd4\xc5\xd0\n'
          '1 0 obj\n'
          '<</Type/Pages/Kids[5 0 R]/MediaBox[0 0 419 534]/Count 1>>endobj\n'
          '2 0 obj\n'
@@ -760,22 +760,22 @@ class PdfSizeOptTest(unittest.TestCase):
          '<</BitsPerComponent 1/ColorSpace/DeviceGray/Filter/FlateDecode'
              '/Height 534/Interpolate false/Length 4/Subtype/Image/Width 419'
              '>>stream\n'
-         'BLAHendstream endobj\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n'
+         'BLAHendstream endobj\n'
          '5 0 obj\n'
          '<</Type/Page/Contents 3 0 R/Resources<</XObject<</S 4 0 R>>>>'
              '/Parent 1 0 R>>endobj\n'
          '6 0 obj\n'
          '<</Length 14/Root 2 0 R/Size 7/Type/XRef/W[0 2 0]>>stream\n'
-         '\x00\x00\x00\x0f\x00W\x00\x83\x00\xcf\x1c\x88\x1c\xe3'
+         '\x00\x00\x00\x0f\x00W\x00\x86\x00\xd2\x01t\x01\xcf'
              'endstream endobj\n'
          'startxref\n'
-         '483\n'
+         '463\n'
          '%%EOF\n')
     self.assertEqual(t, e(s))
     # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
 
   def testPermissiveZlibDecompress(self):
-    pass
+    pass  # !!
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
