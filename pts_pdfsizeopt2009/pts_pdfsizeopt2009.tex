@@ -75,6 +75,12 @@ fonts.
 
 \maketitle
 
+\section{Introduction}
+
+!!
+
+!! Should I include ``This work was funded by my emplyer, Google.''??
+
 \section{What does a PDF document contain}
 
 PDF is a popular document file format designed for printing and on-screen
@@ -293,7 +299,7 @@ compressed. However, there can be lots of small object definitions in the
 file which are not streams. To compress those, PDF\,1.5 introduces
 \emph{object streams.} The data in an object stream contains a concatenation
 of any number of non-stream object definitions. Object streams can be
-compressed just as regular stream data. This makes it possible to eliminate
+compressed just as regular stream data. This makes it possible to squeeze
 repetitions spanning over multiple object definitions. Thus, with PDF\,1.5,
 most of the PDF file can be stored in compressed streams. Only a few dozen
 byte of headers and end-of-file markers, and the stream dictionaries remain
@@ -758,9 +764,9 @@ optimizers using those algorithms.
 
 \paragraph{Reorganize content streams}
 
-\paragraph{Eliminate unnecessary indirect references}
+\paragraph{Remove unnecessary indirect references}
 
-\paragraph{Eliminate duplicate images, based on pixel value}
+\paragraph{Remove duplicate images, based on pixel value}
 
 \paragraph{Convert Type\,1 fonts to CFF}
 
@@ -777,9 +783,9 @@ pdf\TeX{} and \cmd{dvipdfm} create Type\,1; dvipdfmx creates Type\,1C.
 
 \paragraph{Escape only if necessary in strings}
 
-\paragraph{Eliminate unused objects}
+\paragraph{Remove unused objects}
 
-\paragraph{Eliminate page thumbnails}
+\paragraph{Remove page thumbnails}
 
 \paragraph{Subset fonts}
 
@@ -787,10 +793,16 @@ pdf\TeX{} and \cmd{dvipdfm} create Type\,1; dvipdfmx creates Type\,1C.
 
 \paragraph{Convert some inline images to objects}
 
+\paragraph{Remove ASCII-based filters}
+
+!! ASCIIHexDecode shorter
+
+\paragraph{Serialize values more efficiently}
+
+!! ASCII-repr string hex shorter
+!! get rid of spaces
+
 \section{PDF size optimization tools}
-!!
-!! show pdfsizeopt.py
-!! explain that pdfsizeopt.py doesn't support content streams or cross-reference streams
 
 \begin{table*}
 \captiontop{PDF size reduction by object type, when running
@@ -815,7 +827,7 @@ tuzv & $112145-02$\% & $201155-83$\% & 0 & $21913-76$\% & $2471-87$\% & $337764-
 \par\noindent All numeric values are in bytes. !!
 \end{table*}
 
-\paragraph{Test PDF files}
+\subsection{Test PDF files}
 
 In order to compare the optimization efficiency of the tools presented in
 this section, we have compiled a set of test PDF files, and optimized them
@@ -876,8 +888,9 @@ is in Type\,1 format.
 
 \noindent None of the test PDF files used cross-reference streams or object streams.
 
-\paragraph{ps2pdf}
+\subsection{ps2pdf}
 
+!!
 
 \begin{table}
 \captiontop{PDF optimization efficiency
@@ -908,7 +921,7 @@ tuzv        &   337764 &   338316 &   147453 &   146414 \\
 \end{table}
 
 
-\paragraph{PDF Enhancer}
+\subsection{PDF Enhancer}
 
 !! menu name: Adobe Acrobat Pro 9 / Advanced / PDF Optimizer
 !! Table~\ref{tab:eff-pdfe}
@@ -947,7 +960,7 @@ tuzv        &   337764 &   344215 &   328843 &   146414 \\
 !! inkscape: lots of small images
 !! number of pages, number of images
 
-\paragraph{Adobe Acrobat}
+\subsection{Adobe Acrobat}
 
 See Table~\ref{tab:eff-a9}.
 
@@ -981,31 +994,73 @@ tuzv        &   337764 &    314508 &    146414 &   166863 \\
 \end{table}
 
 
-\paragraph{Multivalent tool.pdf.Compress}
+\subsection{Multivalent tool.pdf.Compress}
 
+!! licenses
 !! does recompress ZIPs
 !! Table~\ref{tab:eff-multivalent}
 %!! Multivalent alone is better on pdf_reference_1-7
 !! Example command line (creates optimized PDF as \texttt{doc-o.pdf}):
 \texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}
 
+\subsection{pdfsizeopt.py}
 
-\section{Suggested optimization workflow}\label{optimize}
-!!
+!! write this
+!! this is our contribution
+!! explain that pdfsizeopt.py doesn't support content streams or cross-reference streams
+!! efficient $\to$ effective
 
-\section{!! TODO}
+\cmd{pdfsizeopt.py} \cite{pdfsizeopt} was written as part of this work. Its purpose is to
+implement the most common optimizations typical \TeX{} documents benefit
+from, but only those which are not already done by Multivalent. As described
+in Section~\ref{workflow}, to get the smallest output PDF, the optimizations
+done by \cmd{pdfsizeopt.py} should be applied first, and the result should
+be processed by Multivalent. Since the 20060102 version of Multivalent
+optimizes images, and it replaces the image even if the optimized version is
+larger than the original, one final step is needed to put those
+original images back which are smaller. \cmd{pdfsizeopt.py}
+implements this final step as well.
 
-!! dvipdfm with different fontconfig
-!! pdftex and cross-reference streams (buggy)
-!! ASCII-repr string hex shorter
-!! ASCIIHexDecode shorter
-!! why is content stream compression good?
-!! dvipdfmx instead of dvipdfm
+\cmd{pdfsizeopt.py} can be used as a stand-alone PDF optimizer (without
+Multivalent), but the final PDF will be much smaller if Multivalent
+is run as well.
 
-!! base 14: cp `kpsewhich pdftex\_ndl14.map` pdftex.map
-pdftexDownloadBase14 false in updmap.cfg
+\cmd{pdfsizeopt.py} implements the following optimizations: !!
 
-!! dvipdfm creates a bit smaller PDF than pdftex
+\begin{description}
+
+\item[Convert Type\,1 fonts to CFF]
+
+\item[Unify subsets of the same CFF font]
+Limitation: only for CFF (and former Type\,1) fonts.
+
+\item[Convert inline images to objects]
+Limitation: only from sam2p.
+
+\item[Optimize individual images]
+Picks the best of: \cmd{sam2p} without predictor, \cmd{sam2p} with
+PNG predictor, PNGOUT, \cmd{jbig2}.
+!! hard to convert a PDF image to a PNG.
+!! Limitations: no CMYK, only device-specific color spaces (RGB, Gray and
+   RGB-palette)
+
+\item[Remove image duplicates]
+!! based on image data
+
+\item[Remove object duplicates]
+
+\item[Remove unused objects]
+
+
+\end{description}
+
+Improvement possibilites:
+
+!! concatenation
+
+\section{Suggested PDF optimization workflow}\label{workflow}
+!! use pdflatex or dvipdfmx with the right settings, use pdfsizeopt.py +
+   Multivalent.
 
 \section{Related work}\label{related-work}
 
@@ -1027,6 +1082,10 @@ can archive both the PDF and the DjVu version of the same document, in case
 a decent renderer won't be available for one of the formats decades later.
 
 !! more related work
+
+\section{Conclusion}
+
+!!
 
 \section{References}
 
@@ -1068,6 +1127,10 @@ http://tug.org/PSTricks/main.cgi?file=pdf/pdfoutput
 
 @example-pdfs{
 http://code.google.com/p/pdfsizeopt/wiki/ExamplePDFsToOptimize
+}
+
+@pdfsizeopt{
+http://code.google.com/p/pdfsizeopt
 }
 
 \end{document}

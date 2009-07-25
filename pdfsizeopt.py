@@ -245,6 +245,33 @@ class PdfObj(object):
   PDF_FONT_FILE_KEYS = ('FontFile', 'FontFile2', 'FontFile3')
   """Tuple of keys in /Type/FontDescriptor referring to the font data obj."""
 
+  INLINE_IMAGE_UNABBREVIATIONS = {
+      'BPC': 'BitsPerComponent',
+      'CS': 'ColorSpace',
+      'D': 'Decode',
+      'DP': 'DecodeParms',
+      'F': 'Filter',
+      'H': 'Height',
+      'W': 'Width',
+      'IM': 'ImageMask',
+      'I': 'Interpolate',  # ambiguous for Indexed
+      'G': 'DeviceGray',
+      'RGB': 'DeviceRGB',
+      'CMYK': 'DeviceCMYK',
+      'AHx': 'ASCIIHexDecode',
+      'A85': 'ASCII85Decode',
+      'LZW': 'LZWDecode',
+      'Fl': 'FlateDecode',
+      'RL': 'RunLengthDecode',
+      'CCF': 'CCITTFaxDecode',
+      'DCT': 'DCTDecode',
+  }
+  """Maps an abbreviated name (in an inline image) to its full equivalent.
+
+  From table 4.43, 4.44, ++ on page 353 of pdf_reference_1-7.pdf .
+  """
+
+
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
                obj_starts=None):
     """Initialize from other.
@@ -1461,6 +1488,72 @@ class PdfObj(object):
     palette = cls.ParseString(match.group(1))
     assert len(palette) % 3 == 0
     return palette
+
+  def DetectInlineImage(self):
+    """Detect whether self is a form XObject with an inline image.
+
+    As an implementation limitation, this detects only inline
+    images created by sam2p.
+    TODO(pts): Add support for more.
+
+    Returns:
+      None if not an inline images, or the tuple
+      (width, height, image_obj), where image_obj.stream is valid,
+      but keys are not, they might still come from self.
+    """
+    # TODO(pts): Is re.search here fast enough?; PDF comments?
+    if (not re.search(r'/Subtype[\0\t\n\r\f ]*/Form\b', self.head) or
+        not self.head.startswith('<<') or
+        not self.stream is not None or
+        self.Get('Subtype') != '/Form' or
+        self.Get('FormType', 1) != 1 or
+        # !! get rid of these checks one we can decompress anything
+        self.Get('Filter') not in (None, '/FlateDecode') or
+        self.Get('DecodeParms') is not None or
+        not str(self.Get('BBox')).startswith('[')): return None
+
+    bbox = map(PdfObj.GetNumber, PdfObj.ParseArray(self.Get('BBox')))
+    if (len(bbox) != 4 or bbox[0] != 0 or bbox[1] != 0 or
+        bbox[2] is None or bbox[2] < 1 or bbox[2] != int(bbox[2]) or
+        bbox[3] is None or bbox[3] < 1 or bbox[3] != int(bbox[3])):
+      return None
+    width = int(bbox[2])
+    height = int(bbox[3])
+
+    stream = self.GetUncompressedStream()
+    # TODO(pts): Match comments etc.
+    match = re.match(
+        r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
+        r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+cm[\0\t\n\r\f ]+'
+        r'BI[\0\t\n\r\f ]*(/(?s).*?)ID(?:\r\n|[\0\t\n\r\f ])', stream)
+    if not match: return None
+    if int(match.group(1)) != width or int(match.group(2)) != height:
+      return None
+    # Run CompressValue so we get it normalized, and we can do easier
+    # regexp matches and substring searches.
+    inline_dict = PdfObj.CompressValue(
+        match.group(3), do_emit_strings_as_hex=True)
+    stream_start = match.end()
+
+    stream_tail = stream[-16:]
+    # TODO(pts): What if \r\n in front of EI? We don't support that.
+    match = re.search(
+        r'[\0\t\n\r\f ]EI[\0\t\n\r\f ]+Q[\0\t\n\r\f ]*\Z', stream_tail)
+    if not match: return None
+    stream_end = len(stream) - len(stream_tail) + match.start()
+    stream = stream[stream_start : stream_end]
+
+    inline_dict = re.sub(
+        r'/([A-Za-z]+)\b',
+        lambda match: '/' + self.INLINE_IMAGE_UNABBREVIATIONS.get(
+            match.group(1), match.group(1)), inline_dict)
+    image_obj = PdfObj('0 0 obj<<%s>>endobj' % inline_dict)
+    if (image_obj.Get('Width') != width or
+        image_obj.Get('Height') != height):
+      return None
+      image_obj.Set('Length', len(stream))
+      image_obj.stream = stream
+    return width, height, image_obj
 
   @classmethod
   def ParseString(cls, pdf_data):
@@ -3059,6 +3152,10 @@ class PdfData(object):
   currentfile ReadWhitespaceChar pop
 } bind def
 
+/Map { % <array> <code> Map <array>
+  [ 3 1 roll forall ]
+} bind def
+  
 % <streamdict> <compressed-file> DecompressStreamFile
 % <streamdict> <decompressed-file>
 /DecompressStreamFile {
@@ -3072,6 +3169,9 @@ class PdfData(object):
       dup /Filter exch def
     } if pop
     dup /DecodeParms .knownget not {null} if dup null ne {
+      % Ghostscript 8.61 (or earlier) says ``/undefined in --filter--''
+      % if there is a null in the DecodeParms.
+      { dup null eq {pop << >>} if } Map
       dup /DecodeParms exch def
     } if pop
   exch currentdict end
@@ -4082,32 +4182,6 @@ class PdfData(object):
     self.objs[obj_num] = obj
     return obj_num
 
-  INLINE_IMAGE_UNABBREVIATIONS = {
-      'BPC': 'BitsPerComponent',
-      'CS': 'ColorSpace',
-      'D': 'Decode',
-      'DP': 'DecodeParms',
-      'F': 'Filter',
-      'H': 'Height',
-      'W': 'Width',
-      'IM': 'ImageMask',
-      'I': 'Interpolate',  # ambiguous for Indexed
-      'G': 'DeviceGray',
-      'RGB': 'DeviceRGB',
-      'CMYK': 'DeviceCMYK',
-      'AHx': 'ASCIIHexDecode',
-      'A85': 'ASCII85Decode',
-      'LZW': 'LZWDecode',
-      'Fl': 'FlateDecode',
-      'RL': 'RunLengthDecode',
-      'CCF': 'CCITTFaxDecode',
-      'DCT': 'DCTDecode',
-  }
-  """Maps an abbreviated name (in an inline image) to its full equivalent.
-
-  From table 4.43, 4.44, ++ on page 353 of pdf_reference_1-7.pdf .
-  """
-
   def ConvertInlineImagesToXObjects(self):
     """Convert embedded inline images to Image XObject{}s.
 
@@ -4132,57 +4206,10 @@ class PdfData(object):
     uninline_bytes_saved = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
-
-      # TODO(pts): Is re.search here fast enough?; PDF comments?
-      if (not re.search(r'/Subtype[\0\t\n\r\f ]*/Form\b', obj.head) or
-          not obj.head.startswith('<<') or
-          not obj.stream is not None or
-          obj.Get('Subtype') != '/Form' or
-          obj.Get('FormType', 1) != 1 or
-          obj.Get('Filter') not in (None, '/FlateDecode') or
-          obj.Get('DecodeParms') is not None or
-          not str(obj.Get('BBox')).startswith('[')): continue
-
-      bbox = map(PdfObj.GetNumber, PdfObj.ParseArray(obj.Get('BBox')))
-      if (len(bbox) != 4 or bbox[0] != 0 or bbox[1] != 0 or
-          bbox[2] is None or bbox[2] < 1 or bbox[2] != int(bbox[2]) or
-          bbox[3] is None or bbox[3] < 1 or bbox[3] != int(bbox[3])):
+      detect_ret = obj.DetectInlineImage()
+      if not detect_ret:
         continue
-      width = int(bbox[2])
-      height = int(bbox[3])
-
-      stream = obj.GetUncompressedStream()
-      # TODO(pts): Match comments etc.
-      match = re.match(
-          r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
-          r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+cm[\0\t\n\r\f ]+'
-          r'BI[\0\t\n\r\f ]*(/(?s).*?)ID(?:\r\n|[\0\t\n\r\f ])', stream)
-      if not match: continue
-      if int(match.group(1)) != width or int(match.group(2)) != height:
-        continue
-      # Run CompressValue so we get it normalized, and we can do easier
-      # regexp matches and substring searches.
-      inline_dict = PdfObj.CompressValue(
-          match.group(3), do_emit_strings_as_hex=True)
-      stream_start = match.end()
-
-      stream_tail = stream[-16:]
-      # TODO(pts): What if \r\n in front of EI? We don't support that.
-      match = re.search(
-          r'[\0\t\n\r\f ]EI[\0\t\n\r\f ]+Q[\0\t\n\r\f ]*\Z', stream_tail)
-      if not match: continue
-      stream_end = len(stream) - len(stream_tail) + match.start()
-      stream = stream[stream_start : stream_end]
-
-      inline_dict = re.sub(
-          r'/([A-Za-z]+)\b',
-          lambda match: '/' + self.INLINE_IMAGE_UNABBREVIATIONS.get(
-              match.group(1), match.group(1)), inline_dict)
-      image_obj = PdfObj('0 0 obj<<%s>>endobj' % inline_dict)
-      if (image_obj.Get('Width') != width or
-          image_obj.Get('Height') != height):
-        continue
-
+      width, height, image_obj = detect_ret
       # For testing: obj 2 in pts2e.pdf
       uninline_count += 1
       colorspace = image_obj.Get('ColorSpace')
@@ -4203,9 +4230,7 @@ class PdfData(object):
       # TODO(pts): Get rid of /Type/XObject etc. from other objects as well
       image_obj.Set('Type', None)  # /XObject, but optimized
       image_obj.Set('Subtype', '/Image')
-      image_obj.Set('Length', len(stream))
       image_obj.head = PdfObj.CompressValue(image_obj.head)
-      image_obj.stream = stream
       # We cannot just replace obj by image_obj here, because we have to scale
       # (with the `cm' operator).
       image_obj_num = self.AddObj(image_obj)
@@ -4697,7 +4722,7 @@ class PdfData(object):
         # case for len(obj_info) == 1.
         # TODO(pts): Investigate why the original image can be the smallest.
       del obj_images[:]  # free memory occupied by unchosen images
-    print >>sys.stderr, 'info: saved %s bytes (%s) on images' % (
+    print >>sys.stderr, 'info: saved %s bytes (%s) on optimizable images' % (
         bytes_saved, FormatPercent(bytes_saved, image_total_size))
     # !! compress PDF palette to a new object if appropriate
     # !! delete all optimized_image_file_name{}s
@@ -5116,6 +5141,9 @@ class PdfData(object):
         'separator_data': len(data),
         'xref': 0,
         'trailer': 0,
+        # TODO(pts): Count hyperlinks seperately, but they may be part of
+        # content streams, and we don't have the infrastructure to inspect
+        # that.
         'other_objs': 0,
         'wasted_between_objs': 0,
         'header': 0,
@@ -5213,7 +5241,8 @@ class PdfData(object):
               except PdfTokenParseError:
                 pass
 
-        if pdf_obj.Get('Subtype') == '/Image':
+        if (pdf_obj.Get('Subtype') == '/Image' or
+            pdf_obj.DetectInlineImage()):
           stats['image_objs'] += obj_size
         else:
           stats['other_objs'] += obj_size
