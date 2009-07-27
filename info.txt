@@ -480,6 +480,9 @@ additional compression may be possible with:
 * TODO: measure PDF and DjVu file sizes
 * TODO doc: how to make sure /Times is embedded
 * TODO group the objects in an object stream by type
+* TODO optimize: why is Multivalent alone better than
+* pdfsizeopt.py+Multivalent on pdf_reference_1-7.pdf?
+* TODO group the objects in an object stream by type
 * PDF allows obj{}s separated by \r instead of \n; e.g. pdfe creates such
   objects
 * TODO: investigate uninflatable.fla created from pts2e.pdfe.pdf
@@ -489,3 +492,4 @@ additional compression may be possible with:
   invalid images for pts2e.pdf as input.
 * TODO (album_virag.pdf): [/FlateDecode /CCITTFaxDecode]
 * TODO: is /FlateDecode/DCTDecode bettern than /DCTDecode?
+* TODO: don't compress too small images
