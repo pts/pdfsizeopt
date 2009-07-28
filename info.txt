@@ -15,9 +15,6 @@
   * good idea to compress fn.9.0.pdf to fn.9.0-o.pdf, to PDF1.5 with object
     compression
 * is there a tool for Type1C (CFF) font conversion in PDF?
-* \cite (2004)
-  Creative use of PDF files in L A T E X environments
-  http://www.tu-chemnitz.de/urz/anwendungen/tex/stammtisch/chronik/pdf_interna.pdf - 
 * Ubuntu Hardy has latest pdftk 1.41
   pdftk texbook.9.0.pdf output texbook.9.0.tk.pdf compress
   only compresses the page stream a little bit
@@ -170,8 +167,6 @@
     is a powerful contender.
   * contains minitiff.c and tiffread.c for reading TIFF files
   * can process large images: 17382x23547 pixels, 1 bit/pixel, grayscale
-* TODO: \cite PNG optimization  http://optipng.sourceforge.net/pngtech/optipng.html
-  lists ll relevant tools
 * Latest version: OptiPNG 0.6.2 (released on 9 Nov 2008). 
 * SUXX: advpng in advancecomp-1.15 doesn't support 1-bit grayscale
   lme_v6/300dpi_00008.advpng-4.png (Unsupported bit depth/color type, 1/0)
@@ -379,7 +374,7 @@ additional compression may be possible with:
       ../jdisasm.py tool/pdf/Compress.class private compress
   * how to fix pdfr_;
     private --> public: \x00\x02\x02\x3b --> \x00\x01\x02\x3b
-* \cite http://websiteoptimization.com/speed/tweak/pdf/
+* http://websiteoptimization.com/speed/tweak/pdf/
   uses Advanced / PDF optimizer in Acrobat 8
   uses PDF Enhancer 3.1 (server edition: pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
     features: http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
@@ -447,7 +442,7 @@ additional compression may be possible with:
   ZIP gives -0.03% on JPEG
 * \cite http://www.verypdf.com/pdfinfoeditor/compression.htm
   pdfcompress comamnd-line tool
-  emovemetadata=1
+  removemetadata=1
   removejavascript=1
   removethumb=1
   removecomment=1
