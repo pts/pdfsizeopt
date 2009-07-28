@@ -3,9 +3,11 @@
 % Overall steps: !!
 %
 % * efficient $\to$ effective
+% * efficiency $\to$ effectiveness
 % * spell check
 % * review
-% * make it accepted by Googles
+% * make it accepted by Google
+% * stretch tables to \hsize
 
 \documentclass{ltugproc}
 %\usepackage[latin2]{inputenc}% !! check
@@ -117,13 +119,26 @@ data, clicks on the submit button, and the data is sent to a server in an
 HTTP request), event handlers in JavaScript, embedded multimedia files,
 encryption and access protection.
 
+PDF has the almost the same 2D graphics model (text, fonts, colors, vector
+graphics) as PostScript, one of the most widespread page description and
+printer control language. So it is possible to convert between PDF and
+PostScript without loss of information. One notable exception is that
+transparency and color gradients are not supported by PostScript. Also
+conversion from PDF to PostScript may blow up the file size if there are
+many repetitions in the PDF (e.g.\ a logo drawn to each page). Some of the
+interactive features of PDF (such as forms, annotations and bookmarks) have
+no PostScript equivalent either; other nonprintable elements (such as
+hyperlinks and the document outline) are supported in PostScript using
+\texttt{pdfmark}, but many PDF-to-PostScript converters just ignore them.
+
 \subsection{How to create PDF}
 
-Since PDF doesn't contain structural and semantic information (such as
+Since PDF contains little or no structural and semantic information (such as
 in which order the document should be read, which regions are titles, how
-are the tables built and how are the charts generated), word processors and
-typesetting systems usually can export to PDF, but they use their own file
-format which preserves semantics. PDF is usually not involved while the
+the tables str built and how the charts generated), word processors and
+typesetting systems usually can export to PDF, but for loading and saving
+they keep using their own
+file format which preserves semantics. PDF is usually not involved while the
 author is composing (or typeseting) the document, but once a version of a
 document is ready, a PDF can be exported and distributed. Should the author
 distribute the document in the native file format of the word processor, he
@@ -230,8 +245,10 @@ It is possible to define a value for future use by defining an
 \emph{object.} For example, \texttt{12 0 obj [/PDF/Text] endobj} defines
 object number 12 to be an array of two items (\texttt{/PDF} and
 \texttt{/Text}). The number 0 in the definition is the so-called generation
-number, referring to version of the incrementally updated PDF file this
-object was created in. Since most of the tools just create a new PDF instead
+number, signifying that the object has not been modified since the PDF was
+generated. PDF makes it possible to store old versions of an object with
+different generation numbers, the one with the highest number being the most
+recent. Since most of the tools just create a new PDF instead
 of updating parts of an existing one, we can assumme for simplicity that the
 generation number is always zero. Once an object is defined it is possible
 to refer to it (e.g.\ \texttt{12 0 R}) instead of typing its value. It is
@@ -371,7 +388,7 @@ pdf\TeX           &2283510 &1806887\\
 \captiontop{Features supported by various PDF output
 methods}\label{tab:method-feature}
 \par\small\noindent\hfil
-\begin{tabular}{@{}llll@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}llll@{}}
 \toprule
 \emph{Feature}        & pdf\TeX   & \cmd{dvipdfm(x)} & \cmd{dvips} \\\midrule
 \pkg{hyperref}        & +         & +                & +           \\
@@ -391,7 +408,7 @@ include \MP           & $+^m$     & $+^m$            & $+^r$       \\
 \pkg{pdfpages}        & +         & $-$              & $-$         \\
 line break in link    & +         & +                & $-$         \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \par\bigskip
 \par\noindent \emph{b:} bounding box detection with \cmd{ebb} or
   \pkg{pts-graphics-helper}
@@ -539,7 +556,7 @@ Downsampling before the image is included is a bit of manual work
 for each image, but there are lot of free software tools to do that (such as
 GIMP \cite{gimp} and the \cmd{convert} tool of ImageMagick \cmd{imagemagick}).
 It is possible to downsample after the PDF has been created, for example
-with the commercial software PDF Enhancher \cite{pdf-enhancer} or Adobe
+with the commercial software PDF Enhancher \cite{pdfenhancer} or Adobe
 Acrobat. \cmd{ps2pdf}
 (using Ghostscript's \texttt{-dDEVICE=pdfwrite} \cite{pdfwrite-params}) can
 read PDF files, and downsample images within as well, but it usually grows
@@ -607,7 +624,7 @@ they look uglier in some PDF viewers.
 \captiontop{Font \texttt{.map} files used by various drivers and their
 symlink targets (default first) in \TeX{}\,Live 2008}\label{tab:mapfiles}
 \par\small\noindent\hfil
-\begin{tabular}{@{}ll@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}ll@{}}
 \toprule
 \emph{Driver} & Font \texttt{.map} file\\
 \midrule
@@ -619,7 +636,7 @@ pdf\TeX{}  & \pkg{pdftex.map} $\to$\\
 \cmd{dvipdfm(x)}& \pkg{dvipdfm.map} $\to$\\
                 & \pkg{dvipdfm\_dl14.map} $|$ (\pkg{dvipdfm\_ndl14.map}) \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table}
 
 If a font is missing from the font \texttt{.map} file, drivers tend to
@@ -748,6 +765,10 @@ structure.) Example command-line for enabling it:
 \texttt{pdflatex "\string\pdfminorversion5 \string\pdfobjcompresslevel3
 \string\input" doc}.
 
+According to \cite{pdf-diet}, if ZIP compression is used to compress the object
+streams, in some rare cases it is possible to save space by starting a new
+block within the ZIP stream just at the right points.
+
 There is no need to pay attention to this method, because
 Multivalent generates object streams and cross-reference streams by default.
 
@@ -821,9 +842,7 @@ objects.
 
 \subsection{How PDF optimizers save space}\label{existing}
 
-!! what does Multivalent implement?
-
-This section describes some methods PDF optimizers use the reduce the file
+This subsection describes some methods PDF optimizers use the reduce the file
 size. We focus on ideas and methods relevant to \TeX{} documents.
 
 \paragraph{Use cross-reference streams and compress them with the $y$-predictor}
@@ -961,7 +980,7 @@ images effectively, according to the image-related guidelines presented in
 Section~\ref{tex-to-pdf}. It is possible to save lots of space by decreasing
 the image resolution, or decreasing the image quality by using some lossy
 compression method (such as JPEG or JPEG2000) with lower quality settings.
-These kind of optimizations are supported by Adobe Acrobat and PDF Enhancer,
+These kind of optimizations are supported by Adobe Acrobat Pro and PDF Enhancer,
 but they are out of scope of our goals to decrease the file size while not
 changing its rendered appearance.
 
@@ -1141,7 +1160,36 @@ as
 \texttt{(a(())\textbackslash)(\textbackslash(\textbackslash\textbackslash b)}.
 
 
-\section{PDF size optimization tools}
+\paragraph{Shrink cross-reference data}
+
+Renumbering objects (from 1, consecutively) saves space in the
+cross-reference data, because gaps don't have to be encoded. (Each gap of
+consecutive missing objects costs about 10 bytes.) Also if an object is
+referenced many times, then giving it a small object number reduces the file
+size by a few bytes.
+
+Getting rid of old, unused versions of objects (i.e.\ those with not the
+largest generation number)
+
+\paragraph{Remove content outside the page}
+
+The \texttt{/MediaBox}, \texttt{/CropBox} and other bounding box values of
+the page define a rectangle where drawing takes place. All content
+(vector graphics or parts of it, images or parts of them, or text) than
+falls outside this rectangle can be removed to save space. Implementing this
+removal can be tricky for partially visible content. For example, 8-pixel
+wide bars can be removed from the edge of a JPEG image without quality loss
+in the remaining part.
+
+\paragraph{Remove unused named destinations}
+
+A named destination maps a name to a document location or view. It can be a
+target of a hyperlink within the document, or from outside. Some PDF
+generator software (such as FrameMaker) generate lots of named destinations
+never referenced. But care has to be taken when removing those, because then
+hyperlinks from outside the document wouldn't work.
+
+\section{PDF size optimization tools}\label{tools}
 
 \begin{table*}
 \captiontop{PDF size reduction by object type, when running
@@ -1149,20 +1197,20 @@ as
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
 \par\small\noindent\hfil
 % !! which file benefits from which optimization !! why
-\begin{tabular}{@{}lrrrrrr@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrrrr@{}}
 \toprule
 \emph{document} & \emph{contents} & \emph{font} & \emph{image} & \emph{other} & \emph{xref} & \emph{total} \\\midrule
-cff & $141153-01$\% & $25547-01$\% & 0 & $178926-90$\% & $174774-99$\% & $521909-64$\% \\
-beamer1 & $162423-01$\% & $44799-53$\% & $115160-00$\% & $453098-94$\% & $56752-97$\% & $832319-61$\% \\
-eu2006 & $964248-00$\% & $3271206-90$\% & $3597779-05$\% & $531968-64$\% & $45792-93$\% & $8411464-42$\% \\
-inkscape & $10676317-19$\% & $230241-00$\% & $6255203-19$\% & $946108-78$\% & $122274-93$\% & $18245172-23$\% \\
-lme2006 & $1501584-13$\% & $314265-72$\% & $678549-05$\% & $176666-90$\% & $31892-92$\% & $2703119-24$\% \\
-pdfref & $6269878-04$\% & $274231-03$\% & $1339264-00$\% & $17906915-78$\% & $6665536-99$\% & $32472771-64$\% \\
-pgf2 & $2132674-00$\% & $275768-50$\% & 0 & $1183749-83$\% & $190832-95$\% & $3783193-35$\% \\
-texbook & $1507901-00$\% & $519550-47$\% & 0 & $217616-83$\% & $35532-86$\% & $2280769-20$\% \\
-tuzv & $112145-02$\% & $201155-83$\% & 0 & $21913-76$\% & $2471-87$\% & $337764-56$\% \\
+cff & $141153-01$\% & $25547-01$\% & 0 & $178926-90$\% & $174774-99$\% & $521909-64$\% \\              
+beamer1 & $169789-02$\% & $44799-53$\% & $115160-00$\% & $445732-95$\% & $56752-97$\% & $832319-61$\% \\                
+eu2006 & $1065864-00$\% & $3271206-90$\% & $3597779-05$\% & $430352-79$\% & $45792-93$\% & $8411464-42$\% \\                    
+inkscape & $10679156-19$\% & $230241-00$\% & $6255203-19$\% & $943269-78$\% & $122274-93$\% & $18245172-23$\% \\                
+lme2006 & $1501584-13$\% & $314265-72$\% & $678549-05$\% & $176666-90$\% & $31892-92$\% & $2703119-24$\% \\              
+pdfref & $6269878-04$\% & $274231-03$\% & $1339264-00$\% & $17906915-78$\% & $6665536-99$\% & $32472771-64$\% \\                         
+pgf2 & $2184323-02$\% & $275768-50$\% & 0 & $1132100-83$\% & $190832-95$\% & $3783193-35$\% \\              
+texbook & $1507901-00$\% & $519550-47$\% & 0 & $217616-83$\% & $35532-86$\% & $2280769-20$\% \\         
+tuzv & $112145-02$\% & $201155-83$\% & 0 & $21913-76$\% & $2471-87$\% & $337764-56$\% \\         
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \par\bigskip
 \par\noindent The first number in each cell is the amount of bytes used in
 the original document.
@@ -1170,11 +1218,19 @@ the original document.
 optimization.
 \par\noindent The data in this table was extracted from the original and
 optimized PDF files using \texttt{pdfsizeopy.py --stats}.
+\medskip
+\par\noindent \emph{contents:} content streams
+\par\noindent \emph{font:} embedded font files
+\par\noindent \emph{image:} image objects and inline images, the latter
+created by \cmd{sam2p}
+\par\noindent \emph{other:} other objects
+\par\noindent \emph{xref:} cross-reference tables or streams
+\par\noindent \emph{total:} size of the PDF file
 \end{table*}
 
 \subsection{Test PDF files}
 
-In order to compare the optimization efficiency of the tools presented in
+In order to compare the optimization effectiveness of the tools presented in
 this section, we have compiled a set of test PDF files, and optimized them
 with each tool. The \emph{totals} column of Table~\ref{psom-by-type} shows
 the size of each file (the $+$ and $-$ percentages can be ignored now), and
@@ -1199,7 +1255,7 @@ pdf\TeX{}, and then PDF files were concatenated. Because of the
 concatenation, many font subsets were embedded multiple times, so a large
 part of the file is font data. Font data is mostly CFF, but it contains some
 Type\,1 and TrueType fonts as well. Most fonts are compressed with the
-less efficient LZW instead of ZIP.
+less effective LZW instead of ZIP.
 
 \item[inkscape] 341-page software manual with lots of screenshots and small
 images created with codeMantra \cite{codemantra}. Font data is a mixture of
@@ -1222,7 +1278,6 @@ by Acrobat Distiller 7.0.5.
 \item[pgf2] 560-page software manual about TikZ, with lots of vector
 graphics as examples, with an outline, without hyperlinks. Compiled with
 pdf\TeX{}. Font data is in Type\,1 format.
-!! did pdfe help in getting vector graphics smaller?
 
 \item[texbook] 494-page user manual about \TeX{} (The \TeX{}book), compiled
 with pdf\TeX{}. No pixel images, and hardly any vector graphics.
@@ -1237,10 +1292,10 @@ is in Type\,1 format.
 
 
 \begin{table}
-\captiontop{PDF optimization efficiency
+\captiontop{PDF optimization effectiveness
 of \cmd{ps2pdf}}\label{tab:eff-ps2pdf}
 \par\small\noindent\hfil
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrr@{}}
 \toprule
 \emph{document} & \emph{input} & \emph{ps2pdf} & \emph{psom} \\\midrule
 cff         &   521909 &   264861 &   180987 \\
@@ -1253,7 +1308,7 @@ pgf2        &  3783193 &  \emph{4023581} &  2438261 \\
 texbook     &  2280769 &  \emph{2539424} &  1806887 \\
 tuzv        &   337764 &   199279 &   146414 \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
 \par\noindent\emph{ps2pdf} Ghostscript 8.61 \texttt{ps2pdf14 -dPDFSETTINGS=/prepress}
@@ -1293,37 +1348,41 @@ blow up the file size even more, because it will keep photos uncompressed.
 \cmd{ps2pdf} doesn't remove duplicate content (although it
 removes image duplicates if they are closeby), and it also doesn't minimize
 the use of indirect references (e.g.\ it emits the \texttt{/Length} of
-content streams as an indirect reference). The only aspect \cmd{ps2pdf}
-seems to optimize effectively is convert Type\,1 fonts to CFF. Since this
+content streams as an indirect reference). The only aspects \cmd{ps2pdf}
+seems to optimize effectively is converting Type\,1 fonts to CFF and
+removing content outside the page. Since this
 conversion is also done by \cmd{pdfsizeopt.py}, it is
 not recommended to use \cmd{ps2pdf} to optimize PDF files.
 
 
-\begin{table}
-\captiontop{PDF optimization efficiency
-of PDF Enhancer}\label{tab:eff-pdfe}
+\begin{table*}
+\captiontop{PDF optimization effectiveness
+of PDF Enhancer and Adobe Acrobat Pro}\label{tab:eff-pdfe-a9}
 \par\small\noindent\hfil
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrrrrr@{}}
 \toprule
-\emph{document} & \emph{input} & \emph{pdfe} & \emph{epsom} & \emph{psom} \\\midrule
-cff         &   521909 &   229953 &   174182 &   180987 \\
-beamer1     &   832319 &   756971 &   296816 &   317351 \\
-eu2006      &  8411464 &  failed  & n/a      &  4812306 \\
-inkscape    & 18245172 & 14613044 & 12289136 & 13944481 \\
-lme2006     &  2703119 &  2263227 &  1781574 &  2033582 \\
-pdfref      & 32472771 & 23794114 & 11009960 & 11237663 \\
-pgf2        &  3783193 &  3498756 &  2245797 &  2438261 \\
-texbook     &  2280769 &  2273410 &  1803166 &  1806887 \\
-tuzv        &   337764 &   \emph{338316} &   \emph{147453} &   146414 \\
+\emph{document} & \emph{input} & \emph{pdfe} & \emph{epsom} & \emph{psom} & \emph{apsom} & \emph{a9p4} & \emph{a9p5} \\\midrule
+cff         &   521909 &   229953 &   174182 &   180987 &   158395 &   548181 &   329315\\
+beamer1     &   832319 &   756971 &   296816 &   317351 &   317326 &   765785 &   363963\\
+eu2006      &  8411464 &  failed  & n/a      &  4812306 &  3666315 &  8115676 &  7991997\\
+inkscape    & 18245172 & 14613044 & 12289136 & 13944481 & 11807680 & 14283567 & 13962583\\
+lme2006     &  2703119 &  2263227 &  1781574 &  2033582 &  1830936 &  2410603 &  2279985\\
+pdfref      & 32472771 & 23794114 & 11009960 & 11237663 &  9360794 & 23217668 & 20208419\\
+pgf2        &  3783193 &  3498756 &  2245797 &  2438261 & n/a      &   failed &   failed\\
+texbook     &  2280769 &  2273410 &  1803166 &  1806887 &  1804565 &  2314025 &  2150899\\
+tuzv        &   337764 &  \emph{338316} &   \emph{147453} & 146414 & \emph{150813} &  \emph{344215} &   328843 \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
 \par\noindent\emph{pdfe:} PDF Enhancer 3.2.5 (1122r) server edition
 \par\noindent\emph{epsom:} PDF Enhancer $+$ \cmd{pdfsizeopt.py} $+$ Multivalent
 \par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
-\end{table}
+\par\noindent\emph{apsom:} Adobe Acrobat Pro 9 creating PDF\,1.4 $+$ \cmd{pdfsizeopt.py} $+$ Multivalent
+\par\noindent\emph{a9p4:} Adobe Acrobat Pro 9 creating PDF\,1.4
+\par\noindent\emph{a9p5:} Adobe Acrobat Pro 9 creating PDF\,1.5
+\end{table*}
 
 
 \subsection{PDF Enhancer}
@@ -1333,78 +1392,80 @@ concatenate, split, convert and optimize PDF documents, and remove selected
 PDF parts as well. It has lots of conversion and optimization features (see
 the table in \cite{pdfenhancer-features}), and it is highly configurable.
 With its default settings, it optimizes the PDF without removing
-information. The use of the GUI version of PDF Enhancer is analyzed in
+information. It is a feature-extended version of the PDF Shrink software from
+the same company. The use of the GUI version of PDF Enhancer is analyzed in
 \cite{pdftweak}. A single license for the \emph{server edition}, which
 supports batch processing, costs about \$1000, and the \emph{advanced server
-edition} (with JBIG2 support) costs about twice as much.
+edition} (with JBIG2 support) costs about twice as much. The
+\emph{standard edition} with the GUI costs only \$200.
 
-!! Table~\ref{tab:eff-pdfe}
+Columns \emph{input} and \emph{pdfe} of Table~\ref{tab:eff-pdfe-a9} show how
+effectively PDF Enhancer optimizes. The \emph{server edition} was used in our
+automated tests, but the \emph{standard edition} generates PDF files of the
+same size. Looking at columns \emph{pdfe} and
+\emph{a9p4} we can compare PDF Enhancer to Adobe Acrobat Pro. Please note that
+PDF Enhancer doesn't generate object streams or cross-reference streams,
+that's why we compare it to \emph{a9p4} instead of \emph{a9p5} in the table.
+Feeding the output of PDF Enhancer to Multivalent decreases the file size
+even further, because Multivalent generates those streams. The column
+\emph{epsom} of Table~\ref{tab:eff-pdfe-a9} shows the PDF output file sizes
+of the PDF Enhancer $+$ \cmd{pdfsizeopt.py} $+$ Multivalent combination, which
+seems to be the most effective for \TeX{} documents.
 
-uses PDF Enhancer 3.1 (server edition: pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
-  features:
+According to the messages it prints, PDF Enchancer optimizes content streams
+within the page. Most other optimizers (except for Adobe Acrobat Pro) don't do
+this. Text-only content streams generated from \TeX{} don't benefit from
+such an optimization, but for the \emph{pgf2} document, which contains lots of
+graphics, this optimization saved about 10\% of the content streams.
 
-  good: extra reduction (see lme\_v6.pdf) by applying pdfe first, then
-    pdfsizeopt.py (then with Multivalent.jar)
-  !! optimizes content streams
-  SUXX: useless error message:
-   An error has occurred:  expected a dictionary object
-
-\begin{table}
-\captiontop{PDF optimization efficiency
-of Adobe Acrobat Pro 9}\label{tab:eff-a9}
-\par\small\noindent\hfil
-\advance\tabcolsep-2pt  % Prevent overfull \hbox.
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\emph{document} & \emph{input} & \emph{a9p4} & \emph{a9p5} & \emph{psom} \\\midrule
-cff         &   521909 &   548181 &   329315 &   180987 \\
-beamer1     &   832319 &   431936 &   334841 &   317351 \\
-eu2006      &  8411464 &  8115676 &  7991997 &  4812306 \\
-inkscape    & 18245172 & 14283567 & 13962583 & 13944481 \\
-lme2006     &  2703119 &  2410603 &  2279985 &  2033582 \\
-pdfref      & 32472771 & 23217668 & 20208419 & 11237663 \\
-pgf2        &  3783193 &   failed &   failed &  2438261 \\
-texbook     &  2280769 &  2314025 &  2150899 &  1806887 \\
-tuzv        &   337764 &   344215 &   328843 &   146414 \\
-\bottomrule
-\end{tabular}
-\par\bigskip
-\par\noindent All numeric values are in bytes.
-\par\noindent\emph{a9p4:} Adobe Acrobat Pro 9 creating PDF\,1.4
-\par\noindent\emph{a9p5:} Adobe Acrobat Pro 9 creating PDF\,1.5
-\par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
-\end{table}
+It is worth noting that PDF Enhancer failed when optimizing one of the test
+documents (see in Table~\ref{tab:eff-pdfe-a9}). The developers of PDF Enhancer
+reply quickly to bug reports, and they are willing to track and fix bugs
+in the software.
 
 
+\subsection{Adobe Acrobat Pro}
 
-!! generated by pdfsizeopy.py --stats
+Adobe's WYSIWYG PDF manipulation program, Adobe Acrobat Pro
+\cite{acrobatpro} also contains a PDF optimizer (menu item \emph{Advanced /
+PDF Optimizer}). A single license of the
+whole software costs \$450; it is not possible to buy only the optimizer.
+There seems to be no direct way to run the optimizer on multiple files in
+batch mode. Columns \emph{a9p4} and \emph{a9p5} of
+Table~\ref{tab:eff-pdfe-a9} shows the effectiveness of the optimizer: values
+in the column \emph{a9p4} are for PDF\,1.4 output, and column \emph{a9p5}
+belongs to PDF\,1.5 output. The PDF\,1.5 files are much smaller because they
+make use of object streams and cross-reference streams. The optimizer lets
+the user specify quite a few settings. For the tests we have enabled all
+optimizations except those which lose information (such as image
+resampling). It turned out that we had to disable \emph{Discard User Data /
+Discard all comments, forms and multimedia}, otherwise the optimizer removed
+hyperlinks from the document \emph{beamer1}.
 
-\subsection{Adobe Acrobat}
-
-!! non-free
-!! See Table~\ref{tab:eff-a9}.
-!! Analyzed in \cite{pdftweak}.
-!! menu name: Adobe Acrobat Pro 9 / Advanced / PDF Optimizer
+It is worth noting that Adobe Acrobat Pro failed with an image-related error
+when optimizing document \emph{pgf2.} Oddly enough, that PDF file doesn't
+contain any images.
 
 
 \subsection{pdfcompress}
 
-\cmd{pdfcompress} \cite{pdfcompress} is the command-line PDF optimizer of
-Advanced PDF Tools. It is commercial software, a single-computer license
-costs less than \$80. It can recompress images based on a few set of
-settings for monochrome, gray an color images. It can also recompress
-streams, and it can remove some PDF features (such metadata, JavaScript,
-page thumbnails, comments, embedded files, outlines, private data and
-forms).
+\cmd{pdfcompress} \cite{pdfcompress} is the command-line version of the PDF
+optimizer in Advanced PDF Tools. It is commercial software, a
+single-computer license costs less than \$80. It can resample and recompress
+images based on a few set of settings for monochrome, gray an color images.
+It can also recompress streams, and it can remove some PDF features (such
+metadata, JavaScript, page thumbnails, comments, embedded files, outlines,
+private data and forms). We haven't analyzed it, because PDF Enhancer
+seems to have all the features of \cmd{pdfcompress}.
 
 
 
 \begin{table}
-\captiontop{PDF optimization efficiency
+\captiontop{PDF optimization effectiveness
 of Multivalent\,20060102}\label{tab:eff-multivalent}
 \par\small\noindent\hfil
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
 % TODO: why is Multivalent alone better on pdf_reference_1-7? what about extra
 %       compression
@@ -1419,7 +1480,7 @@ pgf2        &  3783193 &   2584180 &   2438261 &  3449386 \\
 texbook     &  2280769 &   2057755 &   1806887 &  1992958 \\
 tuzv        &   337764 &    314508 &    146414 &   166863 \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
 \par\noindent\emph{multi:} Multivalent\,20060102 \emph{tool.pdf.Compress}
@@ -1432,9 +1493,31 @@ tuzv        &   337764 &    314508 &    146414 &   166863 \\
 !! licenses
 !! does recompress ZIPs
 !! Table~\ref{tab:eff-multivalent}
+!! \cite{pdf-diet}
+!! Compact PDF
+!! get more green from pdf-diet
 %!! Multivalent alone is better on pdf_reference_1-7
 !! Example command line (creates optimized PDF as \texttt{doc-o.pdf}):
 \texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}
+
+According to \cite{pdf-diet}, the 2003 version of Multivalent did the
+following optimizations:
+remove object duplicates;
+recompress LZW to ZIP;
+generate object streams;
+generate a cross-reference stream;
+serialize values more effectively;
+remove old object versions;
+remove page thumbnails;
+remove some obsolete values such as \texttt{/ProcSet};
+inline small objects such as stream lengths;
+remove unused objects;
+omit default values;
+shrink cross-reference data.
+In addition to those above, Multivalent recompresses all streams with
+maximum-effort ZIP.
+
+
 
 \subsection{pdfsizeopt.py}
 
@@ -1507,25 +1590,37 @@ PNG predictor, PNGOUT, \cmd{jbig2}.
 \item[Remove unused objects]
 !!
 
+\item[Serialize values more effectively]
+
 \end{description}
 
 \cmd{pdfsizeopt.py}
 
+!! epsom is better than apsom for \TeX{} document (see table)
 
-
-Improvement possibilites:
-
-!! 
-
-!! add concatenation
-
-!! content stream and cross-reference stream support
-
-!!!!!!!!
+See ideas for improvement in Section~\ref{future-work}.
 
 \section{Suggested PDF optimization workflow}\label{workflow}
-!! use pdflatex or dvipdfmx with the right settings, use pdfsizeopt.py +
-   Multivalent.
+
+Based on the optimization tests in Section~\label{tools} we suggest the
+following PDF generation and optimization workflow:
+
+\begin{enumerate}
+
+\item Create the PDF using pdf\TeX{} or \cmd{dvipdfmx}, using the proper
+settings discussed in Subsection~\ref{tex-to-pdf}. Use \cmd{dvips} $+$
+\cmd{ps2pdf} only if absolutely necessary, because of the large file size.
+
+\item If you have access to PDF Enhancer, optimize the PDF with it. Otherwise,
+if you have access to Adobe Acrobat Pro, optimize the PDF with it.
+
+\item Optimize the PDF with \cmd{pdfsizeopt.py}, including the last step of
+running Multivalent as well.
+
+\end{enumerate}
+
+!!
+
 
 \section{Related work}\label{related-work}
 
@@ -1533,28 +1628,69 @@ An alternative document file format is DjVu (\cite{djvu,djvu-tutorial}),
 whose most important limitation compared to PDF is that it doesn't support
 vector graphics. Due to the sophisticated image layer separation and
 compression, the size of a 600\,DPI DjVu file is comparable to the
-coressponding optimized PDF document. If the PDF contains maily images (such
-as a sequence of scanned sheets), the DjVu file will become slightly smaller
-than the PDF file. If the PDF contains text with embedded vector fonts and
+coressponding optimized PDF document:
+if the PDF contains text with embedded vector fonts and
 vector graphics, the DjVu file can be about 3 times larger than the PDF.
+If the PDF contains maily images (such
+as a sequence of scanned sheets), the DjVu file will become slightly smaller
+than the PDF. 
 Of course these ratios depend on the software used for encoding as well.
 There are only a few DjVu encoders available: \cmd{pdf2djvu} and
 \cmd{djvudigital} are free, and Document\,Express is a commercial
-application.
-
+application. PDF is more complex than DjVu: the PDF\,1.7 reference itself is
+1310 pages long, and it relies on external specifications such as ZIP,
+JBIG2, G3 fax, JPEG, JPEG2000, Type\,1, CFF, TrueType, OpenType, CMap,
+CID font, XML, OPI, DSA, AES, MD5, SHA-1, PKCS, PANOSE, ICC color profiles,
+JavaScript and more; the DjVu specification \cite{djvu3spec} is only 71
+pages long, and more self-contained.
 Since the DjVu file format uses very different technologies than PDF, one
 can archive both the PDF and the DjVu version of the same document, in case
 a decent renderer won't be available for one of the formats decades later.
 
-!! more related work
+The PDF Database \cite{pdfdb} contains about 576 PDF documents by various
+producers, with different lengths and versions. These PDF files can be used
+can be used for testing PDF parsers and optimizers.
 
-\section{Conclusion}
+\cite{pdf-bestpractices} gives a list of ideas how to generate small PDF
+files. Most of those are present is this work as well.
+
+PDF Enhancer and Adobe Acrobat Pro are analyzed in \cite{pdftweak},
+but that article focuses on reducing image resolution and unembedding fonts,
+none of which are information-preserving optimizations.
+
+!! more related work; also other \cite{}s
+
+
+\section{Conclusion and future work}\label{future-work}
 
 !!
 
-\section{References}
+The workflow proposed in this article has too many dependencies. Python
+(needed by \cmd{pdfsizeopt.py}), Java (needed by Multivalent) and
+Ghostscript (needed by \cmd{pdfsizeopt.py} for Type\,1 and CFF font parsing,
+CFF generation and arbitrary stream filtering) are the most heavy ones. It
+is possible to get rid of these by reimplementing \cmd{pdfsizeopt.py} from
+scratch. To get rid of Python, we could use Lua, and build a statically
+linked C binary with the Lua interpreter, \pkg{zlib} and all the Lua bytecode
+linked in. We could reimplement the optimizations done by
+Multivalent in Lua. (This would include reading and writing object streams
+and cross-reference streams.)
+Gradually we could move some functionality to C or C++
+code to speed up the optimizer. We could reuse the \cmd{xpdf} codebase to
+be able to use all PDF filters without invoking Ghostscript. We would have
+to implement Type\,1 and CFF parsing and CFF generation, possibly relying on
+the \cmd{dvipdfmx} codebase.
+Other dependencies such as \cmd{jbig2}, \cmd{sam2p}, \cmd{pngtopnm},
+PNGOUT and PDF Enhancer are not so problematic, because they can be compiled
+to small, statically linked, stand-alone executables.)
 
-!! \cite one of Multivalent's articles
+When preparting collections (such as journal volumes or conference
+proceedings) with \TeX{}, and compiling individual articles to PDF
+!! add concatenation
+
+
+
+\section{References}
 
 @iso-pdf{
 PDF 1.7 is ISO 32000
@@ -1584,7 +1720,7 @@ http://project.ktug.or.kr/dvipdfmx/
 http://tug.org/PSTricks/main.cgi?file=pdf/pdfoutput
 }
 
-@pdf-enhancer{
+@pdfenhancer{
 %http://www.apagoinc.com/prod_home.php?prod_id=2
 }
 
@@ -1656,6 +1792,30 @@ http://pages.cs.wisc.edu/~ghost/doc/cvs/Ps2pdf.htm
 
 @pdfenhancer-features{
   % http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
+}
+
+!!
+@pdf-diet{
+% "Two Diet Plans for Fat PDF", Proceedings of ACM Symposium on Document Engineering 2003, November 2003, Grenoble, France. 
+% http://portal.acm.org/citation.cfm?doid=958220.958253
+% http://multivalent.sourceforge.net/Research/TwoDietPlans.pdf 
+}
+
+@djvu3spec{
+http://djvu.org/docs/DjVu3Spec.djvu
+}
+
+@pdfdb{
+Michael Still, editor. PDF Database.
+http://www.stillhq.com/pdfdb/db.html
+}
+
+@pdf-bestpractices{
+http://www.planetpdf.com/creative/article.asp?ContentID=6568
+}
+
+@acrobatpro{
+http://www.adobe.com/products/acrobatpro/
 }
 
 \end{document}
