@@ -1263,10 +1263,10 @@ tuzv        &   337764 &   199279 &   146414 \\
 \subsection{ps2pdf}
 
 The \cmd{ps2pdf} \cite{ps2pdf} script (and its counterparts for specific PDF
-versions, e.g.\ \cmd{ps2pdf14}) run Ghostscript with the flag
+versions, e.g.\ \cmd{ps2pdf14}) runs Ghostscript with the flag
 \texttt{-sDEVICE=pdfwrite}, which converts its input to PDF. Contrary to
-what the name suggests, \cmd{ps2pdf} accepts not only PostScript, but PDF
-files as input.
+what the name suggests, \cmd{ps2pdf} accepts not only PostScript, but also
+PDF files as input.
 
 \cmd{ps2pdf} works by converting its input to low-level PostScript drawing
 primitives, and then emitting them as a PDF document. \cmd{ps2pdf} doesn't
@@ -1306,8 +1306,6 @@ of PDF Enhancer}\label{tab:eff-pdfe}
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-% !! why is Multivalent alone better on pdf_reference_1-7? what about extra
-%    compression
 \emph{document} & \emph{input} & \emph{pdfe} & \emph{epsom} & \emph{psom} \\\midrule
 cff         &   521909 &   229953 &   174182 &   180987 \\
 beamer1     &   832319 &   756971 &   296816 &   317351 \\
@@ -1317,7 +1315,7 @@ lme2006     &  2703119 &  2263227 &  1781574 &  2033582 \\
 pdfref      & 32472771 & 23794114 & 11009960 & 11237663 \\
 pgf2        &  3783193 &  3498756 &  2245797 &  2438261 \\
 texbook     &  2280769 &  2273410 &  1803166 &  1806887 \\
-tuzv        &   337764 &   338316 &   147453 &   146414 \\
+tuzv        &   337764 &   \emph{338316} &   \emph{147453} &   146414 \\
 \bottomrule
 \end{tabular}
 \par\bigskip
@@ -1330,24 +1328,26 @@ tuzv        &   337764 &   338316 &   147453 &   146414 \\
 
 \subsection{PDF Enhancer}
 
+PDF Enhancer \cite{pdfenhancer} is commercial software which can
+concatenate, split, convert and optimize PDF documents, and remove selected
+PDF parts as well. It has lots of conversion and optimization features (see
+the table in \cite{pdfenhancer-features}), and it is highly configurable.
+With its default settings, it optimizes the PDF without removing
+information. The use of the GUI version of PDF Enhancer is analyzed in
+\cite{pdftweak}. A single license for the \emph{server edition}, which
+supports batch processing, costs about \$1000, and the \emph{advanced server
+edition} (with JBIG2 support) costs about twice as much.
+
 !! Table~\ref{tab:eff-pdfe}
-!! only the advanced server edition supports JBIG2
-!! Analyzed in \cite{pdftweak}.
-!! non-free
 
 uses PDF Enhancer 3.1 (server edition: pdfe) from Apago as well (Windows, Linux, Mac OS X etc.)
-  features: % !! http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
-  good: Linux command-line version also available
+  features:
+
   good: extra reduction (see lme\_v6.pdf) by applying pdfe first, then
     pdfsizeopt.py (then with Multivalent.jar)
-  good: doesn't degrade quality by default
-  good: highly configurable (even for lossy)
-  good: can concatenate and split as well
-  SUXX: not open source, needs payment
+  !! optimizes content streams
   SUXX: useless error message:
    An error has occurred:  expected a dictionary object
-
-
 
 \begin{table}
 \captiontop{PDF optimization efficiency
@@ -1406,8 +1406,8 @@ of Multivalent\,20060102}\label{tab:eff-multivalent}
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-% !! why is Multivalent alone better on pdf_reference_1-7? what about extra
-%    compression
+% TODO: why is Multivalent alone better on pdf_reference_1-7? what about extra
+%       compression
 \emph{document} & \emph{input} & \emph{multi} & \emph{psom} & \emph{pso} \\\midrule
 cff         &   521909 &    181178 &    180987 &   230675 \\
 beamer1     &   832319 &    341732 &    317351 &   443253 \\
@@ -1554,13 +1554,7 @@ a decent renderer won't be available for one of the formats decades later.
 
 \section{References}
 
-!! \cite all in info.txt
-
 !! \cite one of Multivalent's articles
-
-!! \cite the PDF compression web article
-
-!! \cite the PDF optimization article and all from info.txt
 
 @iso-pdf{
 PDF 1.7 is ISO 32000
@@ -1660,6 +1654,8 @@ http://pages.cs.wisc.edu/~ghost/doc/cvs/Ps2pdf.htm
   url={http://www.verypdf.com/pdfinfoeditor/pdfcompress.htm}
 }
 
-
+@pdfenhancer-features{
+  % http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
+}
 
 \end{document}
