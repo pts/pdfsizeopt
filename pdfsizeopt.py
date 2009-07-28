@@ -5175,6 +5175,7 @@ class PdfData(object):
     obj_size_by_num = {}
     contents_obj_nums = set()
     font_data_obj_nums = set()
+    image_obj_nums = set()
 
     def AddRefToSet(ref_data, set_obj):
       if not isinstance(ref_data, str):
@@ -5217,12 +5218,13 @@ class PdfData(object):
       stats['separator_data'] -= obj_size
       if pdf.trailer is pdf_obj:
         assert pdf.trailer.stream is not None
-        # Usually 0 unless there are duplicates.
-        stats['other_objs'] += stats['trailer'] + stats['xref']
         trailer_obj_num[0] = obj_num
-        stats['xref'] = len(pdf.trailer.stream) + 20
-        stats['trailer'] = obj_size - stats['xref']
-      elif pdf_obj.head.startswith('<<'):
+        xref_size = len(pdf.trailer.stream) + 20
+        stats['xref'] += xref_size
+        stats['trailer'] += obj_size - xref_size
+        return
+      stats['other_objs'] += obj_size
+      if pdf_obj.head.startswith('<<'):
         if pdf_obj.Get('Type') == '/ObjStm':
           # We have to parse this to find /Contents and /FontFile*
           # references.
@@ -5266,18 +5268,25 @@ class PdfData(object):
 
         if (pdf_obj.Get('Subtype') == '/Image' or
             pdf_obj.DetectInlineImage()):
-          stats['image_objs'] += obj_size
-        else:
-          stats['other_objs'] += obj_size
-      else:
-        stats['other_objs'] += obj_size
+          if obj_num in contents_obj_nums:
+            contents_obj_nums.remove(obj_num)
+          image_obj_nums.add(obj_num)
 
     pdf.ParseSequentially(
         data=data, file_name=file_name, offsets_out=offsets_out,
         obj_num_by_ofs_out=obj_num_by_ofs_out,
         setitem_callback=SetItemCallback)
 
+    for obj_num in sorted(image_obj_nums):
+      assert obj_num not in contents_obj_nums
+      assert obj_num not in font_data_obj_nums
+      obj_size = obj_size_by_num.get(obj_num)
+      if obj_size is not None:
+        stats['image_objs'] += obj_size
+        stats['other_objs'] -= obj_size
+
     for obj_num in sorted(contents_obj_nums):
+      assert obj_num not in font_data_obj_nums
       obj_size = obj_size_by_num.get(obj_num)
       if obj_size is not None:
         stats['contents_objs'] += obj_size
@@ -5288,6 +5297,8 @@ class PdfData(object):
       if obj_size is not None:
         stats['font_data_objs'] += obj_size
         stats['other_objs'] -= obj_size
+
+    assert stats['other_objs'] > 0  # We must have a page catalog etc.
 
     if trailer_obj_num[0] is None:
       assert len(offsets_out) == offsets_idx[0] + 3
