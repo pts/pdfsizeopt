@@ -5668,11 +5668,14 @@ def main(argv):
       raise getopt.GetoptError('missing filename in command-line')
     elif len(args) == 1:
       file_name = args[0]
-      if file_name.endswith('.pdf'):
-        # !! different filename
-        output_file_name = file_name[:-4] + '.pso.pdf'
+      if file_name[-4:].lower() == '.pdf':
+        output_file_name = file_name[:-4]
       else:
-        output_file_name = file_name + '.pso.pdf'
+        output_file_name = file_name
+      if use_multivalent:
+        output_file_name += '.psom.pdf'
+      else:
+        output_file_name += '.pso.pdf'
     elif len(args) == 2:
       file_name = args[0]
       output_file_name = args[1]
@@ -5682,6 +5685,7 @@ def main(argv):
     print >>sys.stderr, 'error: in command line: %s' % exc
     sys.exit(1)
 
+  # It's OK that file_name == output_file_name.
   pdf = PdfData().Load(file_name)
   pdf.FixAllBadNumbers()
   pdf.ConvertType1FontsToType1C()
