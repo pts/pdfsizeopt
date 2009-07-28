@@ -411,12 +411,12 @@ We continue with presenting and analyzing the methods mentioned.
 \item[dvips] This approach converts
 \TeX{} source $\to$ DVI $\to$ PostScript $\to$ PDF,
 using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
-\cmd{ps2pdf} (part of Ghostscript) for creating the PDF file. Example
+\cmd{ps2pdf} \cite{ps2pdf} (part of Ghostscript) for creating the PDF file. Example
 command-lines for compiling \texttt{doc.tex} to \texttt{doc.pdf}:
 \begin{verbatim}
 $ latex doc
 $ dvips doc
-$ ps2pdf14 doc.ps
+$ ps2pdf14 -dPDFSETTINGS=/prepress doc.ps
 \end{verbatim}%$
 
 \item[dvipdfmx] The tool \cmd{dvipdfmx} \cite{dvipdfmx} converts from
@@ -1184,7 +1184,9 @@ Font data is in Type\,1 format.
 containing some large images. Individual articles were compiled with
 pdf\TeX{}, and then PDF files were concatenated. Because of the
 concatenation, many font subsets were embedded multiple times, so a large
-part of the file is font data. Font data is a mixture of Type\,1 and CFF.
+part of the file is font data. Font data is mostly CFF, but it contains some
+Type\,1 and TrueType fonts as well. Most fonts are compressed with the
+less efficient LZW instead of ZIP.
 
 \item[inkscape] 341-page software manual with lots of screenshots and small
 images created with codeMantra \cite{codemantra}. Font data is a mixture of
@@ -1220,9 +1222,69 @@ is in Type\,1 format.
 
 \noindent None of the test PDF files used cross-reference streams or object streams.
 
+
+\begin{table}
+\captiontop{PDF optimization efficiency
+of \cmd{ps2pdf}}\label{tab:eff-ps2pdf}
+\par\small\noindent\hfil
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\emph{document} & \emph{input} & \emph{ps2pdf} & \emph{psom} \\\midrule
+cff         &   521909 &   264861 &   180987 \\
+beamer1     &   832319 &  \emph{3027368} &   317351 \\
+eu2006      &  8411464 &  6322867 &  4812306 \\
+inkscape    & 18245172 &  failed  & 13944481 \\
+lme2006     &  2703119 &  \emph{3091842} &  2033582 \\
+pdfref      & 32472771 & 15949169 & 11237663 \\
+pgf2        &  3783193 &  \emph{4023581} &  2438261 \\
+texbook     &  2280769 &  \emph{2539424} &  1806887 \\
+tuzv        &   337764 &   199279 &   146414 \\
+\bottomrule
+\end{tabular}
+\par\bigskip
+\par\noindent All numeric values are in bytes.
+\par\noindent\emph{ps2pdf} Ghostscript 8.61 \texttt{ps2pdf14 -dPDFSETTINGS=/prepress}
+\par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
+\end{table}
+
 \subsection{ps2pdf}
 
-!!
+The \cmd{ps2pdf} \cite{ps2pdf} script (and its counterparts for specific PDF
+versions, e.g.\ \cmd{ps2pdf14}) run Ghostscript with the flag
+\texttt{-sDEVICE=pdfwrite}, which converts its input to PDF. Contrary to
+what the name suggests, \cmd{ps2pdf} accepts not only PostScript, but PDF
+files as input.
+
+\cmd{ps2pdf} works by converting its input to low-level PostScript drawing
+primitives, and then emitting them as a PDF document. \cmd{ps2pdf} doesn't
+intend to be a PDF size optimizer, but it can be used as such.
+Table~\ref{tab:eff-ps2pdf} shows that \cmd{ps2pdf} increases the file size
+many times. For the documents \emph{cff} and \emph{pdfref}, we got a file
+size decrease because \cmd{ps2pdf} got rid of some metadata, and for
+\emph{pdfref}, it optimized cross-reference table. For \emph{eu2006} it
+saved space by recompressing fonts with ZIP. The document \emph{tuzv} became
+smaller because \cmd{ps2pdf} converted Type\,1 fonts to CFF. The reason for
+the extremely large growth in \emph{beamer1} is that \cmd{ps2pdf} blew up
+images, and it also embedded multiple instances of the same image as
+separate images. (It doesn't always do so: if the two instances of the image
+are close to each other, then \cmd{ps2pdf} reuses the same object in the PDF
+for representing the image.)
+
+\cmd{ps2pdf} keeps all printable features of the original PDF, and
+hyperlinks and the document outline as well. However, it recompresses JPEG
+images (back to a different JPEG, sometimes larger than the original), thus
+losing quality. The only way to disable this is specifying the flags
+\texttt{-dEncodeColorImages=false -dEncodeGrayImages=false}, but this would
+blow up the file size even more, because it will keep photos uncompressed.
+
+\cmd{ps2pdf} doesn't remove duplicate content (although it
+removes image duplicates if they are closeby), and it also doesn't minimize
+the use of indirect references (e.g.\ it emits the \texttt{/Length} of
+content streams as an indirect reference). The only aspect \cmd{ps2pdf}
+seems to optimize effectively is convert Type\,1 fonts to CFF. Since this
+conversion is also done by \cmd{pdfsizeopt.py}, it is
+not recommended to use \cmd{ps2pdf} to optimize PDF files.
+
 
 \begin{table}
 \captiontop{PDF optimization efficiency
@@ -1523,6 +1585,10 @@ http://ansuz.sooke.bc.ca/software/pdf-append.php
 
 @png-recompressors{
 http://en.wikipedia.org/wiki/OptiPNG
+}
+
+@ps2pdf{
+http://pages.cs.wisc.edu/~ghost/doc/cvs/Ps2pdf.htm
 }
 
 \end{document}
