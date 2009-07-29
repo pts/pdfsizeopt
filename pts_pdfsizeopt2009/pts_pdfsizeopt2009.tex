@@ -2,20 +2,22 @@
 %
 % Overall steps: !!
 %
+% * check only ASCII characters: grep '[^ -~]' pts_pdfsizeopt2009.tex
 % * efficient $\to$ effective
 % * efficiency $\to$ effectiveness
 % * spell check
 % * review
 % * make it accepted by Google
 % * stretch tables to \hsize
+% * recompile sam2p.exe etc.
 
 \documentclass{ltugproc}
-%\usepackage[latin2]{inputenc}% !! check
 \usepackage{t1enc}
 \usepackage{lmodern}
 \usepackage{mflogo}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\usepackage{url}
 \usepackage[english]{babel}
 
 \def\cmd{\textsf}
@@ -172,7 +174,7 @@ times, web hosting costs and storage costs as well. Although there is no
 urgent need for reducing PDF storage costs for personal use (since hard
 drives in modern PCs are large enough), storage costs are significant for
 publishing houses, print shops, e-book stores and hosting services,
-libraries and archives \cite{multivalent-article}.
+libraries and archives \cite{multivalent-articles}.
 Usually lots of copies and backups are made of PDF
 files originating from such places, saving 20\% of the file size right after
 generating the PDF would save 20\% of all future costs associated with the
@@ -187,21 +189,23 @@ or not setting the export settings
 properly. Upgrading or changing the generator software is not always
 feasible. A PDF recompressor becomes useful in these cases.
 
-It is not our goal to propose or use
-alternative file formats, which support a more
-compact document representation or more agressive compression than PDF. An
-example for such an approach is the Multivalent \emph{compact} file format
-\cite{multivalent-compact}, which can be generated from a PDF using the
-Multivalent tools, and it can be converted back to a regular PDF with these
-tools as well. One of the merits of PDF is that it has a definitive, widely
-accepted and implemented, freely available
-specification \cite{pdfref} (and version 1.7 is
-even ISO standard \cite{pdf-iso}), so if 20 years later we want to
-print the document we've create today, then a well-documented and
-standardized format such as PDF is a natural choice. (Please note, however,
-that the PDF specification is not self-contained, it refers to other
-specifications, e.g.\ for some compression algorithms and font formats.)
-Another alternative document format is is DjVu (see in
+It is not our goal to propose or use alternative file formats, which support
+a more compact document representation or more agressive compression than
+PDF. An example for such an approach is the Multivalent \emph{compact PDF}
+file format \cite{multivalent-compact}, see Secion~\ref{related-work} for
+more details. There is no technical reason against using a compact format
+for storage, and converting it on the fly to a regular PDF before processing
+if needed. The disadvantage of a nonstandard compact format is that most PDF
+viewers and tools don't support it by default, so the user has to install
+and run the conversion tool, which some users can't or won't do just for
+viewing a PDF. When archiving compact PDF files for a long term, we have to
+make sure that we'll have working converter at restore time. With
+Multivalent, this is possible by archiving the \texttt{.jar} file containing
+the code of the converter. But this may not suit all needs, because
+Multivalent is not open source, there are no alternative implementations,
+and there is no open specification for its compact PDF file format.
+
+A pixel-based (fixed resolution) alternative of PDF is DjVu (see in
 Section~\ref{related-work}).
 
 It is possible to save space in a PDF by removing non-printed information
@@ -814,7 +818,7 @@ If a PDF document is a concatenation of several smaller PDF files (such as
 in journal volumes and conference proceeding), and each PDF file contains
 its own, subsetted fonts, then it depends on the concatenator tool whether
 those subsets are unified or not. Most concatenator tools (\cmd{pdftk},
-Multivalent, \pkg{pdfpages}, \pkg{ps2pdf}; see \cite{pdf-concatenate} for
+Multivalent, \pkg{pdfpages}, \cmd{ps2pdf}; see \cite{pdf-concatenate} for
 more) don't unify these font subsets.
 
 However, if you use \cmd{ps2pdf} for PDF concatenation, you can get font
@@ -966,7 +970,8 @@ filter(s) to use) also contributes to the image size.
 
 Most PDF optimizers use the \pkg{zlib} code for ZIP compression in images.
 The output of some other image compressors (most notably PNGOUT
-\cite{pngout}, see OptiPNG \cite{optipng} and others at \cite{png-recompressors})
+\cite{pngout}, see OptiPNG \cite{optipng} (also includes a list of 11
+other PNG optimization tools) and others at \cite{png-recompressors})
 is smaller than what \pkg{zlib} produces with its highest effort, but those
 other compressors usually run a 100 times or even slower than \pkg{zlib}.
 
@@ -1189,6 +1194,16 @@ generator software (such as FrameMaker) generate lots of named destinations
 never referenced. But care has to be taken when removing those, because then
 hyperlinks from outside the document wouldn't work.
 
+\paragraph{Flatten structures}
+
+To facilitate incremental updates, PDF can store some structures (such as
+the page tree and the content streams within a page) spread to more objects
+and parts than necessary. Using the simplest, single-level or single-part
+structure saves space.
+
+
+
+
 \section{PDF size optimization tools}\label{tools}
 
 \begin{table*}
@@ -1196,19 +1211,18 @@ hyperlinks from outside the document wouldn't work.
 \cmd{pdfsizeopy.py} + Multivalent}\label{tab:psom-by-type}
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
 \par\small\noindent\hfil
-% !! which file benefits from which optimization !! why
 \begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrrrr@{}}
 \toprule
 \emph{document} & \emph{contents} & \emph{font} & \emph{image} & \emph{other} & \emph{xref} & \emph{total} \\\midrule
-cff & $141153-01$\% & $25547-01$\% & 0 & $178926-90$\% & $174774-99$\% & $521909-64$\% \\              
-beamer1 & $169789-02$\% & $44799-53$\% & $115160-00$\% & $445732-95$\% & $56752-97$\% & $832319-61$\% \\                
-eu2006 & $1065864-00$\% & $3271206-90$\% & $3597779-05$\% & $430352-79$\% & $45792-93$\% & $8411464-42$\% \\                    
-inkscape & $10679156-19$\% & $230241-00$\% & $6255203-19$\% & $943269-78$\% & $122274-93$\% & $18245172-23$\% \\                
-lme2006 & $1501584-13$\% & $314265-72$\% & $678549-05$\% & $176666-90$\% & $31892-92$\% & $2703119-24$\% \\              
-pdfref & $6269878-04$\% & $274231-03$\% & $1339264-00$\% & $17906915-78$\% & $6665536-99$\% & $32472771-64$\% \\                         
-pgf2 & $2184323-02$\% & $275768-50$\% & 0 & $1132100-83$\% & $190832-95$\% & $3783193-35$\% \\              
-texbook & $1507901-00$\% & $519550-47$\% & 0 & $217616-83$\% & $35532-86$\% & $2280769-20$\% \\         
-tuzv & $112145-02$\% & $201155-83$\% & 0 & $21913-76$\% & $2471-87$\% & $337764-56$\% \\         
+cff & $141153-02$\% & $25547-02$\% & 0 & $178926-91$\% & $174774-100$\% & $521909-65$\% \\
+beamer & $169789-03$\% & $44799-54$\% & $115160-00$\% & $445732-96$\% & $56752-98$\% & $832319-62$\% \\
+eu2006 & $1065864-01$\% & $3271206-91$\% & $3597779-06$\% & $430352-80$\% & $45792-94$\% & $8411464-43$\% \\
+inkscape & $10679156-20$\% & $230241-00$\% & $6255203-20$\% & $943269-79$\% & $122274-94$\% & $18245172-24$\% \\
+lme2006 & $1501584-14$\% & $314265-73$\% & $678549-06$\% & $176666-91$\% & $31892-93$\% & $2703119-25$\% \\
+pdfref & $6269878-05$\% & $274231-04$\% & $1339264-00$\% & $17906915-79$\% & $6665536-100$\% & $32472771-65$\% \\
+pgf2 & $2184323-03$\% & $275768-51$\% & 0 & $1132100-84$\% & $190832-96$\% & $3783193-36$\% \\
+texbook & $1507901-01$\% & $519550-48$\% & 0 & $217616-84$\% & $35532-87$\% & $2280769-21$\% \\
+tuzv & $112145-03$\% & $201155-84$\% & 0 & $21913-77$\% & $2471-88$\% & $337764-57$\% \\
 \bottomrule
 \end{tabular*}
 \par\bigskip
@@ -1217,11 +1231,11 @@ the original document.
 \par\noindent The $-$\ldots\% value indicates the percentage saved by
 optimization.
 \par\noindent The data in this table was extracted from the original and
-optimized PDF files using \texttt{pdfsizeopy.py --stats}.
+optimized PDF files using \texttt{pdfsizeopy.py -\hbox{-}stats}.
 \medskip
 \par\noindent \emph{contents:} content streams
 \par\noindent \emph{font:} embedded font files
-\par\noindent \emph{image:} image objects and inline images, the latter
+\par\noindent \emph{image:} pixel-based image objects and inline images, the latter
 created by \cmd{sam2p}
 \par\noindent \emph{other:} other objects
 \par\noindent \emph{xref:} cross-reference tables or streams
@@ -1232,7 +1246,7 @@ created by \cmd{sam2p}
 
 In order to compare the optimization effectiveness of the tools presented in
 this section, we have compiled a set of test PDF files, and optimized them
-with each tool. The \emph{totals} column of Table~\ref{psom-by-type} shows
+with each tool. The \emph{totals} column of Table~\ref{tab:psom-by-type} shows
 the size of each file (the $+$ and $-$ percentages can be ignored now), and
 other columns show the bytes used by different object types. The test files
 can be downloaded from \cite{example-pdfs}. Some more
@@ -1291,7 +1305,7 @@ is in Type\,1 format.
 \noindent None of the test PDF files used cross-reference streams or object streams.
 
 
-\begin{table}
+\begin{table}[b]
 \captiontop{PDF optimization effectiveness
 of \cmd{ps2pdf}}\label{tab:eff-ps2pdf}
 \par\small\noindent\hfil
@@ -1311,7 +1325,8 @@ tuzv        &   337764 &   199279 &   146414 \\
 \end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
-\par\noindent\emph{ps2pdf} Ghostscript 8.61 \texttt{ps2pdf14 -dPDFSETTINGS=/prepress}
+\par\noindent\emph{ps2pdf:} Ghostscript 8.61 run as \\
+\texttt{ps2pdf14 -dPDFSETTINGS=/prepress}
 \par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
 \end{table}
 
@@ -1462,13 +1477,11 @@ seems to have all the features of \cmd{pdfcompress}.
 
 \begin{table}
 \captiontop{PDF optimization effectiveness
-of Multivalent\,20060102}\label{tab:eff-multivalent}
+of Multivalent and \cmd{pdfsizeopt.py}}\label{tab:eff-multivalent-pso}
 \par\small\noindent\hfil
 \advance\tabcolsep-2pt  % Prevent overfull \hbox.
 \begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
-% TODO: why is Multivalent alone better on pdf_reference_1-7? what about extra
-%       compression
 \emph{document} & \emph{input} & \emph{multi} & \emph{psom} & \emph{pso} \\\midrule
 cff         &   521909 &    181178 &    180987 &   230675 \\
 beamer1     &   832319 &    341732 &    317351 &   443253 \\
@@ -1490,18 +1503,27 @@ tuzv        &   337764 &    314508 &    146414 &   166863 \\
 
 \subsection{Multivalent tool.pdf.Compress}
 
-!! licenses
-!! does recompress ZIPs
-!! Table~\ref{tab:eff-multivalent}
-!! \cite{pdf-diet}
-!! Compact PDF
-!! get more green from pdf-diet
-%!! Multivalent alone is better on pdf_reference_1-7
-!! Example command line (creates optimized PDF as \texttt{doc-o.pdf}):
-\texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}
+Multivalent \cite{multivalent} is a collection of programs for document
+viewing, annotation, organization, conversion, validation, inspection,
+encryption and text extraction (etc.). It supports multiple file formats
+such as HTML, PDF, DVI and man pages. It is implemented in Java, the 2006
+January version is available for download \cite{multivalent-download}
+as single \texttt{.jar} file, and
+it needs Java 1.4 or later. It contains a PDF optimizer
+\cite{multivalent-compress-tool,pdf-diet},
+% !! write more about the comparison in multivalent-compress-tool
+which can be invoked like this: 
+\texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}. This
+creates the optimized PDF in file \texttt{doc-o.pdf}. If we don't indicate
+otherwise, by the term Multivalent we mean its PDF optimizer. Although an
+the 2006 January version of Multivalent with full functionality is available
+for download, Multivalent is not free software or open source. For example,
+its license allows running the PDF optimizer from the command-line. For
+other uses of the optimizer, a commercial license has to be acquired. The
+web site doesn't show details about commercial licenses.
 
-According to \cite{pdf-diet}, the 2003 version of Multivalent did the
-following optimizations:
+According to \cite{pdf-diet}, the Mutivalent did the
+following optimizations in 2003:
 remove object duplicates;
 recompress LZW to ZIP;
 generate object streams;
@@ -1516,6 +1538,13 @@ omit default values;
 shrink cross-reference data.
 In addition to those above, Multivalent recompresses all streams with
 maximum-effort ZIP.
+
+Column \emph{multi} of Table~\ref{tab:eff-multivalent-pso} how effectively
+Multivalent optimizes. The column \emph{psom} indicates that running
+\cmd{pdfsizeopt.py} before Multivalent decreases the file size even more
+most of the time. That's because \cmd{pdfsizeopt.py} can convert Type\,1
+fonts to CFF, unify CFF font subsets, and it also has a more effective image
+optimizer than Multivalent.
 
 
 
@@ -1564,52 +1593,135 @@ Type\,1 font, so the CFF becomes larger -- but we are compressing the font
 with ZIP anyway, which eliminates most of the repetitions.
 
 \item[Unify subsets of the same CFF font]
-!!
-Limitation: only for CFF (and former Type\,1) fonts.
+Ghostscript is used for parsing CFF to the font dictionary data structure,
+and also for serializing the data structure as CFF. Again, the latter is
+done by generating a PostScript file with all the fonts, then converting it
+to a PDF using Ghostscript.
+Limitations: itt only works for CFF (and former Type\,1) fonts;
+it doesn't unify fonts with different names;
+it won't unify some fonts if one of them has slightly different
+metrics.
 
 \item[Convert inline images to objects]
-!!
-!! even those with only 1 reference
-!! could not optimize otherwise
-Limitation: only from sam2p.
+This step is needed, because most tools (including \cmd{pdfsizeopy.py})
+don't optimize inline images.
+Limitations: it only detects inline images generated by \cmd{sam2p}; it only
+detects inline images within a form XObject (not in a content stream).
 
 \item[Optimize individual images]
-Picks the best of: \cmd{sam2p} without predictor, \cmd{sam2p} with
-PNG predictor, PNGOUT, \cmd{jbig2}.
-!! hard to convert a PDF image to a PNG.
-!! Limitations: no CMYK, only device-specific color spaces (RGB, Gray and
-   RGB-palette)
-!! no transparency
-
-\item[Remove image duplicates]
-!! based on image data
+First the image data is decompressed (with
+Ghostscript if the image data is compressed with anything other than simple
+ZIP), then it is recompressed with maximum-effort ZIP, then it is converted
+to PNG, then several external PNG compressors are run to get the optimized
+PNG, and finally the smallest representation (among on the optimized PNG
+files, intermediate images and the original image) is picked, i.e.\ the one
+with the smalles PDF image object representation, counting the stream
+dictionary and the compressed stream as well. The following PNG optimizers
+are used: \cmd{sam2p} without predictor, \cmd{sam2p} with PNG predictor,
+PNGOUT (very slow, but generates a few percent smaller PNG files) and
+\cmd{jbig2} (only for bilevel images).
+Limitations: no CMYK support; no device-independent color space support
+(only RGB with or without palette and grayscale is supported); no images with
+an alpha channel; only some types of transparency; images lossy compression
+(JPEG or JPEG2000) are not optimized.
 
 \item[Remove object duplicates]
-!!
+The implementation uses equivalence classes, so duplicate subtrees referring
+to objects between themselves or each other are also removed. (Multivalent
+also has this feature.)
+
+\item[Remove image duplicates]
+Images are compared based on RGB pixel data, so duplicates using a different
+compression or color space or bits-per-component are also detected and
+removed. This is useful if the PDF is a concatenation of PDF files in the same
+collection, each PDF compiled with a different method, and then concatenated.
+The newest version of \cmd{sam2p} (0.46) produces exactly the same output
+file for two images with identical RGB pixel data, so image duplicates are
+identified by comparing the files created by \cmd{sam2p}. There are also
+several early checks in the optimization algorithm to detect the duplicate
+before wasting time on running the many different optimizers.
 
 \item[Remove unused objects]
-!!
+All objects not reachable from the trailer object are removed.
 
 \item[Serialize values more effectively]
+Extra spaces are removed;
+hex strings are converted to binary;
+strings are serialized without extra backslashes;
+comments are removed;
+cruft between object definitions is removed;
+gaps in the cross-reference table are removed;
+objects with high reference counts are given low numbers.
 
 \end{description}
 
-\cmd{pdfsizeopt.py}
+The column \emph{pso} of Table~\ref{tab:eff-multivalent-pso} shows how
+effectively \cmd{pdfsizeopt.py} optimizes. The column \emph{psom} shows the
+combined effectiveness of \cmd{pdfsizeopt.py} $+$ Multivalent. Please note
+that it is not with and with running \cmd{pdfsizeopt.py} alone, because
+\cmd{pdfsizeopt.py} was designed to do only those optimizations which
+Multivalent does not provide (or, such as image compression, does
+suboptimally). On the other hand, it is almost always worth running
+\cmd{pdfsizeopt.py} before Multivalent, rather than running Multivalent
+alone. The only exception we could find was the document \emph{pdfref},
+where the combined approach yielded a 0.02\% larger file size.
 
-!! epsom is better than apsom for \TeX{} document (see table)
+\cmd{pdfsizeopt.py} can count the total number of bytes occupied by the
+various object types in a PDF. Table~\ref{tab:psom-by-type} shows the
+results on our test PDF files. The percentages in the table cells are
+savings by running \cmd{pdfsizeopt.py} $+$ Multivalent. Although it is not
+visible in the table, most of the savings come from Multivalent, except in
+the \emph{font} and \emph{image} columns, where the contributions of
+\cmd{pdfsizeopt.py} are important. The large font savings for the document
+\emph{tuzv} are because the document is short and it contains many Type\,1
+fonts. For the document \emph{eu2006} we get an even larger saving, because
+there was lots of glyph duplication across the articles in the collection,
+and also because LZW was used instead of ZIP to compress the fonts. Only a
+few of our test documents benefit from image optimization, and even there the
+contribution of \cmd{pdfsizeopt.py} is small because the original
+PDF contains the images emitted effectively, and also Multivalent does a
+decent (though suboptimal) job at image optimization. So for the document
+\emph{eu2006} Multivalent alone saves about 1.55\%, and \emph{pdfsizeopt.py}
+alone saves 6.14\%. (There is no data on the
+extra size reduction by combining the two
+tools, because \cmd{pdfsizeopt.py} disables Multivalent's image
+optimizations since most images won't benefit.)
+For the document \emph{lme2006} Multivalent alone saves
+3.41\%, and \cmd{pdfsizeopy.py} alone saves 6.39\%. The document
+\emph{inkscape} benefits most from image recompression: Multivalent alone
+saves 19.87\%, and \cmd{pdfsizeopy.py} alone saves 20.35\%.
 
-See ideas for improvement in Section~\ref{future-work}.
+Columns \emph{psom}, \emph{apsom} and \emph{epsom} of
+Table~\ref{tab:eff-pdfe-a9} show that optimizing with PDF Enhancer or Adobe
+Acrobat Pro before running the \cmd{pdfsizeopt.py} $+$ Multivalent
+combination almost always decreases the file size, sometimes by a few
+percent, but in case of document \emph{beamer1} the extra gain of running
+PDF Enhancer first was 6.46\%. It seems that for \TeX{} documents
+PDF Enahncer (with the combination) is the more effective, and Adobe Acrobat
+Pro is more effective other documents.
+
+See ideas for improving \cmd{pdfsizeopt.py} in Section~\ref{future-work}.
+
+
 
 \section{Suggested PDF optimization workflow}\label{workflow}
 
-Based on the optimization tests in Section~\label{tools} we suggest the
+Based on the optimization tests in Section~\ref{tools} we suggest the
 following PDF generation and optimization workflow:
 
 \begin{enumerate}
 
-\item Create the PDF using pdf\TeX{} or \cmd{dvipdfmx}, using the proper
+\item Upgrade Ghostscript to at least 8.61, and upgrade to \TeX\,Live 2008.
+
+\item For \TeX{} documents,
+create the PDF using pdf\TeX{} or \cmd{dvipdfmx}, using the proper
 settings discussed in Subsection~\ref{tex-to-pdf}. Use \cmd{dvips} $+$
 \cmd{ps2pdf} only if absolutely necessary, because of the large file size.
+
+\item Use \cmd{pdftk} or Multivalent's PDF merge tool (as shown in
+\cite{pdf-contatenate}) to concatenate PDF files if necessary. Pay attention
+to the hyperlinks and the document outline after concatenation. Don't
+concatenate with Ghostscript, because that blows up the file size.
 
 \item If you have access to PDF Enhancer, optimize the PDF with it. Otherwise,
 if you have access to Adobe Acrobat Pro, optimize the PDF with it.
@@ -1619,8 +1731,10 @@ running Multivalent as well.
 
 \end{enumerate}
 
-!!
+Most of the optimization steps above can be fully automated and run in
+batch, except if Adobe Acrobat Pro is involved.
 
+!!
 
 \section{Related work}\label{related-work}
 
@@ -1637,11 +1751,19 @@ than the PDF.
 Of course these ratios depend on the software used for encoding as well.
 There are only a few DjVu encoders available: \cmd{pdf2djvu} and
 \cmd{djvudigital} are free, and Document\,Express is a commercial
-application. PDF is more complex than DjVu: the PDF\,1.7 reference itself is
+application. PDF is more complex than DjVu: the PDF\,1.7 reference
+\cite{pdfref} itself is
 1310 pages long, and it relies on external specifications such as ZIP,
 JBIG2, G3 fax, JPEG, JPEG2000, Type\,1, CFF, TrueType, OpenType, CMap,
 CID font, XML, OPI, DSA, AES, MD5, SHA-1, PKCS, PANOSE, ICC color profiles,
-JavaScript and more; the DjVu specification \cite{djvu3spec} is only 71
+JavaScript and more. PDF\,1.7 became an ISO standard \cite{pdf-iso} in 2008,
+which adds additional long documents.
+Having to understand many of these makes PDF viewers
+hard to implement and complex. This problem can become more severe for
+long-term archiving if we want to view a PDF 20 or 50 years from now, maybe
+today's PDF viewers won't work on future architectures, so we have to
+implement our own viewer.
+In contrast, the DjVu specification \cite{djvu3spec} is only 71
 pages long, and more self-contained.
 Since the DjVu file format uses very different technologies than PDF, one
 can archive both the PDF and the DjVu version of the same document, in case
@@ -1658,12 +1780,31 @@ PDF Enhancer and Adobe Acrobat Pro are analyzed in \cite{pdftweak},
 but that article focuses on reducing image resolution and unembedding fonts,
 none of which are information-preserving optimizations.
 
-!! more related work; also other \cite{}s
+Multivalent supports a custom file format named \emph{compact PDF,}
+\cite{multivalent-compact,pdf-diet}, which is about 30\% to 60\% smaller than a
+regular PDF. The disadvantage is that only Multivalent can read or write
+this format so far (but it supports fast and lossless conversion to regular
+PDF). Compact PDF achieves the size reduction by grouping similar objects
+next to each other, and compressing the whole document as one big stream
+with \cmd{bzip2}, which is superior to ZIP. Another improvement is that
+compact PDF stores Type\,1 fonts unencrypted, with cruft such as the
+512-byte font tailer and random bytes for encryption stripped out.
+
+When preparing a collection (such as a journal volume or a conference
+proceedings) with \TeX{}, in a typical workflow individual articles are
+compiled to PDF, and the PDF files are then concatenated. See
+\cite{pdf-concatenate} for tools which can do PDF concatenation. The
+concatenated document can be optimized using \cmd{pdfsizeopt.py} $+$
+Multivalent to get rid of redundancy (such as duplicate glyphs in fonts and
+duplicate images) across articles. Not all concatenators can preserve
+hyperlinks and the document outline for \TeX{} documents. Adding
+concatenation support to \cmd{pdfsizeopt.py} would make creating small and
+interactive collections more straightforward.
+
+!! more related work; also other \cite{}s from this document
 
 
 \section{Conclusion and future work}\label{future-work}
-
-!!
 
 The workflow proposed in this article has too many dependencies. Python
 (needed by \cmd{pdfsizeopt.py}), Java (needed by Multivalent) and
@@ -1684,138 +1825,27 @@ Other dependencies such as \cmd{jbig2}, \cmd{sam2p}, \cmd{pngtopnm},
 PNGOUT and PDF Enhancer are not so problematic, because they can be compiled
 to small, statically linked, stand-alone executables.)
 
-When preparting collections (such as journal volumes or conference
-proceedings) with \TeX{}, and compiling individual articles to PDF
-!! add concatenation
+Some optimizations of \cmd{pdfsizeopt.py} could be generalized to cover more
+cases. Examples are: add CMYK image optimization; make CFF matching more
+permissive (before unification); recognize more inline images (not only
+those created by \cmd{sam2p}, and not only in form XObjects). Also
+\cmd{pdfsizeopt.py} would benefit from compiling a test set of PDF, and
+adding a framework which automatically checks that \cmd{pdfsizeopt.py}
+detected the opportunity to optimize, and did the optimization properly in
+each case.
+
+!! add more conclusions and future work
 
 
+% ltugbib.bst uses \citeauthoryear, and that
+% would need \documentclass[harvardcite]{ltugproc}
+%\bibliographystyle{ltugbib}
+\bibliographystyle{plain}
 
-\section{References}
-
-@iso-pdf{
-PDF 1.7 is ISO 32000
-meta-link: http://www.theinquirer.net/inquirer/news/1030411/pdf-approved-iso-32000
-}
-
-@djvu-tutorial{
-http://www.djvuzone.org/support/tutorial/chapter-intro.html
-}
-
-!!
-@dvipdfmx{
-http://project.ktug.or.kr/dvipdfmx/
-}
-
-% !! # in the URL
-@pdfsizeopt-extra{
-%http://code.google.com/p/pdfsizeopt/source/browse/#svn/trunk/extra
-}
-
-% !! # in the URL
-@pts-graphics-helper{
-%http://code.google.com/p/pdfsizeopt/source/browse/#svn/trunk/extra
-}
-
-@pstricks-pdfoutput{
-http://tug.org/PSTricks/main.cgi?file=pdf/pdfoutput
-}
-
-@pdfenhancer{
-%http://www.apagoinc.com/prod_home.php?prod_id=2
-}
-
-@example-pdfs{
-http://code.google.com/p/pdfsizeopt/wiki/ExamplePDFsToOptimize
-}
-
-@pdfsizeopt{
-http://code.google.com/p/pdfsizeopt
-}
-
-@jbig2enc{
-http://github.com/agl/jbig2enc/tree/master
-}
-
-@pdfsizeopt-install{
-http://code.google.com/p/pdfsizeopt/wiki/InstallationInstructions
-}
-
-@multivalent-compress-tool{
-!! write more about comparison
-comparison: http://multivalent.sourceforge.net/Tools/pdf/Compress.html
-
-% download: http://sourceforge.net/projects/multivalent/files/
-% download: http://sourceforge.net/projects/multivalent/files/multivalent/Release%2020060102/Multivalent20060102.jar/download
-}
-
-@pdf-concatenate{
-http://ansuz.sooke.bc.ca/software/pdf-append.php
-}
-
-@png-recompressors{
-http://en.wikipedia.org/wiki/OptiPNG
-}
-
-@ps2pdf{
-http://pages.cs.wisc.edu/~ghost/doc/cvs/Ps2pdf.htm
-}
-
-@creative-pdf{
-  year=2004,
-  title={Creative use of PDF files in {\LaTeX} environments},
-  !! make URL appear
-  % !! url={http://www.tu-chemnitz.de/urz/anwendungen/tex/stammtisch/chronik/pdf_interna.pdf},
-}
-
-@optipng{
-  lists 11 relevant tools for PNG optimization as well
-  http://optipng.sourceforge.net/pngtech/optipng.html
-}
-
-@pdftweak{
-  http://websiteoptimization.com/speed/tweak/pdf/
-}
-
-@packjpg{
-  year=2007,
-  url={http://www.elektronik.htw-aalen.de/packjpg/},
-}
-
-@compressing-your{
-  title={Compressing your PDF files},
-  url={http://www.verypdf.com/pdfinfoeditor/compression.htm}
-}
-
-@pdfcompress{
-  url={http://www.verypdf.com/pdfinfoeditor/pdfcompress.htm}
-}
-
-@pdfenhancer-features{
-  % http://www.apagoinc.com/prod_feat.php?feat_id=30&feat_disp_order=7&prod_id=2
-}
-
-!!
-@pdf-diet{
-% "Two Diet Plans for Fat PDF", Proceedings of ACM Symposium on Document Engineering 2003, November 2003, Grenoble, France. 
-% http://portal.acm.org/citation.cfm?doid=958220.958253
-% http://multivalent.sourceforge.net/Research/TwoDietPlans.pdf 
-}
-
-@djvu3spec{
-http://djvu.org/docs/DjVu3Spec.djvu
-}
-
-@pdfdb{
-Michael Still, editor. PDF Database.
-http://www.stillhq.com/pdfdb/db.html
-}
-
-@pdf-bestpractices{
-http://www.planetpdf.com/creative/article.asp?ContentID=6568
-}
-
-@acrobatpro{
-http://www.adobe.com/products/acrobatpro/
-}
+% # in the \url is OK.
+% !! prepare
+% !! make line breaks look better
+% !! get rid of @misc
+\bibliography{pts_pdfsizeopt2009} % .bib
 
 \end{document}
