@@ -3279,7 +3279,7 @@ class PdfData(object):
   dup length 1 gt {/invalidfileaccess /MultipleFontsDefined signalerror} if
   [exch {pop} forall] 0 get  % Convert FontDirectory to the name of our font
   dup /_OrigFontName exch def
-  % stack: <font_name>
+  % stack: <font-name>
   findfont dup length dict copy
   % Let the font name be /Obj68 etc.
   dup /FullName _ObjNumber 10 string cvs
@@ -3289,15 +3289,69 @@ class PdfData(object):
       (Obj) exch concatstrings put
   dup dup /FullName get cvn /FontName exch put
 
-  % Replace the /Encoding array with the glyph names in /CharStrings, padded
-  % with /.notdef{}s. This hack is needed for Ghostscript 8.54, which would
-  % sometimes generate two (or more?) PDF font objects if not all characters
-  % are encoded.
-  dup /CharStrings get dup length 256 le {
-    [exch {pop} forall] NameSort
-    [exch aload length 1 255 {pop/.notdef} for]
+  % We want to make sure that:
+  %
+  % S1. All glyphs in /CharStrings are part of the /Encoding array. This is
+  %     needed for Ghostsccript 8.54, which would sometimes generate two (or
+  %     more?) PDF font objects if not all glyphs are encoded.
+  %
+  % S2. All non-/.notdef elements of the /Encoding array remain unchanged.
+  %     This is needed because Adobe Actobat uses the /Encoding in the CFF
+  %     if /BaseEncoding was not specified in the /Type/Encoding for
+  %     /Type/Font. This is according to pdf_reference_1.7.pdf. (xpdf and
+  %     evince use /BaseEncoding/StandardEncoding.)
+  %
+  % To do this, we first check that all glyphs in /CharStrings are part of
+  % /Encoding. If not, we extend /Encoding to 256 elements (by adding
+  % /.notdef{}s), and we start replacing /.notdef{}s at the end of /Encoding
+  % by the missing keys from /CharStrings.
+
+  % stack: <fake-font>
+  dup /Encoding .knownget not {[]} if
+  % stack: <fake-font> <encoding-array>
+  << exch { true } forall >>
+  dup /.notdef undef
+  /_EncodingDict exch def
+  % stack: <fake-font>
+  [ 1 index /CharStrings get {
+    pop dup _EncodingDict exch known {
+      pop
+    } {
+      dup /.notdef eq { pop } if
+    } ifelse
+  } forall ]
+  % stack: <fake-font> <unencoded-list>
+  dup length 0 ne {
+    NameSort
+    1 index /Encoding .knownget not {[]} if
+    % stack: <fake-font> <sorted-unencoded-list> <encoding>
+    dup length 256 lt {
+      [exch aload length 1 255 {pop/.notdef} for]
+    } {
+      dup length array copy
+    } ifelse
+    exch
+    /_TargetI 2 index length 1 sub def  % length(Encoding) - 1 (usually 255)
+    % stack: <fake-font> <encoding-padded-to-256> <sorted-unencoded-list>
+    {
+      % stack: <fake-font> <encoding> <unencoded-glyphname>
+      { _TargetI 0 lt { exit } if
+        1 index _TargetI get /.notdef eq { exit } if
+        /_TargetI _TargetI 1 sub def
+      } loop
+      _TargetI 0 lt {
+        % Failed to add all missing glyphs to /Encoding. Give up silently.
+        pop exit  % from forall
+      } if
+      1 index exch _TargetI exch put
+      /_TargetI _TargetI 1 sub def
+    } forall
     1 index exch /Encoding exch put
-  } {pop} ifelse
+    currentdict /_TargetI undef
+  } {
+    pop
+  } ifelse
+  currentdict /_EncodingDict undef
 
   %dup /FID undef  % undef not needed.
   % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
@@ -3457,6 +3511,7 @@ class PdfData(object):
       print >>sys.stderr, 'info: Type1CConverter has not created output: ' % (
           pdf_tmp_file_name)
       assert 0, 'Type1CConverter failed (no output)'
+    #assert 0  # !!!
     os.remove(ps_tmp_file_name)
     pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
@@ -4800,7 +4855,7 @@ class PdfData(object):
     for obj_num in sorted(objs):
       refs_to = []  # List of object numbers obj_num refers to).
       head = objs[obj_num].head
-      # TODO(pts): reorder dicts etc.
+      # !! TODO(pts): reorder dicts to canonical order
       head_minus = PdfObj.CompressValue(
           head, obj_num_map='0', old_obj_nums_ret=refs_to,
           do_emit_strings_as_hex=True)

@@ -488,3 +488,9 @@ additional compression may be possible with:
 * TODO (album_virag.pdf): [/FlateDecode /CCITTFaxDecode]
 * TODO: is /FlateDecode/DCTDecode bettern than /DCTDecode?
 * TODO: don't compress too small images
+* !! BUGFIX: Adobe Reader 8 doesn't show \MP and \MF in optimized PDF -- it
+  works in the original, unoptimized PDF;
+  type1fix.pl doesn't seem to fix the problem
+  scp logo10.*.{asc,fla} lila:prg/pdfsizeopt/trunk/
+  there is also a problem with lmr10.pfb, but not cmr10.pfb
+* dvipdfmx rounds glyph /Widths to integers, pdftex doesn't
