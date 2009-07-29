@@ -72,6 +72,13 @@
   \fi\fi
 }
 
+% Discretionary break ($\triangleright$) in the middle of a code snippet.
+\newcommand\DD{\discretionary{\the \textfont 1\char"2E}{}{}}
+% Load math fonts for \the\textfont in \DD
+\AtBeginDocument{\setbox0\hbox{$$}}
+
+% ---
+
 \title{Optimizing PDF output size of \TeX{} documents}
 \author{P\'eter Szab\'o}
 \address{Google\\
@@ -105,6 +112,7 @@ compressor as well.
 
 !! Should I include ``This work was funded by my employer, Google.''??
 
+
 \subsection{What does a PDF document contain}
 
 PDF is a popular document file format designed for printing and on-screen
@@ -129,7 +137,7 @@ data, clicks on the submit button, and the data is sent to a server in an
 HTTP request), event handlers in JavaScript, embedded multimedia files,
 encryption and access protection.
 
-PDF has the almost the same 2D graphics model (text, fonts, colors, vector
+PDF has almost the same 2D graphics model (text, fonts, colors, vector
 graphics) as PostScript, one of the most widespread page description and
 printer control language. So it is possible to convert between PDF and
 PostScript without loss of information. One notable exception is that
@@ -139,7 +147,7 @@ many repetitions in the PDF (e.g.\ a logo drawn to each page). Some of the
 interactive features of PDF (such as forms, annotations and bookmarks) have
 no PostScript equivalent either; other nonprintable elements (such as
 hyperlinks and the document outline) are supported in PostScript using
-\texttt{pdfmark}, but many PDF-to-PostScript converters just ignore them.
+\texttt{pdfmark}, but many PDF-to-Post\-Script converters just ignore them.
 
 \subsection{How to create PDF}
 
@@ -250,15 +258,15 @@ be primitive or composite. There is a simple serialization of values to
 8-bit strings, compatible with PostScript LanguageLevel\,2. For example,
 %
 \begin{verbatim}
-<</Integer 5 /Real -6.7 /String ((C)2009\\))
-  /StringInHex <Face> /Null null
+<</Integer 5 /Real -6.7 /Null null
+  /StringInHex <Face> /String ((C)2009\\))
   /Boolean true /Name /Foo /List [3 4 5]>>
 \end{verbatim}
 \noindent defines a dictionary
-containing values of various types. All data types are immutable.
+with values of various types. All data types are immutable.
 
 It is possible to define a value for future use by defining an
-\emph{object.} For example, \texttt{12 0 obj [/PDF/Text] endobj} defines
+\emph{object.} For example, \texttt{12 0 obj [/PDF /Text] endobj} defines
 object number 12 to be an array of two items (\texttt{/PDF} and
 \texttt{/Text}). The number 0 in the definition is the so-called generation
 number, signifying that the object has not been modified since the PDF was
@@ -290,22 +298,22 @@ to that, dictionary objects may have the \texttt{/Type} and/or
 
 In addition to the data types above, PDF supports streams as well. A
 \emph{stream} object is a dictionary augmented by the stream data, which is
-a byte sequence. The syntax is \texttt{... ... obj << ... >> stream ...
-endstream endobj}, where the stream data starts right after the keyword
-\texttt{stream}. The stream data can be compressed or otherwise encoded
+a byte sequence. The syntax is \texttt{\emph{X} \emph{Y} obj <<
+\emph{dict-items} >> stream \emph{stream-data} endstream endobj}.
+The stream data can be compressed or otherwise encoded
 (such as in hex). The \texttt{/Filter} and \texttt{/DecodeParms} values in
 the dictionary specify how to uncompress/\allowbreak decode the stream data.
-It possible the specify multiple uncompress/\allowbreak decode filters,
-e.g.\ \texttt{/Filter [/ASCIIHexDecode /FlateDecode]} says that the bytes
+It possible the specify multiple such filters,
+e.g.\ \texttt{/Filter [\allowbreak/ASCII\DD Hex\DD Decode /Flate\DD Decode]} says that the bytes
 after \texttt{stream} should be decoded as a hex string, and then
 uncompressed using PDF's ZIP implementation. (Please note that the use of
-\texttt{/ASCIIHexDecode} is just a waste of space unless one wants to create
+\texttt{/ASCII\DD Hex\DD Decode} is just a waste of space unless one wants to create
 an ASCII PDF file.) The three most common uses for
 streams are: image pixel data, embedded font files and content streams.
 A content stream contains the instructions to draw the contents of page. The
 stream data is ASCII, with a syntax similar to PostScript, but with
 different operators. For example, \texttt{BT/F 20 Tf 1 0 0 1 8 9
-Tm(Hello world)Tj ET} in a content stream draws the text ``Hello World''
+Tm(Hello world)\allowbreak Tj ET} in a content stream draws the text ``Hello World''
 with the font \texttt{/F} at size 20 units, shifted up by 8 units, and
 shifted right by 9 units (according to the transformation matrix
 \texttt{1 0 0 1 8 9}).
@@ -350,7 +358,7 @@ of any number of non-stream object definitions. Object streams can be
 compressed just as regular stream data. This makes it possible to squeeze
 repetitions spanning over multiple object definitions. Thus, with PDF\,1.5,
 most of the PDF file can be stored in compressed streams. Only a few dozen
-byte of headers and end-of-file markers, and the stream dictionaries remain
+header bytes and end-of-file markers and the stream dictionaries remain
 uncompressed.
 
 \section{Making PDF files smaller}
@@ -448,11 +456,12 @@ We continue with presenting and analyzing the methods mentioned.
 using \cmd{dvips} \cite{dvips} for creating the PostScript file, and
 \cmd{ps2pdf} \cite{ps2pdf} (part of Ghostscript) for creating the PDF file. Example
 command-lines for compiling \texttt{doc.tex} to \texttt{doc.pdf}:
+{\small
 \begin{verbatim}
 $ latex doc
 $ dvips doc
 $ ps2pdf14 -dPDFSETTINGS=/prepress doc.ps
-\end{verbatim}%$
+\end{verbatim}}%$
 
 \item[dvipdfmx] The tool \cmd{dvipdfmx} \cite{dvipdfmx} converts from
 DVI to PDF, producing a very small output file. \cmd{dvipdfmx} is part of \TeX{}\,Live 2008, but since it's
@@ -490,8 +499,8 @@ For \LaTeX{}, \cmd{dvips} is the default. To get \cmd{dvipdfm(x)} right,
 pass \texttt{dvipdfm} (or \texttt{dvipdfmx}) as an option to
 \texttt{\string\documentclass} or to both
 \texttt{\string\usepackage\{graphicx\}} and
-\texttt{\string\usepackage\{hyperref\}}. Loading the package
-\pkg{pts-graphics-helper} \cite{pts-graphics-helper} sets up \cmd{dvipdfm}
+\texttt{\string\usepackage\DD\{hyperref\}}. The package
+\pkg{pts-graphics-helper} \cite{pdfsizeopt-extra} sets up \cmd{dvipdfm}
 as default unless the document is compiled with \cmd{pdflatex}.
 
 Unfortunately, some graphics packages (such as \pkg{psfrag} and
@@ -511,10 +520,10 @@ The \texttt{\string\includegraphics} command of the standard \pkg{graphicx}
 page of the specified PDF will be used as a rectangular image. With
 \cmd{dvipdfm(x)}, one also needs a \texttt{.bb} (or \texttt{.bbx}) file
 containing the bounding
-box. This can be generated with the \cmd{ebb} tool (or \cmd{extractbb},
-shipping with
+box. This can be generated with the \cmd{ebb} tool (or the \cmd{extractbb}
+tool shipping with
 \cmd{dvipdfm(x)}. Or, it is possible to use the \pkg{pts-graphics-helper}
-package \cite{pts-graphics-helper}, which can find the PDF bounding box
+package \cite{pdfsizeopt-extra}, which can find the PDF bounding box
 directly (most of the time).
 
 \pkg{dvipdfm(x)} contains special support for embedding figures created by
@@ -522,14 +531,14 @@ directly (most of the time).
 which can parse the output of \MP{}, and embed it to the document.
 Unfortunately, the \pkg{graphicx} package is not smart enough to recognize
 \MP{} output files (\texttt{jobname.1}, \texttt{jobname.2} etc.) by
-extension. The \pkg{pts-graphics-helper} package \cite{pts-graphics-helper}
+extension. The \pkg{pts-graphics-helper} package
 overcomes this limitation by defining \texttt{\string\includegraphicsmps},
 which can be used in place of \texttt{\string\includegraphics} for including
-figures created by \MP{}. The packages works consistently with
+figures created by \MP{}. The package works consistently with
 \pkg{dvipdfm(x)} and pdf\TeX{}.
 
-With pdf\TeX{}, it is possible to embed page regions from an external PDF,
-using the \pkg{pdfpages} \LaTeX{}-package. Please note that due to a
+With pdf\TeX{}, it is possible to embed page regions from an external PDF
+file, using the \pkg{pdfpages} \LaTeX{}-package. Please note that due to a
 limitation in pdf\TeX{}, hyperlinks and outlines (table of contents) in the
 embedded PDF will be lost.
 
@@ -862,11 +871,12 @@ objects.
 This subsection describes some methods PDF optimizers use to reduce the file
 size. We focus on ideas and methods relevant to \TeX{} documents.
 
-\paragraph{Use cross-reference streams and compress them with the $y$-predictor}
+\paragraph{Use cross-reference streams compressed with the $y$-predictor}
 
 Each offset entry in an (uncompressed) cross-reference table consumes 20
-bytes. This can be reduced by using compressed cross-reference streams, and
-enabling the $y$-predictor. A reduction factor of 180 is possible if the
+bytes. It can be reduced by using compressed cross-reference streams, and
+enabling the $y$-predictor. As shown in column \emph{xref} of
+Table~\ref{tab:psom-by-type}, a reduction factor of 180 is possible if the
 PDF file contains many objects (e.g.\ more than $10^5$ objects in
 \emph{pdfref}, with less than 12000 bytes in the cross-reference stream).
 
@@ -983,7 +993,8 @@ filter(s) to use) also contributes to the image size.
 
 Most PDF optimizers use the \pkg{zlib} code for ZIP compression in images.
 The output of some other image compressors (most notably PNGOUT
-\cite{pngout}, see OptiPNG \cite{optipng} (also includes a list of 11
+\cite{pngout}, see OptiPNG \cite{optipng}, see also \cite{optipng-article}
+for a list of 11
 other PNG optimization tools) and others at \cite{png-recompressors})
 is smaller than what \pkg{zlib} produces with its highest effort, but those
 other compressors usually run a 100 times or even slower than \pkg{zlib}.
@@ -1865,6 +1876,8 @@ interactive collections more straightforward.
 % !! prepare
 % !! make line breaks look better; \raggedright doesn't help
 % !! get rid of @misc
+{\hbadness10000  % Disable overfull+underfull \hbox reporting
 \bibliography{pts_pdfsizeopt2009} % .bib
+}
 
 \end{document}
