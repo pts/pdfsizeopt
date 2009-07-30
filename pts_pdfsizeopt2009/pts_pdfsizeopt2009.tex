@@ -8,15 +8,11 @@
 % * spell check
 % * review
 % * make it accepted by Google
-% * stretch tables to \hsize
 % * recompile sam2p.exe etc.
 %
-% !! TODO: fix \MF and \MP in the optimized PDF
 % !! a másodikban kicsit zavaros, hogy melyik 
 %    tömörítési eljárást ki és hogyan végzi. Eleinte leírod, hogy nem kell
 %    törõdni vele, pdfsizeopt.py megcsinálja, késõbb az olvasó bizonytalanságban marad
-% !! Az 5. táblázattól kezdve mindegyikben vannak kurzív számok, miért,
-%    esetleg a caption-ban is meg lehetne/kéne magyarázni.
 % !! get rid of overfull \hbox instances
 
 \documentclass{ltugproc}
@@ -562,7 +558,7 @@ Some computer algebra programs and vector modeling tools emit very large
 PDF (or similar vector graphics) files. This can be because they draw the
 graphics of too many little parts (e.g.\ they draw a sphere using several
 thousand triangles), or they draw too many parts which would
-be invisible anyway, because other parts cover them. Converting or
+be invisible anyway since other parts cover them. Converting or
 optimizing such PDF files usually doesn't help, because the optimizers are not
 smart enough to rearrange the drawing instructions, and then skip some of
 them. A good rule of thumb is that if a figure in an optimized PDF file is
@@ -573,6 +569,7 @@ bitmap image.
 
 \paragraph{Downsample high-resolution images}
 
+\vrule width0pt \hskip0pt minus1ex  % avoid overfull \hbox
 For most printers it doesn't make a visible difference to print in a
 resolution higher than 600\,DPI. Sometimes even the difference between
 300\,DPI and 600\,DPI is negligable. So converting the embedded images down
@@ -628,8 +625,8 @@ is to use \cmd{sam2p} to convert the exported image to JPEG and PNG
 smaller than the exported image, then the image was exported poorly.
 
 Converting the exported image with \cmd{sam2p} (to any of EPS, PDF, JPEG and
-PNG) is a fast and effective way to reduce the exported image size. Please
-note that \cmd{sam2p}, with its default settings, doesn't create the
+PNG) is a fast and effective way to reduce the exported image size.
+But \cmd{sam2p} with its default settings, doesn't create the
 smallest possible file, but it runs very quickly, and it creates an image
 file which is small enough to be embedded to the temporary PDF.
 
@@ -665,12 +662,13 @@ pdf\TeX{}  & \pkg{pdftex.map} $\to$\\
 \end{tabular*}
 \end{table}
 
-If a font is missing from the font \texttt{.map} file, drivers tend to
+If a font is missing from the font \texttt{.map} file, dri\-vers tend to
 generate a bitmap font automatically, and embed that. To make sure this
 didn't happen, it is possible detect the presence of bitmap fonts in a PDF
 by running \texttt{grep -a "/Subtype */Type3" doc.pdf}. Here is how to
 instruct pdf\TeX{} to use bitmap fonts only (for debugging purposes):
-\texttt{pdflatex "\string\pdfmapfile{}\string\input" doc}.
+\texttt{pdflatex "\string\pdfmapfile{}\string\input" doc}%
+\ % avoid overfull \hbox
 The most common
 reason for the driver not finding a corresponding vector font is that the
 \texttt{.map} file is wrong or the wrong map file is used. With
@@ -1352,6 +1350,7 @@ tuzv        &   337764 &   199279 &   146414 \\
 \end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
+Italic values indicate that the optimizer increased the file size.
 \par\noindent\emph{ps2pdf:} Ghostscript 8.61 run as \\
 \texttt{ps2pdf14 -dPDFSETTINGS=/prepress}
 \par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
@@ -1418,6 +1417,7 @@ tuzv        &   337764 &  \emph{338316} &   \emph{147453} & 146414 & \emph{15081
 \end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
+Italic values indicate that the optimizer increased the file size.
 \par\noindent\emph{pdfe:} PDF Enhancer 3.2.5 (1122r) server edition
 \par\noindent\emph{epsom:} PDF Enhancer $+$ \cmd{pdfsizeopt.py} $+$ Multivalent
 \par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
@@ -1523,6 +1523,8 @@ tuzv        &   337764 &    314508 &    146414 &   166863 \\
 \end{tabular*}
 \par\bigskip
 \par\noindent All numeric values are in bytes.
+The Italic value indicates that Multivalent alone was better than with
+\cmd{pdfsizeopt.py}.
 \par\noindent\emph{multi:} Multivalent\,20060102 \emph{tool.pdf.Compress}
 \par\noindent\emph{psom:} \cmd{pdfsizeopt.py} $+$ Multivalent
 \par\noindent\emph{pso:} \cmd{pdfsizeopt.py} without Multivalent
@@ -1563,7 +1565,8 @@ remove unused objects;
 omit default values;
 shrink cross-reference data.
 In addition to those above, Multivalent recompresses all streams with
-maximum-effort ZIP.
+maximum-effort ZIP, and it also moves up \texttt{/MediaBox} etc.\ in the
+page tree.
 
 Column \emph{multi} of Table~\ref{tab:eff-multivalent-pso} how effectively
 Multivalent optimizes. The column \emph{psom} indicates that running
@@ -1772,8 +1775,13 @@ none of which are information-preserving optimizations.
 \cite{compressing-your} gives a simple introduction to (possibly lossy)
 PDF image compression and content stream compression.
 
-PNG image optimization \cite{png-recompressors,optipng,pngout}
-!!
+Since web browsers can display PNG images, several PNG optimization tools
+\cite{png-recompressors,optipng,pngout} have been developed to reduce web
+page loading times. These tools can be used for optimizing (mainly
+non-photo) images in PDF documents as well. But since PDF has a more generic
+image and compression model than PNG, it would be possible to save a little
+bit more by developing PDF-specific tools, which take advantage of e.g.\
+using the TIFF predictor and ZIP compression together.
 
 An alternative document file format is DjVu (\cite{djvu-tutorial}),
 whose most important limitation compared to PDF is that it doesn't support
@@ -1820,12 +1828,19 @@ with \cmd{bzip2}, which is superior to ZIP. Another improvement is that
 compact PDF stores Type\,1 fonts unencrypted, with boilerplate such as the
 512-byte font tailer and random bytes for encryption stripped out.
 
-!! more related work; also other \cite{}s from this document
-
 
 \section{Conclusion and future work}\label{future-work}
 
-!! add conclusion
+Since it is not the primary goal for most PDF generators to emit the
+smallest possible PDF, simple techniques done by Multivalent and
+\cmd{pdfsizeopt.py} can yield significant size reduction (up to a
+factor of 3) depending on the generator and the PDF features used in the
+document. Rearranging the drawing instructions (contents streams and form
+XObjects; as done by Adobe Acrobat Pro and PDF Enhancer) is a more
+complicated optimization, and saves some more space in addition to the
+simple techniques. It also matters how the PDF was generated (e.g.\
+pdf\TeX{} generates a smaller and more optimizable PDF than \cmd{dvips} $+$
+\cmd{ps2pdf}).
 
 The workflow proposed in this article has too many dependencies. Python
 (needed by \cmd{pdfsizeopt.py}), Java (needed by Multivalent) and
@@ -1873,9 +1888,7 @@ interactive collections more straightforward.
 \bibliographystyle{plain}
 
 % # in the \url is OK.
-% !! prepare
 % !! make line breaks look better; \raggedright doesn't help
-% !! get rid of @misc
 {\hbadness10000  % Disable overfull+underfull \hbox reporting
 \bibliography{pts_pdfsizeopt2009} % .bib
 }
