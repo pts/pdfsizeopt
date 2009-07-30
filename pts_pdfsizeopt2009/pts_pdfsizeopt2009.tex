@@ -10,9 +10,10 @@
 % * make it accepted by Google
 % * recompile sam2p.exe etc.
 %
-% !! a másodikban kicsit zavaros, hogy melyik 
-%    tömörítési eljárást ki és hogyan végzi. Eleinte leírod, hogy nem kell
-%    törõdni vele, pdfsizeopt.py megcsinálja, késõbb az olvasó bizonytalanságban marad
+% !! a masodikban kicsit zavaros, hogy melyik 
+%    tomoritesi eljarast ki es hogyan vegzi. Eleinte leirod, hogy nem kell
+%    torodni vele, pdfsizeopt.py megcsinalja, kesobb az olvaso
+%    bizonytalansagban marad
 % !! get rid of overfull \hbox instances
 % !! pwd's extra suggestions
 % !! move floats closer
@@ -75,6 +76,9 @@
 % Load math fonts for \the\textfont in \DD
 \AtBeginDocument{\setbox0\hbox{$$}}
 
+% Ignore: Underfull \vbox (badness 10000) has occurred while \output is active
+\vbadness10000
+
 % ---
 
 \title{Optimizing PDF output size of \TeX{} documents}
@@ -108,8 +112,7 @@ compressor as well.
 
 \section{Introduction}
 
-!! Should I include ``This work was funded by my employer, Google.''??
-
+% !! Should I include ``This work was funded by my employer, Google.''??
 
 \subsection{What does a PDF document contain}
 
@@ -234,7 +237,7 @@ Another option is to remove embedded fonts. In such a case, the PDF viewer
 will pick a font with similar metrics if the font is not installed on the
 viewer machine. Please note that unembedding the font doesn't change the
 horizontal distance between glyphs, so the page layout will remain the
-same, but maybe glpyhs will look funny or hard-to-read. Yet another option
+same, but maybe glyphs will look funny or hard-to-read. Yet another option
 to save space is to reduce the resolution of the embedded images. We will
 not use any of the techniques mentioned in this paragraph, because our goal
 is to reduce redundancy and make the byte representation more effective,
@@ -349,7 +352,7 @@ negligable. PDF\,1.5 introduces \emph{cross-reference streams,} which store
 the cross-reference information in compact form in a stream. Such streams
 are usually compressed as well, using ZIP and a predictor. The benefit of the
 predictor is that adjacent offsets are close to each other, so their
-difference will contain lots of zeroes, which can be compressed better.
+difference will contain lots of zeros, which can be compressed better.
 
 Compression cannot be applied to the PDF file as a whole, only individual
 parts (such as stream data and cross-reference information) can be
@@ -468,7 +471,7 @@ $ ps2pdf14 -dPDFSETTINGS=/prepress doc.ps
 \item[dvipdfmx] The tool \cmd{dvipdfmx} \cite{dvipdfmx} converts from
 DVI to PDF, producing a very small output file. \cmd{dvipdfmx} is part of \TeX{}\,Live 2008, but since it's
 quite new, it may be missing from other \TeX{} distributions. Its
-precedessor, \cmd{dvipdfm} has not been updated since March 2007. Notable
+predecssor, \cmd{dvipdfm} has not been updated since March 2007. Notable
 new features in \cmd{dvipdfmx} are: support for non-latin scripts and fonts;
 emitting the Type\,1 fonts in CFF (that's the main reason for the size
 difference in Table~\ref{tab:method-feature}); parsing pdf\TeX{}-style font
@@ -578,7 +581,7 @@ bitmap image.
 \vrule width0pt \hskip0pt minus1ex  % avoid overfull \hbox
 For most printers it doesn't make a visible difference to print in a
 resolution higher than 600\,DPI. Sometimes even the difference between
-300\,DPI and 600\,DPI is negligable. So converting the embedded images down
+300\,DPI and 600\,DPI is negligible. So converting the embedded images down
 to 300\,DPI may save significant space without too much quality degradation.
 Downsampling before the image is included is a bit of manual work
 for each image, but there are lot of free software tools to do that (such as
@@ -591,7 +594,7 @@ Acrobat. \cmd{ps2pdf}
 read PDF files, and downsample images within as well, but it usually grows
 other parts of the file too much (15\% increase in file size for The
 \TeX{}book), and it may lose some information (it does
-keep hypherlinks and the document outline, though).
+keep hyperlinks and the document outline, though).
 
 \paragraph{Crop large images}
 
@@ -706,10 +709,10 @@ and other PDF viewers (such as \cmd{xpdf} and \cmd{evince}) don't contain
 those fonts either, but they can find them as system fonts. On Debian-based
 Linux systems, those fonts are in the \pkg{gsfonts} package.
 
-In \TeX\,Live 2008, the directives \emph{pdftexDownloadBase14} and
-\emph{dvipdfmDownloadBase14} etc.\ in the config file
+In \TeX\,Live, directives \emph{pdftexDownloadBase14} and
+\emph{dvipdfmDownloadBase14} etc.\ in the configuration file
 \texttt{texmf-config/web2c/updmap.cfg} specify whether to embed the base 14
-fonts. After modifying this config file (either the system-wide or the one in
+fonts. After modifying this file (either the system-wide or the one in
 \texttt{\$HOME/.texlive2008}) and running the \cmd{updmap} command, the
 following font map files would be created:
 
@@ -733,7 +736,7 @@ Identical to one of the two above, based on the
 \end{description}
 
 It is possible to specify the base 14 embedding settings without modifying
-config files or generating \texttt{.map} files. Example command-line for
+configuration files or generating \texttt{.map} files. Example command-line for
 pdf\TeX{} (type it without line breaks):
 % \texttt{pdflatex
 %"\string\pdfmapfile\{\DD pdftex\DD\_\DD ndl14.map\DD\}\DD\string\input"
@@ -759,7 +762,7 @@ dvipdfmx -f pdftex_dl14.map doc.dvi
 Please note that
 \cmd{dvipdfm} loads the \emph{.map} files specified in \pkg{dvipdfmx.cfg}
 first, and the \texttt{.map} files loaded with the \texttt{-f} flag override
-entries loaded previously, from the config file. To have the base 14 fonts
+entries loaded previously, from the configuration file. To have the base 14 fonts
 omitted, run (without a line break):
 \begin{verbatim}
 dvipdfmx -f pdftex_ndl14.map 
@@ -828,7 +831,7 @@ Multivalent generates object streams and cross-reference streams by default.
 CFF \cite{cff} (Type\,2 or \texttt{/Subtype /Type1C})
 is an alternative, compact, highly compressible binary font
 format that can represent Type\,1 font data without loss. By embedding
-vector fonts in CFFinstead of Type\,1, one can
+vector fonts in CFF instead of Type\,1, one can
 save significant portion of the PDF file, especially if the document is 10
 pages or less (e.g.\ reducing the PDFfile size from 200\,kB to 50\,kB).
 \cmd{dvipdfmx} does this by default, the other drivers (pdf\TeX{},
@@ -1342,7 +1345,7 @@ CFF.
 
 \item[pdfref] 1310-page reference manual about PDF\,1.7 containing quite a
 lot of duplicate \texttt{xref} tables and XML metadata of document parts.
-Optimization gets rid of both the duplicate xref tables and the XML
+Optimization gets rid of both the duplicate \texttt{xref} tables and the XML
 metadata. Font data is in CFF. Compiled with FrameMaker 7.2, PDF generated
 by Acrobat Distiller 7.0.5.
 
@@ -1665,7 +1668,7 @@ Ghost\-script is used for parsing CFF to a font dictionary,
 and also for serializing the modified dictionary as CFF. Again, the latter is
 done by generating a PostScript file with all the fonts, then converting it
 to a PDF using Ghostscript.
-Limitations: itt only works for CFF (and former Type\,1) fonts;
+Limitations: it only works for CFF (and former Type\,1) fonts;
 it doesn't unify fonts with different names;
 it won't unify some fonts if one of them has slightly different
 metrics.
@@ -1683,7 +1686,7 @@ ZIP), then it is recompressed with high-effort ZIP, then it is converted
 to PNG, then several external PNG compressors are run to get the optimized
 PNG, and finally the smallest representation (among on the optimized PNG
 files, intermediate images and the original image) is picked, i.e.\ the one
-with the smalles PDF image object representation, counting the stream
+with the smallest PDF image object representation, counting the stream
 dictionary and the compressed stream as well. The following PNG optimizers
 are used: \cmd{sam2p} without predictor, \cmd{sam2p} with PNG predictor,
 PNGOUT (very slow, but generates a few percent smaller PNG files) and
