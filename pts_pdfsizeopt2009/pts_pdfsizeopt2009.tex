@@ -14,6 +14,8 @@
 %    tömörítési eljárást ki és hogyan végzi. Eleinte leírod, hogy nem kell
 %    törõdni vele, pdfsizeopt.py megcsinálja, késõbb az olvasó bizonytalanságban marad
 % !! get rid of overfull \hbox instances
+% !! pwd's extra suggestions
+% !! move floats closer
 
 \documentclass{ltugproc}
 \usepackage{t1enc}
@@ -84,7 +86,7 @@
 \personalURL{http://www.inf.bme.hu/~pts/}
 
 \begin{abstract}
-There are several tools to generate PDF output from a \TeX{} document. By
+There are several tools for generating PDF output from a \TeX{} document. By
 choosing the appropriate tools and configuring them properly, it is possible
 to reduce the PDF output size by a factor of 3 or even more, thus reducing
 document download times, hosting and archiving costs.
@@ -118,14 +120,15 @@ graphics and image resolution. Thus the author of a PDF document has precise
 control over the document's appearance -- no matter what operating system or
 renderer software is used for viewing or printing the PDF. From the viewer's
 perspective, a PDF document is a sequence of rectangular pages containing
-text, vector graphics and pixel-based images. In addition to that, some
+text, vector graphics and pixel-based images. In addition, some
 rectangular page regions can be marked as hyperlinks, and Unicode
-annotations can be added as well to the regions, so text can be copy-pasted
+annotations can also be added to the regions, so text may be copy-pasted
 from the documents. (Usually the copy-paste yields only a sequence of
 characters, with all formatting and positioning lost. Depending on the
 software and the annotation, the bold and italics properties can be
-preserved.) A table of contents can be added as well, which has a tree
-structure, and each node of the tree consists of an unformatted caption and
+preserved.) A tree-structured
+table of contents can be added as well, each node consisting of
+an unformatted caption and
 a hyperlink within the document.
 
 Additional features of PDF include forms (the user fills some fields with
@@ -136,9 +139,10 @@ encryption and access protection.
 PDF has almost the same 2D graphics model (text, fonts, colors, vector
 graphics) as PostScript, one of the most widespread page description and
 printer control language. So it is possible to convert between PDF and
-PostScript without loss of information. One notable exception is that
-transparency and color gradients are not supported by PostScript. Also
-conversion from PDF to PostScript may blow up the file size if there are
+PostScript without loss of information, except for a few constructs,
+e.g.\ transparency and color gradients are not supported by PostScript.%
+\ % avoid overfull \hbox
+Conversion from PDF to PostScript may blow up the file size if there are
 many repetitions in the PDF (e.g.\ a logo drawn to each page). Some of the
 interactive features of PDF (such as forms, annotations and bookmarks) have
 no PostScript equivalent either; other nonprintable elements (such as
@@ -149,7 +153,8 @@ hyperlinks and the document outline) are supported in PostScript using
 
 Since PDF contains little or no structural and semantic information (such as
 in which order the document should be read, which regions are titles, how
-the tables str built and how the charts generated), word processors and
+the tables are built and how the charts generated), word processors, drawing
+programs and
 typesetting systems usually can export to PDF, but for loading and saving
 they keep using their own
 file format which preserves semantics. PDF is usually not involved while the
@@ -211,13 +216,13 @@ if needed. The disadvantage of a nonstandard compact format is that most PDF
 viewers and tools don't support it by default, so the user has to install
 and run the conversion tool, which some users can't or won't do just for
 viewing a PDF. When archiving compact PDF files for a long term, we have to
-make sure that we'll have working converter at restore time. With
+make sure that we'll have a working converter at restore time. With
 Multivalent, this is possible by archiving the \texttt{.jar} file containing
 the code of the converter. But this may not suit all needs, because
 Multivalent is not open source, there are no alternative implementations,
 and there is no open specification for its compact PDF file format.
 
-A pixel-based (fixed resolution) alternative of PDF is DjVu (see in
+A pixel-based (fixed resolution) alternative of PDF is DjVu (see
 Section~\ref{related-work}).
 
 It is possible to save space in a PDF by removing non-printed information
@@ -225,7 +230,7 @@ such as hyperlinks, document outline elements, forms, text-to-Unicode
 mapping or user annotations. Removing these does not affect the output when
 the PDF is printed, but it degrades the user experience when the PDF is
 viewed on a computer, and it may also degrade navigation and searchability.
-Another option is to remove (unembed) fonts. In such a case, the PDF viewer
+Another option is to remove embedded fonts. In such a case, the PDF viewer
 will pick a font with similar metrics if the font is not installed on the
 viewer machine. Please note that unembedding the font doesn't change the
 horizontal distance between glyphs, so the page layout will remain the
@@ -239,12 +244,12 @@ while preserving visual and semantic information in the document.
 
 It is possible to save space in the PDF by serializing the same information
 more effectively and/or using better compression. This section gives a
-high-level introductions to the data structures and their serialization in
+high-level introduction to the data structures and their serialization in
 the PDF file, focusing on size optimization. For a full description of the
 PDF file format, see \cite{pdfref}.
 
 PDF supports integer, real number, boolean, null, string and name as
-simple data types. A string a sequence of 8-bit bytes. A name is also a
+simple data types. A string is a sequence of 8-bit bytes. A name is also a
 sequence of 8-bit bytes, usually a concatenation of a few English words in
 CamelCase, often used as a dictionary key (e.g. \texttt{/MediaBox}) or an
 enumeration value (e.g. \texttt{/DeviceGray}). Composite data types are the
@@ -297,25 +302,26 @@ In addition to the data types above, PDF supports streams as well. A
 a byte sequence. The syntax is \texttt{\emph{X} \emph{Y} obj <<
 \emph{dict-items} >> stream \emph{stream-data} endstream endobj}.
 The stream data can be compressed or otherwise encoded
-(such as in hex). The \texttt{/Filter} and \texttt{/DecodeParms} values in
-the dictionary specify how to uncompress/\allowbreak decode the stream data.
-It possible the specify multiple such filters,
+(such as in hex). The \texttt{/Filter} and \texttt{/Decode\DD Parms} values in
+the dictionary specify how to uncompress/\allowbreak de\-code the stream data.
+It is possible the specify multiple such filters,
 e.g.\ \texttt{/Filter [\allowbreak/ASCII\DD Hex\DD Decode /Flate\DD Decode]} says that the bytes
 after \texttt{stream} should be decoded as a hex string, and then
 uncompressed using PDF's ZIP implementation. (Please note that the use of
 \texttt{/ASCII\DD Hex\DD Decode} is just a waste of space unless one wants to create
 an ASCII PDF file.) The three most common uses for
 streams are: image pixel data, embedded font files and content streams.
-A content stream contains the instructions to draw the contents of page. The
+A content stream contains the instructions to draw the contents of the
+page. The
 stream data is ASCII, with a syntax similar to PostScript, but with
 different operators. For example, \texttt{BT/F 20 Tf 1 0 0 1 8 9
-Tm(Hello world)\allowbreak Tj ET} in a content stream draws the text ``Hello World''
+Tm(Hello world)\allowbreak Tj ET} draws the text ``Hello World''
 with the font \texttt{/F} at size 20 units, shifted up by 8 units, and
 shifted right by 9 units (according to the transformation matrix
 \texttt{1 0 0 1 8 9}).
 
 Streams can use the following generic compression methods: ZIP (also called
-as flate), LZW and run-length encoding. ZIP is almost always superior. In
+flate), LZW and run-length encoding. ZIP is almost always superior. In
 addition to those, PDF supports some image-specific compression methods as
 well: JPEG and JPEG2000 for true-color images and JBIG2 and G3 fax (also
 called as CCITT fax) for bilevel (two-color) images. JPEG and JPEG2000 are
@@ -329,7 +335,7 @@ stream data before compression, to make the data more compressible. One
 possible predictor subtracts the previous data value from the current one,
 and sends the difference to the compressor. This helps reducing the file
 size if the difference between adjacent data values is small most of the
-time. This is true for some images with a few number of colors.
+time. This is true for some images with a small number of colors.
 
 There is cross-reference information near the end of the PDF file, which
 contains the start byte offset of all object definitions. Using this
@@ -341,7 +347,7 @@ object number is encoded by the position of the item. For PDFs with several
 thousand objects, the space occupied by the cross-reference table is not
 negligable. PDF\,1.5 introduces \emph{cross-reference streams,} which store
 the cross-reference information in compact form in a stream. Such streams
-usually compressed as well, using ZIP and a predictor. The benefit of the
+are usually compressed as well, using ZIP and a predictor. The benefit of the
 predictor is that adjacent offsets are close to each other, so their
 difference will contain lots of zeroes, which can be compressed better.
 
@@ -361,15 +367,15 @@ uncompressed.
 
 \subsection{How to prepare a small, optimizable PDF with \TeX{}}\label{tex-to-pdf}
 
-When aiming for a small PDF, it is possible the get it by using the best
+When aiming for a small PDF, it is possible to get it by using the best
 tools with the proper settings to create the smallest possible PDF right
-ahead. Another approach is to create a PDF anyhow, not paying attention to
+ahead. Another approach is to create a PDF without paying attention to
 the tools and their settings, and then optimize PDF with a PDF size
-optimizer tool. The approach we suggest in this work a mixture of the two:
-pay attention to the PDF generator tools and its fundamental settings, so it
-generates a PDF which is small enough for temporary use and also
-easy to optimize further; and use an optimizer to create the final, smallest
-possible PDF.
+optimizer tool. The approach we suggest in this paper is a mixture of the two:
+pay attention to the PDF generator tools and their fundamental settings, so
+generating a PDF which is small enough for temporary use and also
+easy to optimize further; and use an optimizer to create the final,
+even smaller PDF.
 
 This section enumerates the most common tools which can generate the
 temporary PDF from a \texttt{.tex} source. As part of this, it explains how
@@ -380,7 +386,7 @@ large.
 \paragraph{Pick the best PDF generation method}
 Table~\ref{tab:method-feature} lists features of the 3 most common methods
 (also called as \emph{drivers}) which produce a PDF from a \TeX{} document,
-and Table~\ref{tab:texbook-to-pdf} compares the file size whey produce when
+and Table~\ref{tab:texbook-to-pdf} compares the file size they produce when
 compiling the \TeX{}book. There is no single best driver because of the
 different feature sets, but looking at how large the output of \cmd{dvips}
 is, the preliminary conclusion would be to use pdf\TeX{}
@@ -502,7 +508,7 @@ as default unless the document is compiled with \cmd{pdflatex}.
 Unfortunately, some graphics packages (such as \pkg{psfrag} and
 \pkg{pstricks}) require a PostScript backend such as \cmd{dvips},
 and pdf\TeX{} or \cmd{dvipdfmx} don't provide that. See
-\cite{pstricks-pdfoutput} for a list of workarounds. They rely running
+\cite{pstricks-pdfoutput} for a list of workarounds. They rely on running
 \cmd{dvips} on the graphics, possibly converting its output to PDF, and then
 including those files in the main compilation. Most of the extra work can be
 avoided if graphics are created as external PDF files (without text
@@ -556,7 +562,7 @@ In all the cases above, the final PDF should be optimized with
 
 Some computer algebra programs and vector modeling tools emit very large
 PDF (or similar vector graphics) files. This can be because they draw the
-graphics of too many little parts (e.g.\ they draw a sphere using several
+graphics using too many little parts (e.g.\ they draw a sphere using several
 thousand triangles), or they draw too many parts which would
 be invisible anyway since other parts cover them. Converting or
 optimizing such PDF files usually doesn't help, because the optimizers are not
@@ -580,7 +586,7 @@ GIMP \cite{gimp} and the \cmd{convert} tool of ImageMagick \cmd{imagemagick}).
 It is possible to downsample after the PDF has been created, for example
 with the commercial software PDF Enhancher \cite{pdfenhancer} or Adobe
 Acrobat. \cmd{ps2pdf}
-(using Ghostscript's \texttt{-dDEVICE=pdfwrite}, use
+(using Ghostscript's \texttt{-dDEVICE=pdfwrite}, and
 \texttt{setdistillerparams} to customize, see parameters in \cite{ps2pdf}) can
 read PDF files, and downsample images within as well, but it usually grows
 other parts of the file too much (15\% increase in file size for The
@@ -628,7 +634,7 @@ Converting the exported image with \cmd{sam2p} (to any of EPS, PDF, JPEG and
 PNG) is a fast and effective way to reduce the exported image size.
 But \cmd{sam2p} with its default settings, doesn't create the
 smallest possible file, but it runs very quickly, and it creates an image
-file which is small enough to be embedded to the temporary PDF.
+file which is small enough to be embedded in the temporary PDF.
 
 \paragraph{Embed vector fonts instead of bitmap fonts}
 
@@ -664,7 +670,7 @@ pdf\TeX{}  & \pkg{pdftex.map} $\to$\\
 
 If a font is missing from the font \texttt{.map} file, dri\-vers tend to
 generate a bitmap font automatically, and embed that. To make sure this
-didn't happen, it is possible detect the presence of bitmap fonts in a PDF
+didn't happen, it is possible to detect the presence of bitmap fonts in a PDF
 by running \texttt{grep -a "/Subtype */Type3" doc.pdf}. Here is how to
 instruct pdf\TeX{} to use bitmap fonts only (for debugging purposes):
 \texttt{pdflatex "\string\pdfmapfile{}\string\input" doc}%
@@ -683,13 +689,13 @@ a lot of problems finding fonts, upgrading to \TeX{}Live\,2008 or newer is
 strongly recommended.
 
 Some other popular fonts (such as the Microsoft web fonts) are available in
-TrueType, which is another vector format. \cmd{dvipdfm(x)} and pdf\TeX{} can
-embed TrueType fonts, but \cmd{dvips} can't (it just dumps the
+TrueType, another vector format. \cmd{dvipdfm(x)} and pdf\TeX{} can
+embed TrueType fonts, but \cmd{dvips} cannot (it just dumps the
 \texttt{.ttf} file to the \texttt{.ps} file, rendering it unparsable).
 
-OpenType fonts with advanced features such as script and feature selection
+OpenType fonts with advanced tables for script and feature selection
 and glyph substitution are supported by Unicode-aware \TeX{}-derivatives
-such as \XeTeX{}. \cmd{dvipdfmx} also supports OpenType fonts.
+such as \XeTeX{}, and also by \cmd{dvipdfmx}.
 
 \paragraph{Omit the base 14 fonts} The base 14 fonts are Times (in 4 styles,
 Helvetica (in 4 styles), Courier (in 4 styles), Symbol and Zapf Dingbats.
@@ -700,7 +706,7 @@ and other PDF viewers (such as \cmd{xpdf} and \cmd{evince}) don't contain
 those fonts either, but they can find them as system fonts. On Debian-based
 Linux systems, those fonts are in the \pkg{gsfonts} package.
 
-In \TeX\,Live, the directives \emph{pdftexDownloadBase14} and
+In \TeX\,Live 2008, the directives \emph{pdftexDownloadBase14} and
 \emph{dvipdfmDownloadBase14} etc.\ in the config file
 \texttt{texmf-config/web2c/updmap.cfg} specify whether to embed the base 14
 fonts. After modifying this config file (either the system-wide or the one in
@@ -728,23 +734,39 @@ Identical to one of the two above, based on the
 
 It is possible to specify the base 14 embedding settings without modifying
 config files or generating \texttt{.map} files. Example command-line for
-pdf\TeX{}: \texttt{pdflatex "\string\pdfmapfile{pdftex\_ndl14.map}\string\input"
-doc.tex}.
+pdf\TeX{} (type it without line breaks):
+% \texttt{pdflatex
+%"\string\pdfmapfile\{\DD pdftex\DD\_\DD ndl14.map\DD\}\DD\string\input"
+%doc.tex}.
+\begin{verbatim}
+pdflatex "\pdfmapfile{pdftex_ndl14.map}
+          \input" doc.tex
+\end{verbatim}\noindent
 However, this will display a warning \emph{No flags specified for
 non-embedded font}. To get rid of this, use
-\texttt{pdflatex "\string\pdfmapfile{=pdftex\_ndl14\_extraflag.map}\string\input"
-doc.tex}
+\begin{verbatim}
+pdflatex "\pdfmapfile{=
+          pdftex_ndl14_extraflag.map}
+          \input" doc.tex
+\end{verbatim}\noindent
 instead. Get the \texttt{.map} file from \cite{pdfsizeopt-extra}.
 
 The \texttt{.map} file syntax for \cmd{dvipdfm} is different, but
-\cmd{dvipdfmx} can use a \texttt{.map} file of pdf\TeX{} syntax. Example:
-\texttt{dvipdfmx -f pdftex\_dl14.map doc.dvi}. Please note that
+\cmd{dvipdfmx} can use a \texttt{.map} file of pdf\TeX{} syntax, like this:
+\begin{verbatim}
+dvipdfmx -f pdftex_dl14.map doc.dvi
+\end{verbatim}\noindent
+Please note that
 \cmd{dvipdfm} loads the \emph{.map} files specified in \pkg{dvipdfmx.cfg}
 first, and the \texttt{.map} files loaded with the \texttt{-f} flag override
 entries loaded previously, from the config file. To have the base 14 fonts
-omitted, run \texttt{dvipdfmx -f pdftex\_ndl14.map -f
-dvipdfmx\_ndl14\_extra.map dok.tex}. Get the last \texttt{.map} file from
-\cite{pdfsizeopt-extra}. Without \pkg{dvipdfmx\_ndl14\_extra.map}, a bug in
+omitted, run (without a line break):
+\begin{verbatim}
+dvipdfmx -f pdftex_ndl14.map 
+    -f dvipdfmx_ndl14_extra.map doc.tex
+\end{verbatim}\noindent
+Get the last \texttt{.map} file from
+\cite{pdfsizeopt-extra}. Without \pkg{dvipdfmx\_\DD ndl14\_extra.map}, a bug in
 \cmd{dvipdfm} prevents it from writing a PDF file without the font -- it
 would embed a rendered bitmap font instead.
 
@@ -768,16 +790,18 @@ here.
 
 For pdf\TeX{}, the assignment \texttt{\string\pdfcompresslevel9} select
 maximum PDF compression. With \TeX{}\,Live 2008, this is the default. Here
-is how to specify it on the command-line:
-\texttt{pdflatex "\string\pdfcompresslevel9 \string\input" doc}.
+is how to specify it on the command-line (without line breaks):
+\begin{verbatim}
+pdflatex "\pdfcompresslevel9
+          \input" doc.tex
+\end{verbatim}\noindent
 For \cmd{dvipdfm(x)}, the command-line flag \texttt{-z9} can be used to
 maximize compression. This is also the default.
+PDF itself supports redundancy elimination in many different
+places (see in Subsection~\ref{existing}) in addition to
+setting the ZIP compression level.
 
-Please note that PDF supports redundancy elimination in many different
-levels (see in Subsection~\ref{existing}). Setting the ZIP compression level is
-only one of those.
-
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 Multivalent recompresses all ZIP streams with maximum effort.
 
 \paragraph{Generate object streams and cross-reference streams}
@@ -785,20 +809,23 @@ Multivalent recompresses all ZIP streams with maximum effort.
 pdf\TeX{} can generate object streams and cross-reference streams to save
 about 10\% of the PDF file size, or even more if the file contains lots of
 hyperlinks. (The actual saving depends on the file
-structure.) Example command-line for enabling it:
-\texttt{pdflatex "\string\pdfminorversion5 \string\pdfobjcompresslevel3
-\string\input" doc}.
+structure.) Example command-line for enabling it (without line breaks):
+\begin{verbatim}
+pdflatex "\pdfminorversion5
+          \pdfobjcompresslevel3
+          \input" doc.tex
+\end{verbatim}
 
 According to \cite{pdf-diet}, if ZIP compression is used to compress the object
 streams, in some rare cases it is possible to save space by starting a new
 block within the ZIP stream just at the right points.
 
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 Multivalent generates object streams and cross-reference streams by default.
 
 \paragraph{Encode Type\,1 fonts as CFF}
 
-CFF \cite{cff} (\texttt{/Subtype /Type1C}; also known as Type\,2) 
+CFF \cite{cff} (Type\,2 or \texttt{/Subtype /Type1C})
 is an alternative, compact, highly compressible binary font
 format that can represent Type\,1 font data without loss. By embedding
 vector fonts in CFFinstead of Type\,1, one can
@@ -808,7 +835,7 @@ pages or less (e.g.\ reducing the PDFfile size from 200\,kB to 50\,kB).
 \cmd{dvipdfm}, \cmd{ps2pdf} with \cmd{dvips}) don't support CFF embedding so
 far.
 
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 \cmd{pdfsizeopt.py} converts Type\,1 fonts in the PDF to CFF. 
 
 \paragraph{Create graphics with font subsetting in mind}
@@ -829,7 +856,7 @@ special support in \cmd{dvips}, \cmd{dvipdfm(x)} and pdf\TeX{} to avoid font
 and glyph duplication). The package \pkg{psfrag} doesn't suffer from this
 problem either if the EPS files don't contain any fonts embedded.
 
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 \cmd{pdfsizeopt.py} unifies font subsets.
 
 \paragraph{Disable font subsetting before concatenation}
@@ -847,18 +874,19 @@ generating the small PDF files. In this case, Ghostscript (run by
 \cmd{ps2pdf}) will notice that the document contains the exact same font
 many times, and it will subset only one copy of the font.
 
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 \cmd{pdfsizeopt.py} unifies font subsets.
 
 \paragraph{Embed each graphics file once}
 
-When \texttt{\string\includegraphics} is used multiple times on the same
-graphics file (such as the company logo on presentation slides), it depends
+When the same graphics file
+(such as the company logo on presentation slides)
+is included multiple times, it depends
 on the driver whether the graphics data is duplicated in the final PDF.
 pdf\TeX{} doesn't duplicate, \cmd{dvipdfm(x)} duplicates only \MP{}
 graphics, and \cmd{dvips} always duplicates.
 
-There is no need to pay attention to this method, because
+There is no need to pay attention to this tweak, because
 both \cmd{pdfsizeopt.py} and Multivalent eliminate duplicates of identical
 objects.
 
@@ -908,7 +936,7 @@ streams are used.
 In PDF any stream can be compressed with any compression filter (or a
 combination of filters). ZIP is the most effective general-purpose
 compression, which is recommended for compressing content streams, object
-streams, cross-reference streams and font data streams (such as CFF).
+streams, cross-reference streams and font data (such as CFF).
 For images, however, there are specialized filters (see later in this
 section).
 
@@ -925,13 +953,14 @@ optimizers using those algorithms.
 
 \paragraph{Recompress pixel-based images}
 
-Since PDF supports more than 6 compression methods (and any combination of
-them) and more than 6 predictors, there are lots of possibilities to make
+\vrule width0pt \hskip0pt minus1ex  % avoid overfull \hbox
+PDF supports more than 6 compression methods (and any combination of
+them) and more than 6 predictors, so there are lots of possibilities to make
 images smaller. Here we focus on lossless compression (thus excluding JPEG
 and JPEG2000 used for compressing photos). An image is rectangular array of
 pixels. Each pixel is encoded as a vector of one or more components in the
-color space of the image. Typical color spaces are grayscale
-(\texttt{/DeviceGray}), RGB (\texttt{/DeviceRGB}), CMYK
+color space of the image. Typical color spaces are RGB
+(\texttt{/DeviceRGB}), grayscale (\texttt{/Device\DD Gray}), CMYK
 (\texttt{/DeviceCMYK}), color spaces where colors are device-independent,
 and the palette (indexed) versions of those. Each color component of each
 pixel is encoded as a nonnegative integer with a fixed number of bits
@@ -944,8 +973,8 @@ best we can. Partial approaches such as optimizing the palette only are
 usually suboptimal, because they may be incapable of converting an indexed
 image to grayscale to save the storage space needed by the palette.
 
-To compress the image, we have to decide which color space,
-bits-per-component, compression method(s) and predictor to use. We have to
+To pick the best encoding for the image, we have to decide which color space,
+bits-per-compo\-nent, compression method(s) and predictor to use. We have to
 choose a color space which can represent all the colors in the image. We may
 convert a grayscale image to an RGB image (and back if all pixels are
 grayscale). We may also convert a grayscale image to a CMYK image (and maybe
@@ -964,7 +993,7 @@ rectangles, where each rectangle contains a single color, then it is worth
 encoding a lower resolution image, and increase the scale factor in the
 image transformation matrix to draw the larger image.
 
-A high-effort ZIP is the best compression method supported by PDF, except
+High-effort ZIP is the best compression method supported by PDF, except
 for bilevel (two-color) images, where JBIG2 can yield a smaller result for
 some inputs. JBIG2 is most effective on images with lots of 2D repetitions,
 e.g.\ images containing lots of text (because the letters are repeating).
@@ -991,9 +1020,9 @@ filter(s) to use) also contributes to the image size.
 
 Most PDF optimizers use the \pkg{zlib} code for ZIP compression in images.
 The output of some other image compressors (most notably PNGOUT
-\cite{pngout}, see OptiPNG \cite{optipng}, see also \cite{optipng-article}
-for a list of 11
-other PNG optimization tools) and others at \cite{png-recompressors})
+\cite{pngout}, see also OptiPNG \cite{optipng} and \cite{optipng-article}
+for a list of 11 other PNG optimization tools, and more tools in
+\cite{png-recompressors})
 is smaller than what \pkg{zlib} produces with its highest effort, but those
 other compressors usually run a 100 times or even slower than \pkg{zlib}.
 
@@ -1011,7 +1040,7 @@ These kind of optimizations are supported by Adobe Acrobat Pro and PDF Enhancer,
 but they are out of scope of our goals to decrease the file size while not
 changing its rendered appearance.
 
-JPEG images could benefit from a lossless transformation, such as removing
+JPEG files could benefit from a lossless transformation, such as removing
 EXIF tags and other metadata. Compressing JPEG data further with ZIP
 wouldn't save space. The program packJPG \cite{packJPG} applies custom lossless
 compression to JPEG files, saving about 20\%. Unfortunately, PDF doesn't
@@ -1056,7 +1085,7 @@ probably become duplicate objects, which can be optimized away. The method
 the document contains lots of duplicate content such as
 \texttt{\string\includegraphics} loading same graphics many times.
 
-\paragraph{Remove image duplicates, based on pixel value}
+\paragraph{Remove image duplicates, based on visible pixel value}
 
 Different color space, bits-per-pixel and compression settings can cause
 many different representations of the same image (rectangular pixel array)
@@ -1071,10 +1100,10 @@ references.
 Some PDF files contain objects which are not reachable from the
 \texttt{/Root} or trailer objects. These may be present because of
 incremental updates, concatenations or conversion, or because the file is a
-linearized PDF. It is save to save space by removing those unused objects. A
+linearized PDF. It is safe to save space by removing those unused objects. A
 linearized PDF provides better web experience to the user, because it makes
 the first page of the PDF appear earlier. Since a linearized PDF can be
-automatically generated from a non-linearized one any time, it is no point
+automatically generated from a non-linearized one any time, there is no point
 keeping a linearized PDF when optimizing for size.
 
 \paragraph{Extract large parts of objects}
@@ -1148,7 +1177,7 @@ emitted by pdf\TeX{}.
 \paragraph{Omit explicitly specified default values}
 
 The PDF specification provides default values for many dictionary keys. Some
-PDF generators, however, emit key with the default value. It is safe to
+PDF generators, however, emit keys with the default value. It is safe to
 remove these to save space.
 
 \paragraph{Recompress streams with ZIP}
@@ -1159,8 +1188,9 @@ than the other general purpose compression algorithms PDF supports (RLE and
 LZW).
 
 For compatibility with the PostScript language, PDF supports the
-\texttt{/ASCIIHexDecode} and \texttt{/ASCII85Decode} filters on streams.
-Using these filters just makes the stream in the file longer (by a factor of
+\texttt{/ASCIIHexDecode} and \texttt{/ASCII\DD 85\DD Decode} filters on
+streams.
+Using them just makes the stream in the file longer (by a factor of
 about 2/1 and 5/4, respectively). These filters make it possible to embed
 binary stream data in a pure ASCII PDF file. However, there is no
 significant use case for an ASCII-only PDF nowadays, so it is recommended to
@@ -1168,7 +1198,7 @@ get rid of these filters to decrease to file size.
 
 \paragraph{Remove page thumbnails}
 
-If the PDF file has page thumbnails, the PDf viewer can show them to the
+If the PDF file has page thumbnails, the PDF viewer can show them to the
 user to make navigation easier and faster. Since page thumbnails are redundant
 information which can be regenerated any time, it is safe to save space by
 removing them.
@@ -1182,7 +1212,7 @@ representation of strings should be used instead of the hexadecimal, because
 it's never longer and it's shorter most of the time if used properly. Only
 the characters \texttt{( \textbackslash\space)} have to be escaped with a
 backslash within strings, but parentheses which nest can be left unescaped.
-So, for example the string \texttt{a(()))(()\textbackslash b} can be represented
+So, e.g.\ the string \texttt{a(()))(()\textbackslash b} can be represented
 as
 \texttt{(a(())\textbackslash)(\textbackslash(\textbackslash\textbackslash b)}.
 
@@ -1197,13 +1227,13 @@ size by a few bytes.
 
 \paragraph{Remove old, unused object versions}
 
-PDF supports storing old object versions in the file. This makes incremental
+PDF can store old object versions in the file. This makes incremental
 updates (e.g.\ the \emph{File / Save} action in Adobe Acrobat) faster.
 Removing the old versions save space.
 
 \paragraph{Remove content outside the page}
 
-The \texttt{/MediaBox}, \texttt{/CropBox} and other bounding box values of
+\texttt{/MediaBox}, \texttt{/CropBox} and other bounding box values of
 the page define a rectangle where drawing takes place. All content
 (vector graphics or parts of it, images or parts of them, or text) than
 falls outside this rectangle can be removed to save space. Implementing this
@@ -1215,7 +1245,7 @@ in the remaining part.
 
 A named destination maps a name to a document location or view. It can be a
 target of a hyperlink within the document, or from outside. Some PDF
-generator software (such as FrameMaker) generate lots of named destinations
+generator software (such as Frame\-Maker) generate lots of named destinations
 never referenced. But care has to be taken when removing those, because then
 hyperlinks from outside the document wouldn't work.
 
@@ -1234,7 +1264,7 @@ structure saves space.
 \begin{table*}
 \captiontop{PDF size reduction by object type, when running
 \cmd{pdfsizeopy.py} + Multivalent}\label{tab:psom-by-type}
-\advance\tabcolsep-2pt  % Prevent overfull \hbox.
+\advance\tabcolsep-2.2pt  % Prevent overfull \hbox.
 \par\small\noindent\hfil
 \begin{tabular*}{\hsize}{@{\extracolsep{\fill}}lrrrrrr@{}}
 \toprule
@@ -1272,7 +1302,7 @@ created by \cmd{sam2p}
 In order to compare the optimization effectiveness of the tools presented in
 this section, we have compiled a set of test PDF files, and optimized them
 with each tool. The \emph{totals} column of Table~\ref{tab:psom-by-type} shows
-the size of each file (the $+$ and $-$ percentages can be ignored now), and
+the size of each file (the $+$ and $-$ percentages can be ignored for now), and
 other columns show the bytes used by different object types. The test files
 can be downloaded from \cite{example-pdfs}. Some more
 details about the test files:
@@ -1280,15 +1310,15 @@ details about the test files:
 \begin{description}
 
 \item[cff] 62-page technical documentation about the CFF file format. Font
-data is a mixture of Type\,1, CFF and TrueType. Compiled with FrameMaker
-7.0, PDF generated by Acrobat Distiller 6.0.1. 
+data is a mixture of Type\,1, CFF and TrueType. Compiled with Frame\-Maker
+7.0, PDF generated by Distiller 6.0.1. 
 
 \item[beamer1] 75 slide-steps long presentation created with
-\pkg{beamer.cls} \cite{beamer}; containing hyperlinks, math formulas, some
+\pkg{beamer.cls} \cite{beamer}. Contains hyperlinks, math formulas, some
 vector graphics and a few pixel-based images. Compiled with pdf\TeX{}.
 Font data is in Type\,1 format.
 
-\item[eu2006] 126-page conference proceedings (of Euro\TeX{} 2006)
+\item[eu2006] 126-page conference proceedings (of Euro\-\TeX{} 2006)
 containing some large images. Individual articles were compiled with
 pdf\TeX{}, and then PDF files were concatenated. Because of the
 concatenation, many font subsets were embedded multiple times, so a large
@@ -1296,11 +1326,13 @@ part of the file is font data. Font data is mostly CFF, but it contains some
 Type\,1 and TrueType fonts as well. Most fonts are compressed with the
 less effective LZW instead of ZIP.
 
-\item[inkscape] 341-page software manual with lots of screenshots and small
-images created with codeMantra Universal PDF \cite{codemantra}. Font data is a mixture of
+\item[inkscape] 341-page software manual
+created with codeMantra Universal PDF \cite{codemantra}.
+Contains lots of screenshots and small images.
+Font data is a mixture of
 Type\,1, CFF and TrueType.
 
-\item[lme2006] 240-page conference proceedings in Hungarian, containing some
+\item[lme2006] 240-page conference proceedings in Hungarian. Contains some
 black-and-white screenshot images. Individual articles were compiled with
 \LaTeX{} and \cmd{dvips} (without font subsetting), and the PostScript files
 were concatenated and converted to PDF in a single run of a modified
@@ -1309,25 +1341,26 @@ were concatenated and converted to PDF in a single run of a modified
 CFF.
 
 \item[pdfref] 1310-page reference manual about PDF\,1.7 containing quite a
-lot of duplicate xref tables and XML metadata about document parts.
+lot of duplicate \texttt{xref} tables and XML metadata of document parts.
 Optimization gets rid of both the duplicate xref tables and the XML
 metadata. Font data is in CFF. Compiled with FrameMaker 7.2, PDF generated
 by Acrobat Distiller 7.0.5.
 
 \item[pgf2] 560-page software manual about TikZ, with lots of vector
 graphics as examples, with an outline, without hyperlinks. Compiled with
-pdf\TeX{}. Font data is in Type\,1 format.
+pdf\-\TeX{}. Font data is in Type\,1 format.
 
 \item[texbook] 494-page user manual about \TeX{} (The \TeX{}book), compiled
 with pdf\TeX{}. No pixel images, and hardly any vector graphics.
 
 \item[tuzv] Mini novel in Hungarian, typeset on 20 A4 pages in a 2-column
-layout, compiled with \cmd{dvipdfm}. It contains no images or graphics. Font data
+layout. Generated by \cmd{dvi\-pdfm}. It contains no images or graphics. Font data
 is in Type\,1 format.
 
 \end{description}
 
-\noindent None of the test PDF files used cross-reference streams or object streams.
+\noindent None of the test PDF files used object streams or
+cross-reference streams.
 
 
 \begin{table}[b]
@@ -1383,7 +1416,8 @@ for representing the image.)
 hyperlinks and the document outline as well. However, it recompresses JPEG
 images (back to a different JPEG, sometimes larger than the original), thus
 losing quality. The only way to disable this is specifying the flags
-\texttt{-dEncodeColorImages=false -dEncodeGrayImages=false}, but this would
+\texttt{-dEncodeColor\DD Images=false} \texttt{-dEncodeGrayImages=false}, but
+it would
 blow up the file size even more, because it will keep photos uncompressed.
 
 \cmd{ps2pdf} doesn't remove duplicate content (although it
@@ -1436,8 +1470,8 @@ the table in \cite{pdfenhancer-features}), and it is highly configurable.
 With its default settings, it optimizes the PDF without removing
 information. It is a feature-extended version of the PDF Shrink software from
 the same company. The use of the GUI version of PDF Enhancer is analyzed in
-\cite{pdftweak}. A single license for the \emph{server edition}, which
-supports batch processing, costs about \$1000, and the \emph{advanced server
+\cite{pdftweak}. A single license for the \emph{server edition}, needed for
+batch processing, costs about \$1000, and the \emph{advanced server
 edition} (with JBIG2 support) costs about twice as much. The
 \emph{standard edition} with the GUI costs only \$200.
 
@@ -1484,7 +1518,7 @@ resampling). It turned out that we had to disable \emph{Discard User Data /
 Discard all comments, forms and multimedia}, otherwise the optimizer removed
 hyperlinks from the document \emph{beamer1}.
 
-It is worth noting that Adobe Acrobat Pro failed with an image-related error
+It is worth noting that Adobe Acrobat Pro 9 failed with an image-related error
 when optimizing document \emph{pgf2.} Oddly enough, that PDF file doesn't
 contain any images.
 
@@ -1540,8 +1574,12 @@ January version is available for download \cite{multivalent-download}
 as single \texttt{.jar} file, and
 it needs Java 1.4 or later. It contains a PDF optimizer
 \cite{multivalent-compress-tool,pdf-diet},
-which can be invoked like this: 
-\texttt{java -cp Multivalent20060102.jar tool.pdf.Compress doc.pdf}. This
+which can be invoked like this at the command-line (without line breaks):
+\begin{verbatim}
+java -cp Multivalent20060102.jar
+     tool.pdf.Compress doc.pdf
+\end{verbatim}\noindent
+This
 creates the optimized PDF in file \texttt{doc-o.pdf}. If we don't indicate
 otherwise, by the term Multivalent we mean its PDF optimizer. Although an
 the 2006 January version of Multivalent with full functionality is available
@@ -1582,7 +1620,7 @@ optimizer than Multivalent.
 \cmd{pdfsizeopt.py} \cite{pdfsizeopt} was written as part of this work. Its purpose is to
 implement the most common optimizations typical \TeX{} documents benefit
 from, but only those which are not already done by Multivalent. As described
-in Section~\ref{workflow}, to get the smallest output PDF, the optimizations
+in Section~\ref{workflow}, to get the smallest PDF, the optimizations
 done by \cmd{pdfsizeopt.py} should be applied first, and the result should
 be processed by Multivalent. The 20060102 version of Multivalent
 optimizes images, and it replaces the image even if the optimized version is
@@ -1598,23 +1636,23 @@ in Python. It needs Python\,2.4 (or 2.5 or 2.6). It uses only the standard
 Python modules, but it invokes several external programs to help with the
 optimizations. These are: Ghostscript (8.61 or newer is recommended),
 \cmd{sam2p} \cite{sam2p} (0.46 is needed), pngtopnm,
-the Multivalent compress tool \texttt{tool.pdf.Compress}
+\texttt{tool.pdf.Compress} of Multivalent
 \cite{multivalent-compress-tool} (needs Sun's JDK or OpenJDK), 
 optionally \cmd{jbig2} \cite{jbig2enc}, optionally PNGOUT \cite{pngout}.
-Installation instructions are on \cite{pdfsizeopt-install}. Most of the
-dependencies are free software, except for the Multivalent tools, which
+Installation instructions are on \cite{pdfsizeopt-install}. Most of these
+are free software, except for the Multivalent tools, which
 are not free software or open source, but they can be downloaded and used on
 the command line free of charge; for other uses they have to be licensed
 commercially. PNGOUT is not free software or open source either, but the
 binaries available free of charge can be used without restriction.
 
-\cmd{pdfsizeopt.py} implements the following optimizations:
+\cmd{pdfsizeopt.py} implements these PDF size optimization methods:
 
 \begin{description}
 
 \item[Convert Type\,1 fonts to CFF]
-The actual conversion is done by generating a PostScript document with all
-the fonts, converting it to PDF with Ghostscript (just like \cmd{ps2pdf}),
+It is done by generating a PostScript document with all
+fonts, converting it to PDF with Ghostscript (just like \cmd{ps2pdf}),
 and extracting the CFF fonts from the PDF. Another option would be to use
 \cmd{dvipdfmx}, which can read Type\,1 fonts, and emit them as CFF fonts.
 Please note that Ghostscript inlines subroutines (\texttt{/Subrs}) in the
@@ -1622,8 +1660,9 @@ Type\,1 font, so the CFF becomes larger -- but we are compressing the font
 with ZIP anyway, which eliminates most of the repetitions.
 
 \item[Unify subsets of the same CFF font]
-Ghostscript is used for parsing CFF to the font dictionary data structure,
-and also for serializing the data structure as CFF. Again, the latter is
+~\\ % avoid overfull \hbox
+Ghost\-script is used for parsing CFF to a font dictionary,
+and also for serializing the modified dictionary as CFF. Again, the latter is
 done by generating a PostScript file with all the fonts, then converting it
 to a PDF using Ghostscript.
 Limitations: itt only works for CFF (and former Type\,1) fonts;
@@ -1632,15 +1671,15 @@ it won't unify some fonts if one of them has slightly different
 metrics.
 
 \item[Convert inline images to objects]
-This step is needed, because most tools (including \cmd{pdfsizeopy.py})
-don't optimize inline images.
+We need this because most tools (including \cmd{pdfsizeopy.py})
+do not optimize inline images.
 Limitations: it only detects inline images generated by \cmd{sam2p}; it only
 detects inline images within a form XObject (not in a content stream).
 
 \item[Optimize individual images]
-First the image data is decompressed (with
+First the data gets decompressed (with
 Ghostscript if the image data is compressed with anything other than simple
-ZIP), then it is recompressed with maximum-effort ZIP, then it is converted
+ZIP), then it is recompressed with high-effort ZIP, then it is converted
 to PNG, then several external PNG compressors are run to get the optimized
 PNG, and finally the smallest representation (among on the optimized PNG
 files, intermediate images and the original image) is picked, i.e.\ the one
@@ -1655,7 +1694,8 @@ an alpha channel; only some types of transparency; images lossy compression
 (JPEG or JPEG2000) are not optimized.
 
 \item[Remove object duplicates]
-The implementation uses equivalence classes, so duplicate subtrees referring
+\vrule width0pt\hskip0pt plus2ex  % avoid overfull \hbox
+Equivalence classes are used, so duplicate subtrees referring
 to objects between themselves or each other are also removed. (Multivalent
 also has this feature.)
 
@@ -1671,9 +1711,10 @@ several early checks in the optimization algorithm to detect the duplicate
 before wasting time on running the many different optimizers.
 
 \item[Remove unused objects]
-All objects not reachable from the trailer object are removed.
+All objects unreachable from the trailer object are removed.
 
 \item[Serialize values more effectively]
+\vrule width0pt\hskip0pt plus1ex  % avoid overfull \hbox
 Extra spaces are removed;
 hex strings are converted to binary;
 strings are serialized without extra backslashes;
@@ -1695,7 +1736,7 @@ suboptimally). On the other hand, it is almost always worth running
 alone. The only exception we could find was the document \emph{pdfref},
 where the combined approach yielded a 0.02\% larger file size.
 
-\cmd{pdfsizeopt.py} can count the total number of bytes occupied by the
+\cmd{pdfsizeopt.py} can count the total byte size of
 various object types in a PDF. Table~\ref{tab:psom-by-type} shows the
 results on our test PDF files. The percentages in the table cells are
 savings by running \cmd{pdfsizeopt.py} $+$ Multivalent. Although it is not
@@ -1743,14 +1784,15 @@ following PDF generation and optimization workflow:
 \item Upgrade Ghostscript to at least 8.61, and upgrade to \TeX\,Live 2008.
 
 \item For \TeX{} documents,
-create the PDF using pdf\TeX{} or \cmd{dvipdfmx}, using the proper
+create the PDF using pdf\-\TeX{} or \cmd{dvipdfmx}, with the
 settings discussed in Subsection~\ref{tex-to-pdf}. Use \cmd{dvips} $+$
-\cmd{ps2pdf} only if absolutely necessary, because of the large file size.
+\cmd{ps2pdf} only if absolutely necessary, because of the large PDF files it
+produces.
 
 \item Use \cmd{pdftk} or Multivalent's PDF merge tool (as shown in
 \cite{pdf-concatenate}) to concatenate PDF files if necessary. Pay attention
 to the hyperlinks and the document outline after concatenation. Don't
-concatenate with Ghostscript, because that blows up the file size.
+concatenate with Ghostscript, because that it would blow up the file size.
 
 \item If you have access to PDF Enhancer, optimize the PDF with it. Otherwise,
 if you have access to Adobe Acrobat Pro, optimize the PDF with it.
@@ -1814,11 +1856,11 @@ Since the DjVu file format uses very different technologies than PDF, one
 can archive both the PDF and the DjVu version of the same document, in case
 a decent renderer won't be available for one of the formats decades later.
 
-The PDF Database \cite{pdfdb} contains about 576 PDF documents by various
-producers, with different lengths and versions. These PDF files can be used
+The PDF Database \cite{pdfdb} contains more than 500 PDF documents by various
+producers, with different sizes and versions. These PDF files can be used
 can be used for testing PDF parsers and optimizers.
 
-Multivalent supports a custom file format named \emph{compact PDF,}
+Multivalent introduced the custom file format \emph{compact PDF,}
 \cite{multivalent-compact,pdf-diet}, which is about 30\% to 60\% smaller than a
 regular PDF. The disadvantage is that only Multivalent can read or write
 this format so far (but it supports fast and lossless conversion to regular
@@ -1843,7 +1885,7 @@ pdf\TeX{} generates a smaller and more optimizable PDF than \cmd{dvips} $+$
 \cmd{ps2pdf}).
 
 The workflow proposed in this article has too many dependencies. Python
-(needed by \cmd{pdfsizeopt.py}), Java (needed by Multivalent) and
+(for \cmd{pdfsizeopt.py}) and Java (for Multivalent) runtimes, and
 Ghostscript (needed by \cmd{pdfsizeopt.py} for Type\,1 and CFF font parsing,
 CFF generation and arbitrary stream filtering) are the most heavy ones. It
 is possible to get rid of these by reimplementing \cmd{pdfsizeopt.py} from
@@ -1864,8 +1906,9 @@ to small, statically linked, stand-alone executables.)
 Some optimizations of \cmd{pdfsizeopt.py} could be generalized to cover more
 cases. Examples are: add CMYK image optimization; make CFF matching more
 permissive (before unification); recognize more inline images (not only
-those created by \cmd{sam2p}, and not only in form XObjects). Also
-\cmd{pdfsizeopt.py} would benefit from compiling a test set of PDF, and
+those created by \cmd{sam2p}, and not only in form XObjects).
+\cmd{pdfsizeopt.py} would also benefit from compiling a test set of PDF
+files (possibly based on the PDF Database \cite{pdfdb}), and
 adding a framework which automatically checks that \cmd{pdfsizeopt.py}
 detected the opportunity to optimize, and did the optimization properly in
 each case.
