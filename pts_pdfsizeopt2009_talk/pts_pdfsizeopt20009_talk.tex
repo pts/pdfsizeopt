@@ -13,7 +13,7 @@
 \usepackage{t1enc}
 \usepackage{graphicx}
 \usepackage{beamerthemesplit}
-\usepackage{color}
+\usepackage{ulem}
 
 
 \definecolor{GoogleBlue}{RGB}{0,102,204}
@@ -40,7 +40,7 @@
 
 \title{Optimizing PDF output size of \TeX{} documents}
 \subtitle{\ldots{} and PDF files created by other means as well}
-\author[P\'eter Szab\'o]{P\'eter Szab\'o\\\textbf{\Google}}
+\author[P\'eter Szab\'o]{P\'eter Szab\'o\texorpdfstring{\\}{ -- }\textbf{\Google}}
 \date{2009-08-31\par\medskip EuroTeX\,2009\\ The Hague, The Netherlands}
 
 %** Create a colorful full square with the specified color.
@@ -66,10 +66,129 @@
 \frame{\titlepage}
 
 % !!
-\section[Outline]{}
-\frame{\tableofcontents}
+%\section[Outline]{}
+\section{Why and how to optimize?}
 
-\section{Optimization effectiveness}
+\frame{\frametitle{Outline}\tableofcontents}
+
+\subsection{Introduction}
+
+\def\coloremph#1{{\usebeamercolor[fg]{description item}#1}}
+
+\frame{
+\frametitle{Why create small PDF files?}
+\begin{itemize}
+\advance\itemsep1em
+\item speed up \coloremph{downloads} (and also reduce download consts)
+\item reduce \coloremph{storage} costs (for publishers, book shops,
+      libraries and print shops;
+      the same PDF is stored at many places)
+\item use the capacity of \coloremph{e-book readers} more effectively
+\end{itemize}
+}
+
+\frame{
+\frametitle{Our PDF optimization approach}
+Steps:
+\begin{enumerate}
+\item \coloremph{generate} the PDF as usual, adjusting only a few, crucial settings
+\item \coloremph{repeat} if necessary
+\item once the final PDF is ready, \coloremph{optimize} it automatically with one
+      or more optimizers
+\end{enumerate}
+Do not:
+\begin{itemize}
+\item try to improve or fine-tune every PDF creator software
+\item lose printable or interactive information while optimizing
+\item use a more compact output file format (such as Multiavalent compact PDF)
+\item render vector graphics
+\end{itemize}
+}
+
+\frame{
+\frametitle{Proposed workflow}
+\begin{enumerate}
+\advance\itemsep1em
+\item follow the best practices for choosing and configuring the
+      \coloremph{\TeX{} driver} (pdf\TeX{}, dvipdfm or
+      \sout{dvips} + ps2pdf)
+\item if affordable, run commercial optimizer \coloremph{PDF Enhancer} or
+      \coloremph{Adobe Acrobat} to optimize content streams
+\item run our new optimizer called \coloremph{pdfsizeopt.py}
+      mainly to optimize images and Type\,1 fonts\par
+      \url{http://code.google.com/p/pdfsizeopt/}
+\item use \coloremph{Multivalent} \texttt{tool.pdf.Compress} to do the
+      rest of the optimization (done automatically by pdfsizeopt.py)
+\end{enumerate}
+}
+
+\subsection{Optimization techniques}
+
+\frame{
+\frametitle{Local techniques are the most effective}
+\begin{itemize}
+\advance\itemsep1em
+\item remove extra whitespace and comments
+\item serialize strings more effectively
+\item compress streams with high-effort ZIP (no RLE, LZW and fax anymore)
+\item use cross-reference streams (with the \emph{y} predictor)
+\item use object streams
+\end{itemize}
+}
+
+\frame{
+\frametitle{Techniques if data types are known}
+\begin{itemize}
+\advance\itemsep1em
+\item get rid of explicitly specified default values
+\item remove keys ignored by the PDF specification
+\item remove page thumbnails
+\item flatten the page structure
+\end{itemize}
+}
+
+\frame{
+\frametitle{Get rid of duplicate and unused data}
+\begin{itemize}
+\advance\itemsep1em
+\item get rid of unused objects (pages, images, anchors etc.)
+\item compact the cross-reference tables
+\item find duplicate or equivalent objects, and keep only one copy
+\item convert some inline images to objects to help deduplication
+\item split some large arrays and dictionaries to help deduplication
+\item make direct 
+\end{itemize}
+}
+
+\frame{
+\frametitle{Image optimization techniques}
+!!
+!! get rid of image duplicates based on pixel colors
+}
+
+\frame{
+\frametitle{Font optimization techniques}
+!!
+}
+
+\frame{
+\frametitle{Advanced content stream techniques}
+!!
+}
+
+\subsection{For \TeX{} documents}
+
+\frame{
+\frametitle{Drivers: dvipdf(x) $<$ pdf\TeX $ll$ dvips }
+!!
+}
+
+\frame{
+\frametitle{Manual setup for small PDF from \TeX{}}
+!!
+}
+
+\section{Effectiveness measurements}
 
 \subsection{Input PDF files}
 
@@ -161,16 +280,42 @@ etc., including content streams and form XObjects
 \includegraphics[height=\vsize,page=8]{pdfsizeopt_charts.pdf}
 }}
 
-\section{Discussion}
-%\subsection{Overview of the Beamer Class}
-\frame
-{
-  \frametitle{Features of the Beamer Class}
+\section{Conclusion}
 
-  \begin{itemize}
-  \item<1-> Normal LaTeX class.
-  \item<2-> Easy overlays.
-  \item<3-> No external programs needed.      
-  \end{itemize}
+\frame{
+\frametitle{Related work}
+!!
 }
+
+\frame{
+\frametitle{Future work}
+!!
+}
+
+\frame{
+\frametitle{Conclusion}
+!!
+!! most of the size reduction comes from the simplest techniques
+}
+
+%\subsection{Overview of the Beamer Class}
+%\frame
+%{
+%  \frametitle{Features of the Beamer Class}
+%
+%  \begin{itemize}
+%  \item<1-> Normal LaTeX class.
+%  \item<2-> Easy overlays.
+%  \item<3-> No external programs needed.      
+%  \end{itemize}
+%}
+
+\frame{
+\thispagestyle{empty}
+%\frametitle{hello}
+\noindent\hfill{\fontsize{150}{150}\selectfont?}\hfill\null\par
+}
+
+\frame{\thispagestyle{empty}}
+
 \end{document}
