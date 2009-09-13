@@ -472,7 +472,6 @@ additional compression may be possible with:
     pdfenhancer version 3.2b2, Build Date Sep 15 2007, SPDF 1122r
   than the server edition:
     pdfenhancer version 3.2.5, Build Date Jun  4 2008, SPDF 1122r
-* TODO: measure PDF and DjVu file sizes
 * TODO doc: how to make sure /Times is embedded
 * TODO group the objects in an object stream by type
 * TODO optimize: why is Multivalent alone better than
@@ -487,10 +486,9 @@ additional compression may be possible with:
   invalid images for pts2e.pdf as input.
 * TODO (album_virag.pdf): [/FlateDecode /CCITTFaxDecode]
 * TODO: is /FlateDecode/DCTDecode bettern than /DCTDecode?
+* TODO: apt-get install jpegoptim can save 1%..4% lossless, removing EXIF
+  tags and optimizing Huffman tables
 * TODO: don't compress too small images
-* !! BUGFIX: Adobe Reader 8 doesn't show \MP and \MF in optimized PDF -- it
-  works in the original, unoptimized PDF;
-  type1fix.pl doesn't seem to fix the problem
-  scp logo10.*.{asc,fla} lila:prg/pdfsizeopt/trunk/
-  there is also a problem with lmr10.pfb, but not cmr10.pfb
 * dvipdfmx rounds glyph /Widths to integers, pdftex doesn't
+* !! BUGFIX: ../pdfsizeopt.py pts_pdfsizeopt20009_talk{,.psom}.pdf
+  duplicate font in GhostScript's output

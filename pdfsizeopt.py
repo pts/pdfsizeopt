@@ -1952,7 +1952,7 @@ class PdfObj(object):
   @classmethod
   def ParseCffDict(cls, data, start=0, end=None):
     """Parse CFF DICT data to a dict mapping operator to operand list.
-    
+
     The format of the returned dict is the following. Keys are integers
     signifying operators (range 0..21 and 12000..12256). Values are arrays
     signifying operand lists. Each operand is an integer or a string of a
@@ -2022,7 +2022,7 @@ class PdfObj(object):
 
   @classmethod
   def SerializeCffDict(cls, cff_dict):
-    """Parse CFF DICT to a string. Inverse of ParseCffDict."""
+    """Serialize a CFF DICT to a string. Inverse of ParseCffDict."""
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
     # TODO(pts): Test this.
@@ -2819,6 +2819,7 @@ class PdfData(object):
 
     try:
       obj_starts = self.ParseUsingXref(data)
+      #assert 0, obj_starts
     except PdfXrefError, exc:
       print >>sys.stderr, (
           'warning: problem with xref table, finding objs anyway: %s' % exc)
@@ -2860,7 +2861,7 @@ class PdfData(object):
           '<' not in this_obj_data and
           '(' not in this_obj_data):
         self.objs[obj_num] = PdfObj(obj_data[obj_num],
-                                    file_ofs=obj_starts[obj_num], )
+                                    file_ofs=obj_starts[obj_num])
 
     # Second pass once we have all length numbers.
     for obj_num in obj_data:
@@ -2931,8 +2932,11 @@ class PdfData(object):
             if obj_ofs in obj_starts_rev:
               raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
                                  (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
-            obj_starts_rev[obj_ofs] = obj_num
-            obj_starts[obj_num] = obj_ofs
+            if obj_ofs != 0:
+              # for testing: obj 10 in pdfsizeopt_charts.pdf has offset 0:
+              # "0000000000 00000 n \n"
+              obj_starts_rev[obj_ofs] = obj_num
+              obj_starts[obj_num] = obj_ofs
           obj_num += 1
           obj_count -= 1
           xref_ofs += 20
@@ -3396,7 +3400,8 @@ class PdfData(object):
 
 '''
 
-  def GetFonts(self, font_type=None, do_obj_num_from_font_name=False):
+  def GetFonts(self, font_type=None,
+               do_obj_num_from_font_name=False, where='loaded'):
     """Return dictionary containing Type1 /FontFile* objs.
 
     Args:
@@ -3405,9 +3410,10 @@ class PdfData(object):
         the /FontName, e.g. /FontName/Obj42 --> 42.
     Returns:
       A dictionary mapping the obj number of the /Type/FontDescriptor obj to
-      the PdfObj of the /FontFile* obj (with /Subtype/Type1C etc.). Please note
-      that this dictionary is not a subdictionary of self.objs, because of the
-      different key--value mapping.
+      the PdfObj of the /FontFile* obj (with /Subtype/Type1C etc.) whose
+      stream contains the font program. Please note that this dictionary is
+      not a subdictionary of self.objs, because of the different key--value
+      mapping.
     """
     assert font_type in ('Type1', 'Type1C', None)
     # Also: TrueType fonts have /FontFile2.
@@ -3453,19 +3459,21 @@ class PdfData(object):
             assert match, 'GS generated non-Obj FontName: %s' % font_name
             name_obj_num = int(match.group(1))
             if name_obj_num in objs:
-              print >>sys.stderr, 'error: duplicate font %s obj %d' % (
-                  font_name, name_obj_num)
+              print >>sys.stderr, (
+                  'error: duplicate font %s obj old=%d new=%d' %
+                  (font_name, name_obj_num, font_obj_num))  # TODO(pts): old=37 instead of 11
               duplicate_count += 1
             objs[name_obj_num] = font_obj
           else:
             objs[obj_num] = font_obj
           font_count += 1
     if font_type is None:
-      print >>sys.stderr, 'info: found %s fonts' % font_count
+      print >>sys.stderr, 'info: found %s fonts %s' % (font_count, where)
     else:
-      print >>sys.stderr, 'info: found %s %s fonts' % (font_count, font_type)
+      print >>sys.stderr, 'info: found %s %s fonts %s' % (
+          font_count, font_type, where)
     assert not duplicate_count, (
-        'found %d duplicate font objs in GS output' % duplicate_count)
+        'found %d duplicate font objs %s' % (duplicate_count, where))
     return objs
 
   @classmethod
@@ -3511,11 +3519,12 @@ class PdfData(object):
       print >>sys.stderr, 'info: Type1CConverter has not created output: ' % (
           pdf_tmp_file_name)
       assert 0, 'Type1CConverter failed (no output)'
-    #assert 0  # !!!
-    os.remove(ps_tmp_file_name)
     pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
-    type1c_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
+    type1c_objs = pdf.GetFonts(
+        do_obj_num_from_font_name=True, where='in GS output')
+    # Remove only if pdf.GetFonts has not found any duplicate fonts.
+    os.remove(ps_tmp_file_name)
     assert sorted(type1c_objs) == sorted(objs), 'font obj number list mismatch'
     type1c_size = 0
     for obj_num in type1c_objs:
@@ -3984,9 +3993,10 @@ class PdfData(object):
       assert 'FontInfo' in parsed_font  # !! delete eventually
       assert 'CharStrings' in parsed_font
       assert 'Subrs' not in parsed_font  # !! add a test for Subrs, maybe not in toplevel dict; maybe not dumped (because of noexec? -- but other parts of private are dumped)
+      # for testing: pdfsizeopt_charts.pdf has this (list of hex strings:
+      # ['<abc42>', ...]).
       assert 'Subrs' not in parsed_font['Private']
       # Extra, not checked: 'UniqueID'
-      #print parsed_font['FontName']
       if 'FontBBox' in parsed_font:
         # This is part of the /FontDescriptor, we don't need it in the Type1C
         # font.
