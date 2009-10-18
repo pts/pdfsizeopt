@@ -30,7 +30,7 @@ sam2p and pngout. Future versions may relax the system requirements.
 
 This script doesn't optimize the cross reference table (using cross reference
 streams in PDF1.5) or the serialization of objects it doesn't modify. Use
-tool.pdf.Compress in Multilvaent.jar from http://multivalent.sf.net/ for that.
+tool.pdf.Compress in Multivaent.jar from http://multivalent.sf.net/ for that.
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
@@ -569,8 +569,13 @@ class PdfObj(object):
 
   def SetStreamAndCompress(self, data, may_keep_old=False,
                            predictor_width=None, pdf=None):
-    """Set self.stream, compress it and set Length, Filter and DecodeParms)."""
-    # TODO(pts): Implement TIFF predictor_width (previous line). Does it help?
+    """Set self.stream, compress it and set Length, Filter and DecodeParms).
+
+    This method tries all the following compression methods, and picks the
+    one which produces the smallest output: original, uncompressed, ZIP, ZIP
+    with the PNG y-predictor, ZIP with the TIFF predictor acting as an
+    y-predictor.
+    """
     if not isinstance(data, str):
       raise TypeError
 
@@ -1556,8 +1561,8 @@ class PdfObj(object):
     if (image_obj.Get('Width') != width or
         image_obj.Get('Height') != height):
       return None
-      image_obj.Set('Length', len(stream))
-      image_obj.stream = stream
+    image_obj.Set('Length', len(stream))
+    image_obj.stream = stream
     return width, height, image_obj
 
   @classmethod
@@ -1890,13 +1895,19 @@ class PdfObj(object):
 
   # !! def OptimizeSource()
 
-  def GetUncompressedStream(self, is_gs_ok=False):
+  def GetUncompressedStream(self):
+    """Return the uncompressed stream data in this obj.
+
+    Returns:
+      A string containing the stream data in this obj uncompressed.
+    """
     assert self.stream is not None
     filter = self.Get('Filter')
     if filter is None: return self.stream
     decodeparms = self.Get('DecodeParms') or ''
     if filter == '/FlateDecode' and '/Predictor' not in decodeparms:
       return PermissiveZlibDecompress(self.stream)
+    is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
     if not is_gs_ok:
       raise FilterNotImplementedError('filter not implemented: ' + filter)
     tmp_file_name = 'pso.filter.tmp.bin'
@@ -2106,12 +2117,12 @@ class PdfObj(object):
     cff_dict = self.ParseCffDict(data=data, start=i, end=j)
     return (data[:ord(data[2])], font_name, cff_dict, data[j:])
 
-  def FixFontNameInType1C(self, new_font_name='F', do_always_recompress=False):
+  def FixFontNameInType1C(self, new_font_name='F'):
     """Fix the FontName in a /Subtype/Type1C object."""
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
     assert self.Get('Subtype') == '/Type1C'
-    data = self.GetUncompressedStream(is_gs_ok=do_always_recompress)
+    data = self.GetUncompressedStream()
     do_recompress = self.Get('Filter') != '/FlateDecode'
     assert ord(data[2]) >= 4
     i0 = i = ord(data[2])  # skip header
@@ -4095,7 +4106,7 @@ class PdfData(object):
     if not font_groups:
       # Could not unify any fonts.
       for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C(do_always_recompress=True)
+        type1c_objs[obj_num].FixFontNameInType1C()
       return self
 
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
@@ -4105,7 +4116,7 @@ class PdfData(object):
       # TODO(pts): Don't recompress if already recompressed (e.g. when
       # converted from Type1).
       for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C(do_always_recompress=True)
+        type1c_objs[obj_num].FixFontNameInType1C()
       return self
 
     def AppendSerialized(value, output):
@@ -4189,11 +4200,11 @@ class PdfData(object):
       # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
       assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
           'could not convert font %s to Type1C' % obj_num)
-      loaded_obj.FixFontNameInType1C(do_always_recompress=True)
+      loaded_obj.FixFontNameInType1C()
       type1c_objs[obj_num].head = loaded_obj.head
       type1c_objs[obj_num].stream = loaded_obj.stream
     for obj_num in sorted(set(type1c_objs).difference(loaded_objs)):
-      type1c_objs[obj_num].FixFontNameInType1C(do_always_recompress=True)
+      type1c_objs[obj_num].FixFontNameInType1C()
 
     new_type1c_size = 0
     for obj_num in type1c_objs:
@@ -4296,7 +4307,7 @@ class PdfData(object):
       if not detect_ret:
         continue
       width, height, image_obj = detect_ret
-      # For testing: obj 2 in pts2e.pdf
+      # For testing: test_pts2e.pdf
       uninline_count += 1
       colorspace = image_obj.Get('ColorSpace')
       assert colorspace is not None
@@ -5494,7 +5505,7 @@ class PdfData(object):
              item < 0 or item > 10] or
             widths[1] < 1):
           raise PdfTokenParseError('bad /W array: %r' % widths)
-        xref_data = pdf_obj.GetUncompressedStream(is_gs_ok=True)
+        xref_data = pdf_obj.GetUncompressedStream()
         if len(xref_data) % sum(widths) != 0:
           raise PdfTokenParseError('data length does not match /W: %r' % widths)
         w0, w1, w2 = widths
@@ -5608,7 +5619,7 @@ class PdfData(object):
           break
     if not multivalent_jar:
       print >>sys.stderr, (
-          'error: Multilvalent.jar not found. Make sure it is on the $PATH, '
+          'error: Multivalent.jar not found. Make sure it is on the $PATH, '
           'or it is one of the files on the $CLASSPATH.')
       assert 0, 'Multivalent.jar not found, see above'
     assert ':' not in multivalent_jar  # $CLASSPATH separator

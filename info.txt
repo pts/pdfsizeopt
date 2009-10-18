@@ -492,3 +492,5 @@ additional compression may be possible with:
 * dvipdfmx rounds glyph /Widths to integers, pdftex doesn't
 * !! BUGFIX: ../pdfsizeopt.py pts_pdfsizeopt20009_talk{,.psom}.pdf
   duplicate font in GhostScript's output
+* TODO: document or detect: pdfsizeopt_big_font_bug{,.gs8.54}.pdf
+  works with gs 6
