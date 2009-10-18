@@ -1517,13 +1517,16 @@ class PdfObj(object):
     assert len(palette) % 3 == 0
     return palette
 
-  def DetectInlineImage(self):
+  def DetectInlineImage(self, objs=None):
     """Detect whether self is a form XObject with an inline image.
 
     As an implementation limitation, this detects only inline
     images created by sam2p.
     TODO(pts): Add support for more.
 
+    Args:
+      objs: None or a dict mapping object numbers to PdfObj objects. It will be
+        passed to ResolveReferences.
     Returns:
       None if not an inline images, or the tuple
       (width, height, image_obj), where image_obj.stream is valid,
@@ -1548,7 +1551,7 @@ class PdfObj(object):
     width = int(bbox[2])
     height = int(bbox[3])
 
-    stream = self.GetUncompressedStream()
+    stream = self.GetUncompressedStream(objs=objs)
     # TODO(pts): Match comments etc.
     match = re.match(
         r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
@@ -1913,9 +1916,12 @@ class PdfObj(object):
 
   # !! def OptimizeSource()
 
-  def GetUncompressedStream(self):
-    """Return the uncompressed stream data in this obj.
+  def GetUncompressedStream(self, objs=None):
+    """Return the uncompressed stream data in this obisj.
 
+    Args:
+      objs: None or a dict mapping object numbers to PdfObj objects. It will be
+        passed to ResolveReferences.
     Returns:
       A string containing the stream data in this obj uncompressed.
     """
@@ -1923,6 +1929,10 @@ class PdfObj(object):
     filter = self.Get('Filter')
     if filter is None: return self.stream
     decodeparms = self.Get('DecodeParms') or ''
+    if objs is None:
+      objs = {}
+    filter, _ = self.ResolveReferences(filter, objs)
+    decodeparms, _ = self.ResolveReferences(decodeparms, objs)
     if filter == '/FlateDecode' and '/Predictor' not in decodeparms:
       return PermissiveZlibDecompress(self.stream)
     is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
@@ -1980,6 +1990,7 @@ class PdfObj(object):
       PdfReferenceTargetMissing:
       TypeError:
     """
+    # !! always do a ResolveReferences to flatten /Filter and /DecodeParams.
     if not isinstance(objs, dict):
       raise TypeError
     if (data is None or isinstance(data, int) or isinstance(data, long) or
@@ -2030,7 +2041,7 @@ class PdfObj(object):
         if not do_strings:
           raise PdfTokenParseError(
               'unexpected stream in: %d 0 obj' % obj_num)
-        return obj.EscapeString(obj.GetUncompressedStream())
+        return obj.EscapeString(obj.GetUncompressedStream(objs=objs))
 
     data0 = data
     if '(' in data or '%' in data:
@@ -2224,12 +2235,17 @@ class PdfObj(object):
     cff_dict = self.ParseCffDict(data=data, start=i, end=j)
     return (data[:ord(data[2])], font_name, cff_dict, data[j:])
 
-  def FixFontNameInType1C(self, new_font_name='F'):
-    """Fix the FontName in a /Subtype/Type1C object."""
+  def FixFontNameInType1C(self, new_font_name='F', objs=None):
+    """Fix the FontName in a /Subtype/Type1C object.
+
+    Args:
+      objs: None or a dict mapping object numbers to PdfObj objects. It will be
+        passed to ResolveReferences.
+    """
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
     assert self.Get('Subtype') == '/Type1C'
-    data = self.GetUncompressedStream()
+    data = self.GetUncompressedStream(objs=objs)
     do_recompress = self.Get('Filter') != '/FlateDecode'
     assert ord(data[2]) >= 4
     i0 = i = ord(data[2])  # skip header
@@ -2700,7 +2716,7 @@ class ImageData(object):
       match = re.match(r'(\d+)\s+0\s+R\Z', contents)
       assert match
       content_obj = pdf.objs[int(match.group(1))]
-      content_stream = content_obj.GetUncompressedStream()
+      content_stream = content_obj.GetUncompressedStream(objs=pdf.objs)
       content_stream = ' '.join(
           content_stream.strip(PdfObj.PDF_WHITESPACE_CHARS).split())
       number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
@@ -3856,7 +3872,7 @@ class PdfData(object):
       assert str(obj.Get('FontName')).startswith('/')
       type1c_obj = type1c_objs[obj_num]
       # !! fix in genuine Type1C objects as well
-      type1c_obj.FixFontNameInType1C()
+      type1c_obj.FixFontNameInType1C(objs=self.objs)
       match = re.search(r'/FontFile\s+(\d+)\s+0 R\b', obj.head)
       assert match
       font_file_obj_num = int(match.group(1))
@@ -4040,7 +4056,7 @@ class PdfData(object):
       head_dict = PdfObj.ParseDict(type1c_obj.head)
       assert head_dict['Subtype'] == '/Type1C'
       try:
-        stream = type1c_obj.GetUncompressedStream()
+        stream = type1c_obj.GetUncompressedStream(self.objs)
         head_dict.clear()
       except FilterNotImplementedError:
         stream = type1c_obj.stream
@@ -4213,7 +4229,7 @@ class PdfData(object):
     if not font_groups:
       # Could not unify any fonts.
       for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C()
+        type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
       return self
 
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
@@ -4223,7 +4239,7 @@ class PdfData(object):
       # TODO(pts): Don't recompress if already recompressed (e.g. when
       # converted from Type1).
       for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C()
+        type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
       return self
 
     def AppendSerialized(value, output):
@@ -4307,11 +4323,11 @@ class PdfData(object):
       # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
       assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
           'could not convert font %s to Type1C' % obj_num)
-      loaded_obj.FixFontNameInType1C()
+      loaded_obj.FixFontNameInType1C(objs=self.objs)
       type1c_objs[obj_num].head = loaded_obj.head
       type1c_objs[obj_num].stream = loaded_obj.stream
     for obj_num in sorted(set(type1c_objs).difference(loaded_objs)):
-      type1c_objs[obj_num].FixFontNameInType1C()
+      type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
 
     new_type1c_size = 0
     for obj_num in type1c_objs:
@@ -4410,7 +4426,7 @@ class PdfData(object):
     uninline_bytes_saved = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
-      detect_ret = obj.DetectInlineImage()
+      detect_ret = obj.DetectInlineImage(objs=self.objs)
       if not detect_ret:
         continue
       width, height, image_obj = detect_ret
@@ -5460,8 +5476,10 @@ class PdfData(object):
               except PdfTokenParseError:
                 pass
 
+        # TODO(pts): reorder parsing to resolve future objects in
+        # objs=pdf.objs below.
         if (pdf_obj.Get('Subtype') == '/Image' or
-            pdf_obj.DetectInlineImage()):
+            pdf_obj.DetectInlineImage(objs=pdf.objs)):
           if obj_num in contents_obj_nums:
             contents_obj_nums.remove(obj_num)
           image_obj_nums.add(obj_num)
