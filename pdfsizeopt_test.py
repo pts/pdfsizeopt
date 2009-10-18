@@ -786,5 +786,78 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(data, e(compressed[:-4]))
     self.assertRaises(zlib.error, e, compressed[:-5])
 
+  def testResolveReferences(self):
+    def NewObj(head, stream=None, do_compress=False):
+      obj = pdfsizeopt.PdfObj(None)
+      if stream is None:
+        obj.head = head or ''
+      else:
+        if not isinstance(stream, str):
+          raise TypeError
+        obj.head = head or '<<>>'
+        if do_compress:
+          obj.SetStreamAndCompress(stream)
+        else:
+          obj.Set('Length', len(stream))
+          obj.stream = stream
+      return obj
+  
+    objs = {
+        12: NewObj('foo  bar'),
+        13: NewObj(' 12  0  R\t'),
+        14: NewObj('\0(12  0  R \\040)'),
+        15: NewObj('foo  bar %skip'),
+        16: NewObj('15 0 R  bat'),
+        21: NewObj('9 0 R'),
+        31: NewObj('<</Foo 32 0 R>>'),
+        32: NewObj('<</Bar 31 0 R>>'),
+        33: NewObj('<</Bar 33 0 R>>'),
+        41: NewObj('', 'hello'),
+        42: NewObj('', 'x' * 42, do_compress=True),
+    }
+    self.assertTrue('/Length 5' in objs[41].head)
+    self.assertTrue('/Filter/FlateDecode' in objs[42].head)
+    self.assertFalse('/Length 42' in objs[42].head)
+    e = pdfsizeopt.PdfObj.ResolveReferences
+    self.assertEqual(('/FooBar  true', False), e('/FooBar  true', objs))
+    self.assertEqual(('/FooBaR  true', False), e('/FooBaR  true', objs))
+    self.assertEqual(('foo  bar', True), e('12 0 R', objs))
+    self.assertEqual(('\rfoo  bar\t', True), e('\r12 0 R\t', objs))
+    self.assertEqual(('[true\ffoo  bar false\nfoo  bar]', True),
+                     e('[true\f12 0 R false\n12 0 R]', objs))
+    self.assertEqual(('foo  bar<>', True), e('12 0 R<>', objs))
+    # A comment or a (string) in the referrer triggers full compression.
+    self.assertEqual(('foo bar()', True), e('%9 0 R\n12 0 R<>', objs))
+    # A `(string)' in the referrer triggers full compression.
+    self.assertEqual(('(9 0 R[ ])foo bar', True),
+                     e('(9 0 R[\040])12 0 R', objs))
+    self.assertRaises(pdfsizeopt.PdfReferenceTargetMissing, e, '98 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfReferenceTargetMissing, e, '21 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '0 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '-1 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '1 12 R', objs)
+    self.assertRaises(pdfsizeopt.PdfReferenceRecursiveError, e, '31 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfReferenceRecursiveError, e, '32 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfReferenceRecursiveError, e, '33 0 R', objs)
+    self.assertEqual(('(13  0 R)', False), e('(13  0 R)', objs))
+    self.assertEqual(('<</A foo  bar>>', True), e('<</A 13  0 R>>', objs))
+    self.assertEqual(('(12 0  R \0)', True), e('(12 0  R \\000)', objs))
+    self.assertEqual(('foo bar  bat   baz', True), e('16 0 R   baz', objs))
+    # Unexpected stream.
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '41 0 R', objs)
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '42 0 R', objs)
+    self.assertEqual(('(hello)', True), e('41 0 R', objs, do_strings=True))
+    self.assertEqual(('(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)', True),
+                      e('42 0 R', objs, do_strings=True))
+    self.assertEqual(
+        ('/ColorSpace[/Indexed/DeviceRGB 14 (%s)]' % ('x' * 42), True),
+        e('/ColorSpace[/Indexed/DeviceRGB 14 42 0 R]', objs, do_strings=True))
+    self.assertEqual((None, False), e(None, objs))
+    self.assertEqual((True, False), e(True, objs))
+    self.assertEqual((False, False), e(False, objs))
+    self.assertEqual((42, False), e(42, objs))
+    self.assertEqual((42.5, False), e(42.5, objs))
+
+
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

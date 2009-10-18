@@ -134,6 +134,13 @@ class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
 
+class PdfReferenceTargetMissing(Error):
+  """Raised if the target obj for an <x> <y> R is missing."""
+
+class PdfReferenceRecursiveError(Error):
+  """Raised if a PDF object reference is recursive."""
+
+
 class PdfIndirectLengthError(PdfTokenParseError):
   """Raised if an obj stream /Length is an unresolvable indirect reference.
 
@@ -197,7 +204,7 @@ class PdfObj(object):
   REST_OF_R_RE = re.compile(
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f /%<>\[\](])')
-  """Matches the generation number and the 'R'."""
+  """Matches the generation number and the 'R' (followed by a char)."""
 
   PDF_NUMBER_OR_REF_RE_STR = (
       r'(-?\d+)(?=[\0\t\n\r\f /%(<>\[\]])(?:'
@@ -205,6 +212,17 @@ class PdfObj(object):
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R'
       r'(?=[\0\t\n\r\f /%(<>\[\]]|\Z))?')
   PDF_NUMBER_OR_REF_RE = re.compile(PDF_NUMBER_OR_REF_RE_STR)
+  """Matches a number or an <x> <y> R."""
+
+  PDF_END_OF_REF_RE = re.compile(
+      r'[\0\t\n\r\f ]R(?=[\0\t\n\r\f /%(<>\[\]]|\Z)')
+  """Matches the whitespace, the 'R' and looks ahead 1 char."""
+
+  PDF_REF_RE = re.compile(
+      r'(-?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R'
+      r'(?=[\0\t\n\r\f /%(<>\[\]]|\Z)')
   """Matches a number or an <x> <y> R."""
 
   LENGTH_OF_STREAM_RE = re.compile(
@@ -1940,6 +1958,95 @@ class PdfObj(object):
         gs_defilter_cmd)
     os.remove(tmp_file_name)
     return data
+
+  @classmethod
+  def ResolveReferences(cls, data, objs, do_strings=False):
+    """Resolve references (<x> <y> R) in a PDF token sequence.
+
+    As a side effect, this function may remove comments and whitespace
+    from data.
+
+    Args:
+      data: A string containing a PDF token sequence; or None, or an int
+        or a float or True or False.
+      objs: Dictionary mapping object numbers to PdfObj instances.
+      do_strings: Boolean indicating whether to embed the referred
+        streams as strings.
+    Returns:
+      (new_data, has_changed). has_changed may be True even if there
+      were no references found, but comments were removed.
+    Raises:
+      PdfTokenParseError:
+      PdfReferenceTargetMissing:
+      TypeError:
+    """
+    if not isinstance(objs, dict):
+      raise TypeError
+    if (data is None or isinstance(data, int) or isinstance(data, long) or
+        isinstance(data, float) or isinstance(data, bool)):
+      return data, False
+    if not isinstance(data, str):
+      raise TypeError
+    if not ('R' in data and #cls.PDF_END_OF_REF_RE.search(data) and
+            cls.PDF_REF_RE.search(data)):
+      # Shortcut if there are no references in data.
+      return data, False
+
+    current_obj_nums = []
+
+    def Replacement(match):
+      obj_num = int(match.group(1))
+      if obj_num < 1:
+        raise PdfTokenParseError('invalid object number: %d' % obj_num)
+      gen_num = int(match.group(2))
+      if gen_num != 0:
+        raise PdfTokenParseError('invalid generation number: %d' % gen_num)
+      obj = objs.get(obj_num)
+      if obj is None:
+        raise PdfReferenceTargetMissing(
+            'missing object: %d 0 obj' % obj_num)
+      if obj.stream is None:
+        new_data = obj.head.strip(cls.PDF_WHITESPACE_CHARS)
+        if ('R' in new_data and cls.PDF_END_OF_REF_RE.search(new_data) and
+            cls.PDF_REF_RE.search(new_data)):
+          # Do the recursive replacement in new_data.
+          if obj_num in current_obj_nums:
+            current_obj_nums.append(obj_num)
+            raise PdfReferenceRecursiveError(
+                'recursive reference chain: %r' % current_obj_nums)
+          current_obj_nums.append(obj_num)
+          if '%' in new_data or '(' in new_data:
+            new_data = cls.CompressValue(new_data, do_emit_strings_as_hex=True)
+            new_data = cls.PDF_REF_RE.sub(Replacement, new_data)
+            new_data = cls.CompressValue(new_data)
+          else:
+            new_data = cls.PDF_REF_RE.sub(Replacement, new_data)
+          current_obj_nums.pop()
+        elif '%' in new_data:
+          # Remove trailing comment.
+          new_data = cls.CompressValue(new_data)
+        return new_data
+      else:
+        if not do_strings:
+          raise PdfTokenParseError(
+              'unexpected stream in: %d 0 obj' % obj_num)
+        return obj.EscapeString(obj.GetUncompressedStream())
+
+    data0 = data
+    if '(' in data or '%' in data:
+      data = cls.CompressValue(data, do_emit_strings_as_hex=True)
+      # Compress strings back to non-hex once the references are
+      # resolved.
+      do_compress = True
+    else:
+      do_compress = False
+    # There is no need to add whitespace around the replacement, good.
+    # TODO(pts): If the replacement for a reference is a `(string)' (or an
+    # array etc.), then remove the whitespace around the `<x> <y> R'.
+    data = cls.PDF_REF_RE.sub(Replacement, data)
+    if do_compress:
+      data = cls.CompressValue(data)
+    return data, data0 != data
 
   CFF_REAL_CHARS = {
       0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',
@@ -4505,21 +4612,28 @@ class PdfData(object):
           not obj.head.startswith('<<') or
           not obj.stream is not None or
           obj.Get('Subtype') != '/Image'): continue
-      filter = (obj.Get('Filter') or '').replace(']', ' ]') + ' '
+      filter, filter_has_changed = PdfObj.ResolveReferences(
+          obj.Get('Filter'), objs=self.objs)
+      filter2 = (filter or '').replace(']', ' ]') + ' '
 
       # Don't touch lossy-compressed images.
       # TODO(pts): Read lossy-compressed images, maybe a small, uncompressed
       # representation would be smaller.
-      if ('/JPXDecode ' in filter or '/DCTDecode ' in filter):
+      if ('/JPXDecode ' in filter2 or '/DCTDecode ' in filter2):
         continue
 
       # TODO(pts): Support color key mask for /DeviceRGB and /DeviceGray:
       # convert the /Mask to RGB8, remove it, and add it back (properly
       # converted back) to the final PDF; pay attention to /Decode
       # differences as well.
-      mask = obj.Get('Mask')
-      if (isinstance(mask, str) and '[' in mask and
+      mask, _ = PdfObj.ResolveReferences(obj.Get('Mask'), objs=self.objs)
+      if (isinstance(mask, str) and mask and
           not re.match(r'\[\s*\]\Z', mask)):
+        continue
+
+      bpc, bpc_has_changed = PdfObj.ResolveReferences(
+          obj.Get('BitsPerComponent'), objs=self.objs)
+      if bpc not in (1, 2, 4, 8):
         continue
 
       data_pair = (obj.head, obj.stream)
@@ -4528,54 +4642,56 @@ class PdfData(object):
         # For testing: pts2.zip.4times.pdf
         # This is just a speed optimization so we don't have to parse the
         # image again.
+        # TODO(pts): Set the result of ResolveReferences back before doing
+        # the identity check.
         print >>sys.stderr, (
             'info: using identical image obj %s for obj %s' %
             (target_obj_num, obj_num))
         modify_obj_nums[obj_num] = target_obj_num
         continue
-      by_orig_data[data_pair] = obj_num
 
+      by_orig_data[data_pair] = obj_num
       obj0 = obj
 
-      if obj.Get('ImageMask'):
-        if obj is obj0:
-          obj = PdfObj(obj)
-        obj.Set('ImageMask', None)
-        obj.Set('Decode', None)
-        obj.Set('ColorSpace', '/DeviceGray')
-        obj.Set('BitsPerComponent', 1)
-
-      bpc = obj.Get('BitsPerComponent')
-      if bpc not in (1, 2, 4, 8):
-        continue
-
-      colorspace = obj.Get('ColorSpace')
+      # TODO(pts): Inline this to reduce PDF size.
+      # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R]
+      colorspace, colorspace_has_changed = PdfObj.ResolveReferences(
+          obj.Get('ColorSpace'), objs=self.objs, do_strings=True)
       assert isinstance(colorspace, str)
-      # !! TODO(pts): proper PDF token sequence parsing
-      # !! use ParseArray
-      if '(' not in colorspace and '<' not in colorspace:
-        # TODO(pts): Inline this to reduce PDF size.
-        # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R] 
-        # !! generic reference resolver
-        colorspace0 = colorspace
-        match = re.match(r'(\d+)\s+0\s+R\Z', colorspace)
-        if match:
-          colorspace = self.objs[int(match.group(1))].head
-        colorspace = re.sub(
-            r'\b(\d+)\s+0\s+R\s*(?=\]\Z)',
-            (lambda match:
-             obj.EscapeString(self.objs[int(match.group(1))]
-             .GetUncompressedStream())),
-            colorspace)
-        if colorspace != colorspace0:
-          if obj is obj0:
-            obj = PdfObj(obj)
-          obj.Set('ColorSpace', colorspace)
-      assert not re.match(r'\b\d+\s+\d+\s+R\b', colorspace)
+      assert not re.match(PdfObj.PDF_REF_RE, colorspace)
       colorspace_short = re.sub(r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
                          '/Indexed/\\1', colorspace)
       if re.search(r'[^/\w]', colorspace_short):
         colorspace_short = '?'
+
+      if filter_has_changed:
+        if obj is obj0:
+          obj = PdfObj(obj)
+        obj.Set('Filter', filter)
+      if bpc_has_changed:
+        if obj is obj0:
+          obj = PdfObj(obj)
+        obj.Set('BitsPerComponent', bpc)
+      if colorspace_has_changed:
+        if obj is obj0:
+          obj = PdfObj(obj)
+        obj.Set('ColorSpace', colorspace)
+      for name in ('Width', 'Height', 'Decode', 'DecodeParms'): 
+        value, value_has_changed = PdfObj.ResolveReferences(
+          obj.Get(name), objs=self.objs)
+        if value_has_changed:
+          if obj is obj0:
+            obj = PdfObj(obj)
+          obj.Set(name, value)
+
+      if obj.Get('ImageMask'):
+        if obj is obj0:
+          obj = PdfObj(obj)
+        colorspace = '/DeviceGray'
+        obj.Set('ImageMask', None)
+        obj.Set('Decode', None)
+        obj.Set('ColorSpace', colorspace)
+        obj.Set('BitsPerComponent', 1)
 
       # Ignore images with exotic color spaces (e.g. DeviceCMYK, CalGray,
       # DeviceN).
@@ -4586,7 +4702,6 @@ class PdfData(object):
                       r'/Device(?:RGB|Gray)\s)', colorspace):
         continue
 
-      obj = PdfObj(obj)
       # !! TODO(pts): proper PDF token sequence parsing
       # !! add resolving of references
       if re.match(r'\b\d+\s+\d+\s+R\b', obj.head):
@@ -4618,6 +4733,9 @@ class PdfData(object):
           (obj_num, obj.Get('Width'), obj.Get('Height'),
            colorspace_short, bpc, obj.Get('Filter'),
            int(bool(obj.Get('DecodeParms'))), obj.size, gs_device))
+
+      # TODO(pts): Is this necessary? If so, add it back.
+      #obj = PdfObj(obj)
 
       # Try to convert to PNG in-process. If we can't, schedule rendering with
       # Ghostscript. 
