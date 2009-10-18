@@ -36,6 +36,11 @@ tool.pdf.Compress in Multivaent.jar from http://multivalent.sf.net/ for that.
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
 
 __id__ = '$Id$'
+if __id__ == '$' + 'Id' + '$':
+  # As downloaded from:
+  # http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
+  # TODO(pts): Make that download do the expansion.
+  __id__ = 't t UNKNOWN'
 
 import array
 import getopt
