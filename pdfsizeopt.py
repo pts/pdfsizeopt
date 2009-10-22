@@ -3389,6 +3389,25 @@ class PdfData(object):
   {dup length string cvs exch dup length string cvs gt} Sort
 } bind def
 
+/_S1 1 string def
+
+% Like `glyphshow' but uses `show' if the glyph name is in /Encoding.
+% This is useful because gs -sDEVICE=pdfwrite autodetects the /Encoding of
+% the emitted CFF fonts if /glyphshow is used, possibly emitting two CFF
+% fonts
+% if there is a character position conflict (e.g. /G and /Phi). No such
+% splitting happens with if `show' is used instead of `glyphshow'.
+% Stack use: <glyph> <_EncodingDict> GlyphShowWithEncodingDict -
+/GlyphShowWithEncodingDict {
+  1 index .knownget {
+    _S1 exch 0 exch put _S1 show
+    pop  % pop the glyph name
+  } {
+    (warning: using glyphshow for unencoded glyph: /) print dup =
+    glyphshow
+  } ifelse
+} bind def
+
 % </ProcSet>
 
 '''
@@ -3452,8 +3471,10 @@ class PdfData(object):
   % stack: <fake-font>
   dup /Encoding .knownget not {[]} if
   % stack: <fake-font> <encoding-array>
-  << exch { true } forall >>
+  << exch -1 exch { exch 1 add dup } forall pop >>
   dup /.notdef undef
+  % _EncodingDict maps glyph names in th /Encoding to their last encoded
+  % value. Example: << /space 32 /A 65 >>
   /_EncodingDict exch def
   % stack: <fake-font>
   [ 1 index /CharStrings get {
@@ -3494,7 +3515,11 @@ class PdfData(object):
   } {
     pop
   } ifelse
-  currentdict /_EncodingDict undef
+
+  % Regenerate _EncodingDict, now with /.notdef
+  dup /Encoding .knownget not {[]} if
+    << exch -1 exch { exch 1 add dup } forall pop >>
+    /_EncodingDict exch def
 
   %dup /FID undef  % undef not needed.
   % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
@@ -3530,8 +3555,14 @@ class PdfData(object):
   % * We have to make sure that all glyphs are on the page -- otherwise
   %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
   %   the outliers.
+  % * Using `show' instead of `glyphshow' to prevent Ghostscript from
+  %   splitting the output CFF font to two (or more) on auto-guessed
+  %   Encoding position conflict (such as /G and /Phi).
   dup /CharStrings get [exch {pop} forall] NameSort {
-    newpath 200 200 moveto glyphshow} forall
+    newpath 200 200 moveto
+    _EncodingDict GlyphShowWithEncodingDict
+  } forall
+  currentdict /_EncodingDict undef
   pop % <fake-font>
   restore
 } bind def
@@ -3785,6 +3816,11 @@ class PdfData(object):
       [exch aload length 1 255 {pop/.notdef} for]
       1 index exch /Encoding exch put
 
+  % Regenerate _EncodingDict, now with /.notdef
+  dup /Encoding .knownget not {[]} if
+    << exch -1 exch { exch 1 add dup } forall pop >>
+    /_EncodingDict exch def
+
   _FontName exch definefont  % includes findfont
   % TODO: (Type1Generator: ...) print
   dup setfont
@@ -3796,8 +3832,14 @@ class PdfData(object):
   % * We have to make sure that all glyphs are on the page -- otherwise
   %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
   %   the outliers.
+  % * Using `show' instead of `glyphshow' to prevent Ghostscript from
+  %   splitting the output CFF font to two (or more) on auto-guessed
+  %   Encoding position conflict (such as /G and /Phi).
   dup /CharStrings get [exch {pop} forall] NameSort {
-    newpath 200 200 moveto glyphshow} forall
+    newpath 200 200 moveto
+    _EncodingDict GlyphShowWithEncodingDict
+  } forall
+  currentdict /_EncodingDict undef
   %dup /CharStrings get {pop dup === glyphshow} forall
   %dup /CharStrings get [ exch {pop} forall ] 0 get glyphshow
   pop % <font>
