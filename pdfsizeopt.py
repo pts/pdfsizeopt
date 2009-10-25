@@ -3568,6 +3568,10 @@ class PdfData(object):
 } bind def
 % </ProcSet>
 
+(Type1CConverter: using interpreter ) print
+   product =only ( ) print
+   revision =only ( ) print  % 854 means version 8.54
+   revisiondate =only (\n) print
 '''
 
   def GetFonts(self, font_type=None,
@@ -3781,6 +3785,10 @@ class PdfData(object):
 } bind def
 % </ProcSet>
 
+(Type1CParser: using interpreter ) print
+   product =only ( ) print
+   revision =only ( ) print  % 854 means version 8.54
+   revisiondate =only (\n) print
 '''
 
   TYPE1C_GENERATOR_PROCSET = r'''
@@ -3846,6 +3854,11 @@ class PdfData(object):
   %showpage % not needed
   restore
 } bind def
+
+(Type1CGenerator: using interpreter ) print
+   product =only ( ) print
+   revision =only ( ) print  % 854 means version 8.54
+   revisiondate =only (\n) print
 % </ProcSet>
 
 '''
