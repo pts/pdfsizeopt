@@ -2593,9 +2593,13 @@ class ImageData(object):
 
     # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
     bytes_per_row = self.bytes_per_row
-    assert len(idat) % bytes_per_row == 0
+    idat_size = len(idat)
+    idat_size_mod = idat_size % bytes_per_row
+    # For testing: idat_size_mod == 1 in vrabimintest.pdf
+    assert idat_size_mod in (0, 1)
+    idat_size -= idat_size_mod
     output = []
-    for i in xrange(0, len(idat), bytes_per_row):
+    for i in xrange(0, idat_size, bytes_per_row):
       # We don't want to optimize here (like how libpng does) by picking the
       # best predictor, i.e. the one which probably yields the smallest output.
       # PdfData.OptimizeImages has much better and faster algorithms for that.
@@ -4709,6 +4713,10 @@ class PdfData(object):
 
       bpc, bpc_has_changed = PdfObj.ResolveReferences(
           obj.Get('BitsPerComponent'), objs=self.objs)
+      if obj.Get('ImageMask'):
+        if bpc != 1:
+          bpc_has_changed = True
+          bpc = 1
       if bpc not in (1, 2, 4, 8):
         continue
 
@@ -4733,7 +4741,10 @@ class PdfData(object):
       # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R]
       colorspace, colorspace_has_changed = PdfObj.ResolveReferences(
           obj.Get('ColorSpace'), objs=self.objs, do_strings=True)
-      assert isinstance(colorspace, str)
+      if obj.Get('ImageMask'):
+        if colorspace != '/DeviceGray':  # can be None
+          colorspace = '/DeviceGray'
+          colorspace_has_changed = True
       assert not re.match(PdfObj.PDF_REF_RE, colorspace)
       colorspace_short = re.sub(r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
                          '/Indexed/\\1', colorspace)
@@ -6008,6 +6019,7 @@ def main(argv):
   if use_multivalent:
     pdf.SaveWithMultivalent(output_file_name)
   else:
+    # !! emit a warning if we have an image with a predictor
     pdf.Save(output_file_name)
 
 
