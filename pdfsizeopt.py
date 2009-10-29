@@ -300,7 +300,7 @@ class PdfObj(object):
 
 
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
-               obj_starts=None):
+               obj_starts=None, do_ignore_generation_numbers=False):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
@@ -323,6 +323,8 @@ class PdfObj(object):
       start: Offset in other (if a string) to start parsing from.
       end_ofs_out: None or an empty array output parameter for the end offset
         (i.e.. after `endobj' + whitespace).
+      do_ignore_generation_numbers: Boolean indicating whether to ignore
+        generation numbers in references when parsing this object.
     Raises:
       PdfTokenParseError:
       Exception: Many others.
@@ -411,8 +413,11 @@ class PdfObj(object):
           stream_end_idx = stream_start_idx + int(match.group(1))
         else:
           # For testing: lme_v6.pdf
-          if int(match.group(2)) != 0:
-            raise NotImplementedError('generational refs not implemented')
+          if (int(match.group(2)) != 0 and
+              not do_ignore_generation_numbers):
+            raise NotImplementedError(
+                'generational refs (in /Length %s %s R) not implemented '
+                'at ofs=%s' % (match.group(1), match.group(2), file_ofs))
           obj_num = int(match.group(1))
           if obj_num <= 0:
             raise PdfTokenParseError(
@@ -757,7 +762,7 @@ class PdfObj(object):
   PDF_HEX_CHAR_RE = re.compile('#([0-9a-fA-F]{2})')
   """Matches a character escaped as # + hex."""
 
-  PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+R\b')
+  PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b')
   """Matches `<obj> 0 R', not allowing comments."""
 
   PDF_HEX_STRING_OR_DICT_RE = re.compile(r'<<|<(?!<)([^>]*)>')
@@ -1274,6 +1279,7 @@ class PdfObj(object):
         if obj_num is None:
           return 'null'
         else:
+          # TODO(pts): Keep the original generation number (match.group(2))
           return '%s 0 R' % obj_num
 
       data = cls.PDF_SIMPLE_REF_RE.sub(ReplacementRef, data)
@@ -2920,9 +2926,12 @@ class ImageData(object):
 
 class PdfData(object):
 
-  __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size']
+  __slots__ = ['objs', 'trailer', 'version', 'file_name', 'file_size',
+               'do_ignore_generation_numbers', 'has_generational_objs']
 
-  def __init__(self):
+  def __init__(self, do_ignore_generation_numbers=False):
+    self.do_ignore_generation_numbers = bool(do_ignore_generation_numbers)
+    self.has_generational_objs = False
     # Maps an object number to a PdfObj
     self.objs = {}
     # None or a PdfObj of type dict. Must contain /Size (max # objs) and
@@ -2935,8 +2944,6 @@ class PdfData(object):
 
   def Load(self, file_data):
     """Load PDF from file_name to self, return self."""
-    # TODO(pts): Use the xref table to find objs
-    # TODO(pts): Don't load the whole file to memory.
     if isinstance(file_data, str):
       # Treat file_data as file name.
       print >>sys.stderr, 'info: loading PDF from: %s' % (file_data,)
@@ -2951,6 +2958,7 @@ class PdfData(object):
       f.seek(0, 0)
       data = f.read()  # Don't close.
     print >>sys.stderr, 'info: loaded PDF of %s bytes' % len(data)
+    self.has_generational_objs = False
     self.file_name = f.name
     self.file_size = len(data)
     match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
@@ -2961,12 +2969,14 @@ class PdfData(object):
     self.trailer = None
 
     try:
-      obj_starts = self.ParseUsingXref(data)
+      obj_starts, self.has_generational_objs = self.ParseUsingXref(
+          data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
       #assert 0, obj_starts
     except PdfXrefError, exc:
       print >>sys.stderr, (
           'warning: problem with xref table, finding objs anyway: %s' % exc)
-      obj_starts = self.ParseWithoutXref(data)
+      obj_starts, self.has_generational_objs = self.ParseWithoutXref(
+          data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
 
     assert 'trailer' in obj_starts, 'no PDF trailer'
     assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
@@ -3003,19 +3013,22 @@ class PdfData(object):
       if ('endstream' not in this_obj_data and
           '<' not in this_obj_data and
           '(' not in this_obj_data):
-        self.objs[obj_num] = PdfObj(obj_data[obj_num],
-                                    file_ofs=obj_starts[obj_num])
+        self.objs[obj_num] = PdfObj(
+            obj_data[obj_num],
+            file_ofs=obj_starts[obj_num],
+            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
 
     # Second pass once we have all length numbers.
     for obj_num in obj_data:
       if obj_num not in self.objs:
-        self.objs[obj_num] = PdfObj(obj_data[obj_num], objs=self.objs,
-                                    file_ofs=obj_starts[obj_num])
+        self.objs[obj_num] = PdfObj(
+            obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
+            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
 
     return self
 
   @classmethod
-  def ParseUsingXref(cls, data):
+  def ParseUsingXref(cls, data, do_ignore_generation_numbers):
     """Parse a PDF file using the cross-reference table.
     
     This method doesn't consult the cross-reference table (`xref'): it just
@@ -3024,7 +3037,8 @@ class PdfData(object):
     Args:
       data: String containing the PDF file.
     Returns:
-      obj_starts dicitionary, which maps object numbers (and the string
+      (obj_starts, has_generational_objs)
+      obj_starts is a dict mapping object numbers (and the string
       'trailer', possibly also 'xref') to their start offsets within a file.
     Raises:
       PdfXrefError: If the cross-reference table is corrupt, but there is
@@ -3032,6 +3046,7 @@ class PdfData(object):
       AssertionError: If the PDF file us totally unparsable.
       NotImplementedError: If the PDF file needs parsing code not implemented.
     """
+    has_generational_objs = False
     match = PdfObj.PDF_STARTXREF_EOF_RE.search(data[-128:])
     if not match:
       raise PdfXrefError('startxref+%%EOF not found')
@@ -3062,13 +3077,20 @@ class PdfData(object):
           break
         obj_num = int(match.group(1))
         obj_count = int(match.group(2))
-        xref_ofs = xref_ofs + match.end(0)
+        xref_ofs += match.end(0)
         while obj_count > 0:
           match = re.match(
-              r'(\d{10})\s\d{5}\s([nf])\s\s', data[xref_ofs : xref_ofs + 20])
+              r'(\d{10})\s(\d{5})\s([nf])\s\s', data[xref_ofs : xref_ofs + 20])
           if not match:
             raise PdfXrefError('syntax error in xref entry at %s' % xref_ofs)
-          if match.group(2) == 'n':
+          if match.group(3) == 'n':
+            generation = int(match.group(2))
+            if generation != 0:
+              if not do_ignore_generation_numbers:
+                raise NotImplementedError(
+                    'generational objects (in %s %s n) not supported at %d' %
+                    (match.group(1), match.group(2), xref_ofs))
+              has_generational_objs = True
             if obj_num in obj_starts:
               raise PdfXrefError('duplicate obj %s' % obj_num)
             obj_ofs = int(match.group(1))
@@ -3099,10 +3121,10 @@ class PdfData(object):
         break
       if not isinstance(xref_ofs, int) and not isinstance(xref_ofs, long):
         raise PdfXrefError('/Prev xref offset not an int: %r' % xref_ofs)
-    return obj_starts
+    return obj_starts, has_generational_objs
 
   @classmethod
-  def ParseWithoutXref(cls, data):
+  def ParseWithoutXref(cls, data, do_ignore_generation_numbers=False):
     """Parse a PDF file without having a look at the cross-reference table.
 
     This method doesn't consult the cross-reference table (`xref'): it just
@@ -3116,12 +3138,14 @@ class PdfData(object):
     Args:
       data: String containing the PDF file.
     Returns:
-      obj_starts dicitionary, which maps object numbers (and the string
+      (obj_starts, has_generational_objs)
+      objs_starts is adict mapping object numbers (and the string
       'trailer', possibly also 'xref') to their start offsets within a file.
     """
     # None, an int or 'trailer'.
     prev_obj_num = None
     obj_starts = {}
+    has_generational_objs = False
 
     for match in re.finditer(
         r'[\n\r](?:(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj\b|'
@@ -3129,7 +3153,13 @@ class PdfData(object):
         data):
       if match.group(1) is not None:
         prev_obj_num = int(match.group(1))
-        assert 0 == int(match.group(2))
+        generation = int(match.group(2))
+        if generation != 0:
+          if not do_ignore_generation_numbers:
+            raise NotImplementedError(
+                'generational objects (in %s %s n) not supported at %d' %
+                (match.group(1), match.group(2), xref_ofs))
+          has_generational_objs = True
       else:
         prev_obj_num = 'trailer'
       # TODO(pts): Allow multiple trailers.
@@ -3141,7 +3171,7 @@ class PdfData(object):
     # TODO(pts): Learn to parse no trailer in PDF-1.5
     # (e.g. pdf_reference_1-7-o.pdf)
     assert prev_obj_num == 'trailer'
-    return obj_starts
+    return obj_starts, has_generational_objs
 
   def Save(self, file_name, do_update_file_name=True, do_hide_images=False):
     """Save this PDF to file_name, return self.
@@ -5082,6 +5112,7 @@ class PdfData(object):
       refs_to = []  # List of object numbers obj_num refers to).
       head = objs[obj_num].head
       # !! TODO(pts): reorder dicts to canonical order
+      # CompressValue changes all generational refs to generation 0.
       head_minus = PdfObj.CompressValue(
           head, obj_num_map='0', old_obj_nums_ret=refs_to,
           do_emit_strings_as_hex=True)
@@ -5311,6 +5342,7 @@ class PdfData(object):
       if match:
         trailer_ofs = int(match.group(1))
 
+    self.has_generational_objs = False
     self.version = version
     self.objs.clear()
     self.trailer = None
@@ -5394,7 +5426,9 @@ class PdfData(object):
       except PdfIndirectLengthError, exc:
         # For testing: eurotex2006.final.pdf and lme_v6.pdf
         if obj_starts is None:
-          obj_starts = self.ParseUsingXref(data)
+          obj_starts, self.has_generational_objs = self.ParseUsingXref(
+              data,
+              do_ignore_generation_numbers=self.do_ignore_generation_numbers)
         # TODO(pts): Cache length_objs.
         j = obj_starts[exc.length_obj_num]
         if exc.length_obj_num not in length_objs:
@@ -5408,6 +5442,7 @@ class PdfData(object):
       match = scanner.match()
       assert match
       obj_num = int(match.group(1))
+      # !!! set self.has_generational_objs
       obj_num_by_ofs_out[i] = obj_num
       if trailer_ofs == i:
         self.trailer = pdf_obj
@@ -5923,12 +5958,14 @@ def main(argv):
     # with Ghostscript.
     do_regenerate_all_fonts = True
     do_double_check_missing_glyphs = False
+    do_ignore_generation_numbers = True
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
     opts, args = getopt.gnu_getopt(argv[1:], '+', [
         'version', 'help', 'stats',
         'use-pngout=', 'use-jbig2=', 'use-multivalent=',
+        'do-ignore-generation-numbers=',
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
         'do-regenerate-all-fonts=',
@@ -5946,6 +5983,8 @@ def main(argv):
       elif key == '--use-multivalent':
         # !! add =auto (detect Multivalent.jar on $CLASSPATH and $PATH)
         use_multivalent = ParseBoolFlag(key, value)
+      elif key == '--do-ignore-generation-numbers':
+        do_ignore_generation_numbers = ParseBoolFlag(key, value)
       elif key == '--do-optimize-images':
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-objs':
@@ -6003,7 +6042,9 @@ def main(argv):
     sys.exit(1)
 
   # It's OK that file_name == output_file_name.
-  pdf = PdfData().Load(file_name)
+  pdf = PdfData(
+      do_ignore_generation_numbers=do_ignore_generation_numbers,
+      ).Load(file_name)
   pdf.FixAllBadNumbers()
   pdf.ConvertType1FontsToType1C()
   if do_unify_fonts:
@@ -6015,6 +6056,9 @@ def main(argv):
     pdf.ConvertInlineImagesToXObjects()
     pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
   if do_optimize_objs:
+    pdf.OptimizeObjs()
+  elif pdf.has_generational_objs:
+    # TODO(pts): Do only a simpler optimization with renumbering.
     pdf.OptimizeObjs()
   if use_multivalent:
     pdf.SaveWithMultivalent(output_file_name)
