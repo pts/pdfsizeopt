@@ -3437,6 +3437,14 @@ class PdfData(object):
   {dup length string cvs exch dup length string cvs gt} Sort
 } bind def
 
+% Find an item in an array (using `eq' -- so the executable bit is discarded,
+% i.e. /foo and foo are equal). The index -1 is returned if item not found.
+/FindItem { % <array> <item> FindItem <index>
+  exch dup 0 exch
+  { 3 index eq { exit } if 1 add } forall
+  exch length 1 index eq { pop -1 } if exch pop
+} bind def
+
 /_S1 1 string def
 
 % Like `glyphshow' but uses `show' if the glyph name is in /Encoding.
@@ -3807,11 +3815,28 @@ class PdfData(object):
   } ifelse
 } bind def
 
+% /LoadCff {
+%   /FontSetInit /ProcSet findresource begin //true //false ReadData } bind def
+% but some autodetection of `//false'' above based on the Ghostscript version:
+% Since gs 8.64:
+%   pdfdict /readType1C get -->
+%   {1 --index-- --exch-- PDFfile --fileposition-- 3 1 --roll-- --dup-- true resolvestream --dup-- readfontfilter 3 --index-- /FontDescriptor oget /FontName oget 1 --index-- /FontSetInit /ProcSet --findresource-- --begin-- true false ReadData {--exch-- --pop-- --exit--} --forall-- 7 1 --roll-- --closefile-- --closefile-- --pop-- PDFfile 3 -1 --roll-- --setfileposition-- --pop-- --pop--}
+% Till gs 8.61:
+%   GS_PDF_ProcSet /FRD get -->
+%   {/FontSetInit /ProcSet findresource begin //true ReadData}
+GS_PDF_ProcSet /FRD .knownget not { pdfdict /readType1C get } if
+dup /FontSetInit FindItem
+  dup 0 lt { /invalidfileaccess /MissingFontSetInit signalerror } if
+1 index /ReadData FindItem
+  dup 0 lt { /invalidfileaccess /MissingReadData signalerror } if
+1 index sub 1 add getinterval
+cvx bind /LoadCff exch def
+
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
   % <streamdict> <decompressed-file>
   systemdict /FontDirectory get {pop undefinefont} forall
-  dup /MY exch /FontSetInit /ProcSet findresource begin //true ReadData
+  dup /MY exch LoadCff
   closefile  % is this needed?
   % <streamdict>
   pop
