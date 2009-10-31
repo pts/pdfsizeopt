@@ -2646,7 +2646,7 @@ class ImageData(object):
       # TODO(pts): Optimize memory use.
       chunk_type += chunk_data
       output.append(chunk_type)
-      output.append(struct.pack('>L', zlib.crc32(chunk_type)))
+      output.append(struct.pack('>l', zlib.crc32(chunk_type)))
 
     if do_force_gray:
       assert (self.color_type.startswith('indexed-') or
@@ -2899,7 +2899,7 @@ class ImageData(object):
         assert len(chunk_data) == chunk_data_size
         chunk_crc = f.read(4)
         assert len(chunk_crc) == 4
-        computed_crc = struct.pack('>L', zlib.crc32(chunk_type + chunk_data))
+        computed_crc = struct.pack('>l', zlib.crc32(chunk_type + chunk_data))
         assert chunk_crc == computed_crc, (
             'chunk %r checksum mismatch' % chunk_type)
         if chunk_type == 'IHDR':
@@ -4845,7 +4845,6 @@ class PdfData(object):
       assert isinstance(height, int)
       assert height > 0
 
-      print (obj_num, colorspace)
       if not PdfObj.IsGrayColorSpace(colorspace):
         gs_device = 'png16m'
       elif bpc > 1 or colorspace != '/DeviceGray':
