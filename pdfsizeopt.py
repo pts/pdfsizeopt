@@ -1506,13 +1506,24 @@ class PdfObj(object):
     if match.group(1) == '/DeviceGray':
       return True
     palette = cls.ParseString(match.group(2))
-    assert len(palette) % 3 == 0
+    palette_size = cls.GetRgbPaletteSize(palette)
     i = 0
-    while i < len(palette):
+    while i < palette_size:
       if palette[i] != palette[i + 1] or palette[i] != palette[i + 2]:
         return False  # non-gray color in the palette
       i += 3
     return True
+
+  @classmethod
+  def GetRgbPaletteSize(cls, palette):
+    """Retrun len(palette) // 3 * 3, doing some checks."""
+    palette_size = len(palette)
+    palette_mod = len(palette) % 3
+    # Some buggy PDF generators create a palette which is 1 byte longer.
+    # For testing palette_mod == 1: /mnt/mandel/warez/tmp/vrabimintest2.pdf
+    assert palette_mod == 0 or (palette_mod == 1 and palette[-1] == '\n'), (
+         'invalid palette size: %s' % palette_size)
+    return palette_size - palette_mod
 
   @classmethod
   def IsIndexedRgbColorSpace(cls, colorspace):
@@ -1525,8 +1536,11 @@ class PdfObj(object):
                      colorspace)
     assert match, 'syntax error in /ColorSpace %r' % colorspace
     palette = cls.ParseString(match.group(1))
-    assert len(palette) % 3 == 0
-    return palette
+    palette_size = cls.GetRgbPaletteSize(palette)
+    if palette_size < len(palette):
+      return palette[:palette_size]
+    else:
+      return palette
 
   def DetectInlineImage(self, objs=None):
     """Detect whether self is a form XObject with an inline image.
@@ -4831,6 +4845,7 @@ class PdfData(object):
       assert isinstance(height, int)
       assert height > 0
 
+      print (obj_num, colorspace)
       if not PdfObj.IsGrayColorSpace(colorspace):
         gs_device = 'png16m'
       elif bpc > 1 or colorspace != '/DeviceGray':
