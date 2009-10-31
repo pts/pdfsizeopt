@@ -4841,9 +4841,6 @@ cvx bind /LoadCff exch def
         obj.Set('ColorSpace', colorspace)
       for name in ('Width', 'Height', 'Decode', 'DecodeParms'): 
         value = obj.Get(name)
-        if name == 'DecodeParms' and '/JBIG2Globals' in value:
-          # Don't resolve the string reference.
-          continue
         value, value_has_changed = PdfObj.ResolveReferences(
           value, objs=self.objs)
         if value_has_changed:
