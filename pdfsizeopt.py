@@ -4764,6 +4764,13 @@ class PdfData(object):
       if bpc not in (1, 2, 4, 8):
         continue
 
+      decodeparms = obj.Get('DecodeParms') or ''
+      if isinstance(decodeparms, str) and '/JBIG2Globals' in decodeparms:
+        # We don't support optimizing JBIG2 images with global references.
+        # For testing: /mnt/mandel/warez/tmp/linux.pdf
+        continue
+      del decodeparms
+
       data_pair = (obj.head, obj.stream)
       target_obj_num = by_orig_data.get(data_pair)
       if target_obj_num is not None: 
@@ -4808,8 +4815,12 @@ class PdfData(object):
           obj = PdfObj(obj)
         obj.Set('ColorSpace', colorspace)
       for name in ('Width', 'Height', 'Decode', 'DecodeParms'): 
+        value = obj.Get(name)
+        if name == 'DecodeParms' and '/JBIG2Globals' in value:
+          # Don't resolve the string reference.
+          continue
         value, value_has_changed = PdfObj.ResolveReferences(
-          obj.Get(name), objs=self.objs)
+          value, objs=self.objs)
         if value_has_changed:
           if obj is obj0:
             obj = PdfObj(obj)
