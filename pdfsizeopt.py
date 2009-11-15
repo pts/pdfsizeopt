@@ -3083,6 +3083,7 @@ class PdfData(object):
       while True:
         xref_head = data[xref_ofs : xref_ofs + 128]
         # Start a new subsection.
+        # For testing whitespace before trailer: enc.pdf
         match = re.match(
             r'(\d+)\s+([1-9]\d*)\s+|[\0\t\n\r\f ]*(xref|trailer)\s', xref_head)
         if not match:
@@ -4910,11 +4911,25 @@ cvx bind /LoadCff exch def
         if not image1.CanBePngImage(do_ignore_compression=True):
           raise FormatUnsupported('cannot save to PNG')
         image2 = ImageData(image1).CompressToZipPng()
+        # image2 won't be None
       except FormatUnsupported:
         image1 = image2 = None
 
       if image1 is None:
-        device_image_objs[gs_device][obj_num] = obj
+        # Keep only whitelisted names, others such as /SMask may contain
+        # references.
+        # For testing: bt9.pdf
+        obj2 = PdfObj(None)
+        obj2.head = '<<>>'
+        obj2.stream = obj.stream
+        if len(obj2.stream) > int(obj.Get('Length')):
+           obj2.stream = obj2.stream[:int(obj.Get('Length'))]
+        obj2.Set('Length', len(obj2.stream))
+        obj2.Set('Subtype', '/Image')
+        for name in ('Width', 'Height', 'ColorSpace', 'Decode', 'Filter',
+                     'DecodeParms', 'BitsPerComponent'):
+          obj2.Set(name, obj.Get(name))
+        device_image_objs[gs_device][obj_num] = obj2
       else:
         images[obj_num].append(('parse', (image2.SavePng(
             file_name='pso.conv-%d.parse.png' % obj_num))))
