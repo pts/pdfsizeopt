@@ -3528,6 +3528,12 @@ class PdfData(object):
 
   % stack: <fake-font>
   dup /Encoding .knownget not {[]} if
+
+  % Convert all null entries to /.notdef
+  % For testing: lshort-kr.pdf
+  [ exch { dup null eq { pop /.notdef } if } forall ]
+  dup 2 index exch /Encoding exch put
+
   % stack: <fake-font> <encoding-array>
   << exch -1 exch { exch 1 add dup } forall pop >>
   dup /.notdef undef
@@ -3901,7 +3907,8 @@ cvx bind /LoadCff exch def
 
   % Regenerate _EncodingDict, now with /.notdef
   dup /Encoding .knownget not {[]} if
-    << exch -1 exch { exch 1 add dup } forall pop >>
+    << exch -1 exch { dup null eq { pop /.notdef } if
+                      exch 1 add dup } forall pop >>
     /_EncodingDict exch def
 
   _FontName exch definefont  % includes findfont
