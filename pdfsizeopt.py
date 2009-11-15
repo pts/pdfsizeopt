@@ -3083,11 +3083,12 @@ class PdfData(object):
       while True:
         xref_head = data[xref_ofs : xref_ofs + 128]
         # Start a new subsection.
-        match = re.match(r'(\d+)\s+([1-9]\d*)\s+|(xref|trailer)\s',
-            xref_head)
+        match = re.match(
+            r'(\d+)\s+([1-9]\d*)\s+|[\0\t\n\r\f ]*(xref|trailer)\s', xref_head)
         if not match:
-          raise PdfXrefError('xref subsection syntax error')
+          raise PdfXrefError('xref subsection syntax error at %d' % xref_ofs)
         if match.group(3) is not None:
+          xref_ofs += match.start(3)
           break
         obj_num = int(match.group(1))
         obj_count = int(match.group(2))
