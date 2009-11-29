@@ -1899,6 +1899,10 @@ class PdfObj(object):
                 string_output.append('\\00' + c)
                 j += 2
                 i = j
+              elif c == '\n':
+                string_output.append(data[i : j])
+                j += 2
+                i = j
               else:
                 string_output.append(data[i : j])
                 string_output.append(c)  # without the backslash

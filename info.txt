@@ -495,3 +495,5 @@ additional compression may be possible with:
 * TODO: document or detect: pdfsizeopt_big_font_bug{,.gs8.54}.pdf
   works with gs 6
 * TODO: correctly skip CID fonts (latex-kr.pdf)
+* It fails to validate as PDF/A-1b (using acrobat 7.1.0 for the validation).
+  (need /ID)

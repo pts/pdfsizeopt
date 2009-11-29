@@ -76,6 +76,9 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' <314f5c60>', e('<\n3\t1\r4f5C6 >'))
     self.assertEqual(' <0006073839050e170338043805380638073838380a3913391f39>',
                      e('(\0\6\7\8\9\05\16\27\38\48\58\68\78\88\129\239\379)'))
+    self.assertEqual(' <666f6f0a626172>', e('(foo\nbar)'))
+    self.assertEqual(' <666f6f0a626172>', e('(foo\\nbar)'))
+    self.assertEqual(' <666f6f626172>', e('(foo\\\nbar)'))
     self.assertEqual(' <0006073839050e170338043805380638073838380a3913391f39'
                      '043031053031063031073031>',
                      e('(\\0\\6\\7\\8\\9\\05\\16\\27\\38\\48\\58\\68\\78\\88'
