@@ -3076,6 +3076,8 @@ class PdfData(object):
           'PDF-1.5 cross reference streams not implemented')
     obj_starts = {'xref': xref_ofs}
     obj_starts_rev = {}
+    # Set of object numbers not to be overwritten.
+    keep_obj_nums = set()
     while True:
       xref_head = data[xref_ofs : xref_ofs + 128]
       # Maybe PDF doesn't allow multiple consecutive `xref's,
@@ -3111,15 +3113,21 @@ class PdfData(object):
                     'generational objects (in %s %s n) not supported at %d' %
                     (match.group(1), match.group(2), xref_ofs))
               has_generational_objs = True
-            if obj_num in obj_starts:
-              raise PdfXrefError('duplicate obj %s' % obj_num)
             obj_ofs = int(match.group(1))
-            if obj_ofs in obj_starts_rev:
-              raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
-                                 (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
+            if obj_num in obj_starts:
+              if obj_num in keep_obj_nums:
+                # for testing: obj 5 in bfilter.pdf
+                # It is not tested if this assignment is replaced by `pass',
+                # to make /Prev override.
+                obj_ofs = 0
+              else:
+                raise PdfXrefError('duplicate obj %s' % obj_num)
             if obj_ofs != 0:
               # for testing: obj 10 in pdfsizeopt_charts.pdf has offset 0:
               # "0000000000 00000 n \n"
+              if obj_ofs in obj_starts_rev:
+                raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
+                                   (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
               obj_starts_rev[obj_ofs] = obj_num
               obj_starts[obj_num] = obj_ofs
           obj_num += 1
@@ -3141,6 +3149,10 @@ class PdfData(object):
         break
       if not isinstance(xref_ofs, int) and not isinstance(xref_ofs, long):
         raise PdfXrefError('/Prev xref offset not an int: %r' % xref_ofs)
+      # Subsequent /Prev xref tables are not allowed to modify objects
+      # we've already created.
+      # for testing: obj 5 in bfilter.pdf
+      keep_obj_nums.update(obj_starts)
     return obj_starts, has_generational_objs
 
   @classmethod
@@ -3184,7 +3196,7 @@ class PdfData(object):
         prev_obj_num = 'trailer'
       # TODO(pts): Allow multiple trailers.
       # Test with: pdf.a9p4/5176.CFF.a9p4.pdf
-      assert prev_obj_num not in obj_starts, 'duplicate obj ' + prev_obj_num
+      assert prev_obj_num not in obj_starts, 'duplicate obj %d' % prev_obj_num
       # Skip over '\n'
       obj_starts[prev_obj_num] = match.start(0) + 1
 
