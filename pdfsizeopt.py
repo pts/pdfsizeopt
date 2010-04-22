@@ -5925,7 +5925,7 @@ cvx bind /LoadCff exch def
                              (len(data), output_size))
     return ''.join(output)
 
-  def SaveWithMultivalent(self, file_name):
+  def SaveWithMultivalent(self, file_name, do_escape_images):
     """Save this PDF to file_name, return self."""
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
@@ -5940,7 +5940,7 @@ cvx bind /LoadCff exch def
         'info: writing Multivalent input PDF: %s' % in_pdf_tmp_file_name)
     orig_file_name = self.file_name
     orig_file_size = self.file_size
-    self.Save(in_pdf_tmp_file_name, do_hide_images=True)
+    self.Save(in_pdf_tmp_file_name, do_hide_images=do_escape_images)
     in_data_size = self.file_size
     self.file_name = orig_file_name
     self.file_size = orig_file_size
@@ -6054,6 +6054,10 @@ def main(argv):
     do_regenerate_all_fonts = True
     do_double_check_missing_glyphs = False
     do_ignore_generation_numbers = True
+    # Escaping (i.e. hiding images from Multivalent) is the safe choice
+    # since Multivalent handles some predictors in buggy way, thus garbling
+    # images data with /Predictor.
+    do_escape_images_from_multivalent = True
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -6064,6 +6068,7 @@ def main(argv):
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
         'do-regenerate-all-fonts=',
+        'do-escape-images-from-multivalent=',
         'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
 
     for key, value in opts:
@@ -6080,6 +6085,8 @@ def main(argv):
         use_multivalent = ParseBoolFlag(key, value)
       elif key == '--do-ignore-generation-numbers':
         do_ignore_generation_numbers = ParseBoolFlag(key, value)
+      elif key == '--do-escape-images-from-multivalent':
+        do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-images':
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-objs':
@@ -6156,7 +6163,8 @@ def main(argv):
     # TODO(pts): Do only a simpler optimization with renumbering.
     pdf.OptimizeObjs()
   if use_multivalent:
-    pdf.SaveWithMultivalent(output_file_name)
+    pdf.SaveWithMultivalent(
+        output_file_name, do_escape_images=do_escape_images_from_multivalent)
   else:
     # !! emit a warning if we have an image with a predictor
     pdf.Save(output_file_name)
