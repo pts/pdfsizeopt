@@ -2998,7 +2998,16 @@ class PdfData(object):
 
     assert 'trailer' in obj_starts, 'no PDF trailer'
     assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
-    print >>sys.stderr, 'info: separated to %s objs' % (len(obj_starts) - 1)
+    obj_count = len(obj_starts)
+    obj_count_extra = ''
+    if 'xref' in obj_starts:
+      obj_count_extra += ' + xref'
+      obj_count -= 1
+    if 'trailer' in obj_starts:
+      obj_count_extra += ' + trailer'
+      obj_count -= 1
+    print >>sys.stderr, 'info: separated to %s objs%s' %  (
+        obj_count, obj_count_extra)
     last_ofs = trailer_ofs = obj_starts.pop('trailer')
     self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
     self.trailer.Set('Prev', None)
