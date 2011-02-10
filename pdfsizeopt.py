@@ -158,7 +158,6 @@ class PdfIndirectLengthError(PdfTokenParseError):
   length.  
   """
 
-
 class PdfTokenTruncated(Error):
   """Raised if a string is only a prefix of a PDF token sequence."""
 
@@ -2606,7 +2605,7 @@ class ImageData(object):
     pdf_obj.stream = pdf_image_data['.stream']
 
   def CompressToZipPng(self):
-    """Compress self.idat to self.compresson = 'zip-png'."""
+    """Compress self.idat to self.compresson == 'zip-png'."""
     assert self
     if self.compression == 'zip-png':
       # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
@@ -4823,6 +4822,8 @@ cvx bind /LoadCff exch def
 
     return png_files
 
+  SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
+
   def OptimizeImages(self, use_pngout=True, use_jbig2=True):
     """Optimize image XObjects in the PDF."""
     # TODO(pts): Keep output of pngout between runs, to reduce time.
@@ -4838,8 +4839,7 @@ cvx bind /LoadCff exch def
     by_orig_data = {}
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
-    # Maps obj_nums to string values to the orignal values of
-    # self.objs[obj_num].Get('Mask').
+    force_grayscale_obj_nums = set()
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
 
@@ -4871,12 +4871,23 @@ cvx bind /LoadCff exch def
       except UnexpectedStreamError:
         assert isinstance(mask, str)
         mask = PdfObj.ParseSimpleValue(mask)
-        match = re.match(r'(\d+) (\d+) R\Z', mask)
         do_remove_mask = True
       if (isinstance(mask, str) and mask and
           not do_remove_mask and
           not re.match(r'\[\s*\]\Z', mask)):
         continue
+
+      smask = obj.Get('SMask')
+      if isinstance(smask, str):
+        try:
+          smask = PdfObj.ParseSimpleValue(smask)
+        except PdfTokenParseError:
+          pass
+      if isinstance(smask, str):
+        match = re.match(r'(\d+) (\d+) R\Z', smask)
+        if match:
+          # The target image of an /SMask must be /ColorSpace /DeviceGray.
+          force_grayscale_obj_nums.add(int(match.group(1)))
 
       bpc, bpc_has_changed = PdfObj.ResolveReferences(
           obj.Get('BitsPerComponent'), objs=self.objs)
@@ -5093,6 +5104,10 @@ cvx bind /LoadCff exch def
         # !! shortcut for sam2p (don't need pngtopnm)
         #    (add basic support for reading PNG to sam2p? -- just what GS produces)
         #    (or just add .gz support?)
+        if obj_num in force_grayscale_obj_nums:
+          sam2p_mode = self.SAM2P_GRAYSCALE_MODE
+        else:
+          sam2p_mode = 'Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop'
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
             targetfn='pso.conv-%d.sam2p-np.pdf' % obj_num,
@@ -5101,7 +5116,7 @@ cvx bind /LoadCff exch def
             # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
             # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
             # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
-            cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- %(sourcefnq)s %(targetfnq)s',
+            cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s ' + ShellQuote(sam2p_mode) + ' -- %(sourcefnq)s %(targetfnq)s',
             cmd_name='sam2p_np'))
 
         image_tuple = obj_images[-1][1].ToDataTuple()
@@ -5117,10 +5132,14 @@ cvx bind /LoadCff exch def
               'info: using already processed image for obj %s' % obj_num)
           obj_images.append(('#prev-sam2p-best', target_image))
         else:
+          if obj_num in force_grayscale_obj_nums:
+            sam2p_s_flags = '-s %s ' % ShellQuote(self.SAM2P_GRAYSCALE_MODE)
+          else:
+            sam2p_s_flags = ''
           obj_images.append(self.ConvertImage(
               sourcefn=rendered_image_file_name,
               targetfn='pso.conv-%d.sam2p-pr.png' % obj_num,
-              cmd_pattern='sam2p -c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
+              cmd_pattern='sam2p ' + sam2p_s_flags+ '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
               cmd_name='sam2p_pr'))
           if (use_jbig2 and obj_images[-1][1].bpc == 1 and
               obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
@@ -5142,17 +5161,20 @@ cvx bind /LoadCff exch def
           # !! TODO(pts): Find better pngout binary file name.
           # TODO(pts): Try optipng as well (-o5?)
           if use_pngout:
+            if obj_num in force_grayscale_obj_nums:
+              pngout_gray_flags = '-c0 '
+            else:
+              pngout_gray_flags = ''
             obj_images.append(self.ConvertImage(
                 sourcefn=rendered_image_file_name,
                 targetfn='pso.conv-%d.pngout.png' % obj_num,
-                cmd_pattern='pngout '
+                cmd_pattern='pngout ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout'))
           # TODO(pts): For very small (10x10) images, try uncompressed too.
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
       for cmd_name, image_data in obj_images:
-        new_obj = PdfObj(obj)
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
           # We can't use this optimized image, so we skip it.
           if cmd_name != 'gs':  # no warning for what was rendered by Ghostscript
@@ -5161,10 +5183,19 @@ cvx bind /LoadCff exch def
                 'for image XObject %s because of source /ImageMask' %
                 (image_data.bpc, image_data.color_type, image_data.file_name,
                  obj_num))
-        else:
-          image_data.UpdatePdfObj(new_obj)
-          obj_infos.append([new_obj.size, cmd_name, image_data.file_name,
-                            new_obj, image_data])
+          continue
+        if obj_num in force_grayscale_obj_nums and image_data.color_type != 'gray':
+          if cmd_name != 'gs':
+            print >>sys.stderr, (
+                'warning: skipping bpc=%s color_type=%s file_name=%r '
+                'for image XObject %s because grayscale is needed' %
+                (image_data.bpc, image_data.color_type, image_data.file_name,
+                 obj_num))
+          continue
+        new_obj = PdfObj(obj)
+        image_data.UpdatePdfObj(new_obj)
+        obj_infos.append([new_obj.size, cmd_name, image_data.file_name,
+                          new_obj, image_data])
 
       assert obj.Get('Width') == image_tuple[0]
       assert obj.Get('Height') == image_tuple[1]
