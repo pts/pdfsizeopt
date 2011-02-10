@@ -6094,8 +6094,18 @@ def main(argv):
     # Since the built-in linecache.py doesn't attempt to read such files,
     # we don't do that either, and keep size = None for simplicity.
     size = None
-  print >>sys.stderr, 'info: This is %s size=%s.' % (
-      os.path.basename(__file__), size)
+  try:
+    match = re.search(r'\npdfsizeopt.py\nfile\n(\d+)\n',
+                      open(os.path.dirname(__file__) + '/.svn/entries').read())
+    if match:
+      rev = int(match.group(1))
+    else:
+      rev = None
+  except IOError:
+    rev = None
+  print >>sys.stderr, 'info: This is %s r%s size=%s.' % (
+      os.path.basename(__file__), rev, size)
+      
   # Find image converters in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
   os.environ['PATH'] = '%s:%s' % (script_dir, os.getenv('PATH', ''))
