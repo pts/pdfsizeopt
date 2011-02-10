@@ -35,12 +35,9 @@ tool.pdf.Compress in Multivaent.jar from http://multivalent.sf.net/ for that.
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
 
-__id__ = '$Id$'
-if __id__ == '$' + 'Id' + '$':
-  # As downloaded from:
-  # http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
-  # TODO(pts): Make that download do the expansion.
-  __id__ = 't t UNKNOWN'
+# We don't want to have a '$' + 'Id' in this file, because downloading the
+# script from http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
+# won't expand that to a useful version number.
 
 import array
 import getopt
@@ -6080,8 +6077,15 @@ def ParseBoolFlag(flag_name, flag_value):
 
 
 def main(argv):
-  print >>sys.stderr, 'info: This is %s r%s.' % (
-      os.path.basename(__file__), __id__.split(' ', 3)[2])
+  try:
+    size = os.stat(__file__).st_size
+  except OSError:
+    # We'll get this if __file__ is within a .zip file (on $PYTHONPATH).
+    # Since the built-in linecache.py doesn't attempt to read such files,
+    # we don't do that either, and keep size = None for simplicity.
+    size = None
+  print >>sys.stderr, 'info: This is %s size=%s.' % (
+      os.path.basename(__file__), size)
   # Find image converters in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
   os.environ['PATH'] = '%s:%s' % (script_dir, os.getenv('PATH', ''))
