@@ -3870,12 +3870,20 @@ dup /FontSetInit FindItem
   dup 0 lt { /invalidfileaccess /MissingReadData signalerror } if
 1 index sub 1 add getinterval
 cvx bind /LoadCff exch def
+% Now we have one of these:
+% /LoadCff { /FontSetInit /ProcSet findresource begin //true         ReadData pop } bind def  % gs 8.62 or earlier
+% /LoadCff { /FontSetInit /ProcSet findresource begin //true //false ReadData pop } bind def  % gs 8.63 or later
 
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
   % <streamdict> <decompressed-file>
   systemdict /FontDirectory get {pop undefinefont} forall
   dup /MY exch LoadCff
+  % The last command in LoadCff is ReadData, which pushes the <fontset> dict
+  % to the stack for gs 8.63 or later, and doesn't push anything in gs 8.62
+  % or earlier. We just check the type and pop the value if it is a dict.
+  % There is a /filetype above.
+  dup type /dicttype eq { pop } if
   closefile  % is this needed?
   % <streamdict>
   pop
