@@ -6047,8 +6047,15 @@ cvx bind /LoadCff exch def
       assert 0, 'Multivalent.jar not found, see above'
     assert ':' not in multivalent_jar  # $CLASSPATH separator
 
-    multivalent_cmd = 'java -cp %s tool.pdf.Compress %s' % (
+    # See http://code.google.com/p/pdfsizeopt/issues/detail?id=30
+    # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .   
+    # TODO(pts): Implement -nocore14 (unembewdding the core 15 fonts) as a
+    # pdfsizeopt feature.
+    multivalent_flags = '-nopagepiece -noalt'
+
+    multivalent_cmd = 'java -cp %s tool.pdf.Compress %s %s' % (
         ShellQuoteFileName(multivalent_jar),
+        multivalent_flags,
         ShellQuoteFileName(in_pdf_tmp_file_name))
     print >>sys.stderr, (
         'info: executing Multivalent to optimize PDF: %s' % multivalent_cmd)
