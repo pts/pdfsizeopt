@@ -3115,8 +3115,10 @@ class PdfData(object):
         xref_head = data[xref_ofs : xref_ofs + 128]
         # Start a new subsection.
         # For testing whitespace before trailer: enc.pdf
+        # obj_count == 0 is fine, see
+        # http://code.google.com/p/pdfsizeopt/issues/detail?id=25
         match = re.match(
-            r'(\d+)\s+([1-9]\d*)\s+|[\0\t\n\r\f ]*(xref|trailer)\s', xref_head)
+            r'(\d+)\s+(\d+)\s+|[\0\t\n\r\f ]*(xref|trailer)\s', xref_head)
         if not match:
           raise PdfXrefError('xref subsection syntax error at %d' % xref_ofs)
         if match.group(3) is not None:
@@ -3217,13 +3219,16 @@ class PdfData(object):
                 'generational objects (in %s %s n) not supported at %d' %
                 (match.group(1), match.group(2), xref_ofs))
           has_generational_objs = True
+        assert prev_obj_num not in obj_starts, 'duplicate obj %d' % prev_obj_num
+        # Skip over '\n'
+        obj_starts[prev_obj_num] = match.start(0) + 1
       else:
         prev_obj_num = 'trailer'
-      # TODO(pts): Allow multiple trailers.
-      # Test with: pdf.a9p4/5176.CFF.a9p4.pdf
-      assert prev_obj_num not in obj_starts, 'duplicate obj %d' % prev_obj_num
-      # Skip over '\n'
-      obj_starts[prev_obj_num] = match.start(0) + 1
+        # Allow multiple trailers. Keep the last one. This heuristic works
+        # for http://code.google.com/p/pdfsizeopt/issues/detail?id=25 .
+        # TODO(pts): Test multiple trailers with: pdf.a9p4/5176.CFF.a9p4.pdf
+        # Skip over '\n'
+        obj_starts[prev_obj_num] = match.start(0) + 1
 
     # TODO(pts): Learn to parse no trailer in PDF-1.5
     # (e.g. pdf_reference_1-7-o.pdf)
