@@ -57,6 +57,11 @@ class Error(Exception):
   """Comon base class for exceptions defined in this file."""
 
 
+def GetGsCommand():
+  """Return shell command-line prefix for running Ghostscript (gs)."""
+  return os.getenv('PDFSIZEOPT_GS', 'gs')
+
+
 def ShellQuote(string):
   # TODO(pts): Make it work on non-Unix systems.
   string = str(string)
@@ -1982,12 +1987,13 @@ class PdfObj(object):
       decodeparms_pair = '/DecodeParms ' + decodeparms
     # !! batch all decompressions, so we don't have to run gs again.
     gs_defilter_cmd = (
-        'gs -dNODISPLAY -q -sINFN=%s -c \'/i INFN(r)file<</CloseSource true '
+        '%s -dNODISPLAY -q -sINFN=%s -c \'/i INFN(r)file<</CloseSource true '
         '/Intent 2/Filter %s%s>>/ReusableStreamDecode filter def '
         '/o(%%stdout)(w)file def/s 4096 string def '
         '{i s readstring exch o exch writestring not{exit}if}loop '
         'o closefile quit\'' %
-        (ShellQuoteFileName(tmp_file_name), filter, decodeparms_pair))
+        (GetGsCommand(),
+         ShellQuoteFileName(tmp_file_name), filter, decodeparms_pair))
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
         '/Filter%s%s' % (len(self.stream), filter, decodeparms_pair))
@@ -3765,10 +3771,10 @@ class PdfData(object):
 
     EnsureRemoved(pdf_tmp_file_name)
     gs_cmd = (
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -f %s'
-        % (ShellQuoteFileName(pdf_tmp_file_name),
+        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing Type1CConverter with Ghostscript'
         ': %s' % gs_cmd)
@@ -3995,9 +4001,9 @@ cvx bind /LoadCff exch def
 
     EnsureRemoved(data_tmp_file_name)
     gs_cmd = (
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=nullpage '
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=nullpage '
         '-sDataFile=%s -f %s'
-        % (ShellQuoteFileName(data_tmp_file_name),
+        % (GetGsCommand(), ShellQuoteFileName(data_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing Type1CParser with Ghostscript'
         ': %s' % gs_cmd)
@@ -4462,10 +4468,10 @@ cvx bind /LoadCff exch def
 
     EnsureRemoved(pdf_tmp_file_name)
     gs_cmd = (
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -f %s'
-        % (ShellQuoteFileName(pdf_tmp_file_name),
+        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing Type1CGenerator with Ghostscript'
         ': %s' % gs_cmd)
@@ -4743,9 +4749,9 @@ cvx bind /LoadCff exch def
       assert not os.path.exists(png_tmp_file_name)
 
     gs_cmd = (
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=%s '
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=%s '
         '-sOutputFile=%s -f %s'
-        % (ShellQuote(gs_device),
+        % (GetGsCommand(), ShellQuote(gs_device),
            ShellQuoteFileName(png_tmp_file_pattern),
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, ('info: executing ImageRenderer with Ghostscript'
@@ -6047,8 +6053,11 @@ def main(argv):
   print >>sys.stderr, 'info: This is %s r%s.' % (
       os.path.basename(__file__), __id__.split(' ', 3)[2])
   # Find image converters in script dir first.
-  os.environ['PATH'] = '%s:%s' % (
-      os.path.dirname(os.path.abspath(__file__)), os.getenv('PATH', ''))
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  os.environ['PATH'] = '%s:%s' % (script_dir, os.getenv('PATH', ''))
+  if (not os.getenv('PDFSIZEOPT_GS', '') and
+      os.path.isfile(script_dir + '/gs-pdfsizeopt/gs')):
+    os.environ['PDFSIZEOPT_GS'] = ShellQuote(script_dir + '/gs-pdfsizeopt/gs')
   if not argv:
     argv = [__file__]
   if len(argv) == 1:
