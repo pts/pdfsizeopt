@@ -543,11 +543,11 @@ class PdfObj(object):
   def Get(self, key, default=None):
     """Get value for key if self.head is a PDF dict.
     
-    Use PdfData.Resolve(obj.Get(...)) to resolve indirect refs.
-    TODO(pts): Implement PdfData.Resolve.
+    Use self.ResolveReferences(obj.Get(...)) to resolve indirect refs.
     
     Args:
       key: A PDF name literal without a slash, e.g. 'ColorSpace'
+      default: The value to return if key was not found. None by default.
     Returns:
       An str, bool, int, long or None value, as returned by
       self.ParseSimpleValue, default, if key was not found.
@@ -3746,7 +3746,7 @@ class PdfData(object):
     return objs
 
   @classmethod
-  def GenerateType1CFontsFromType1(cls, objs, ps_tmp_file_name,
+  def GenerateType1CFontsFromType1(cls, objs, ref_objs, ps_tmp_file_name,
                                    pdf_tmp_file_name):
     if not objs: return {}
     output = ['%!PS-Adobe-3.0\n',
@@ -3757,8 +3757,29 @@ class PdfData(object):
     output_prefix_len = sum(map(len, output))
     type1_size = 0
     for obj_num in sorted(objs):
-      type1_size += objs[obj_num].size
-      objs[obj_num].AppendTo(output, obj_num)
+      obj = objs[obj_num]
+      new_obj = None
+      type1_size += obj.size
+      # TODO(pts): Add whitespace instead.
+
+      # We're a bit to cautious here. Ghostscript 8.61 and 8.71 doen't need
+      # /Length1, /Length2 or /Length3 for parsing Type1 fonts, but they are
+      # required by the PDF spec.
+      for key in ('Length1', 'Length2', 'Length3', 'Subtype'):
+        data, has_changed = obj.ResolveReferences(obj.Get(key), ref_objs)
+        if data is not None and has_changed:
+          if not new_obj:
+            new_obj = obj = PdfObj(obj)
+          obj.Set(key, data)
+
+      # We don't need it, and if we kept it, it may do harm if it
+      # contains indirect references.
+      if obj.Get('Metadata') is not None:
+        if not new_obj:
+          new_obj = obj = PdfObj(obj)
+        obj.Set('Metadata', None)
+
+      obj.AppendTo(output, obj_num)
     output.append('(Type1CConverter: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     print >>sys.stderr, ('info: writing Type1CConverter (%s font bytes) to: %s'
@@ -4047,7 +4068,8 @@ cvx bind /LoadCff exch def
     """Convert all Type1 fonts to Type1C in self, returns self."""
     # !! proper tmp prefix
     type1c_objs = self.GenerateType1CFontsFromType1(
-        self.GetFonts('Type1'), 'pso.conv.tmp.ps', 'pso.conv.tmp.pdf')
+        self.GetFonts('Type1'), self.objs,
+        'pso.conv.tmp.ps', 'pso.conv.tmp.pdf')
     for obj_num in type1c_objs:
       obj = self.objs[obj_num]
       assert str(obj.Get('FontName')).startswith('/')
