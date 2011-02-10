@@ -140,6 +140,9 @@ class PdfOptimizeError(Error):
 class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
+class UnexpectedStreamError(Error):
+  """Raised when ResolveReferences gets a ref to an obj with stream."""
+
 
 class PdfReferenceTargetMissing(Error):
   """Raised if the target obj for an <x> <y> R is missing."""
@@ -897,7 +900,7 @@ class PdfObj(object):
     elif data.endswith('R'):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
       if match:
-        return '%d %d R' % (int(match.group(1)), int(match.group(2))) 
+        return '%d %d R' % (int(match.group(1)), int(match.group(2)))
       return data
     else:
       raise PdfTokenParseError('syntax error in %r' % data)
@@ -2071,7 +2074,7 @@ class PdfObj(object):
         return new_data
       else:
         if not do_strings:
-          raise PdfTokenParseError(
+          raise UnexpectedStreamError(
               'unexpected stream in: %d 0 obj' % obj_num)
         return obj.EscapeString(obj.GetUncompressedStream(objs=objs))
 
@@ -4830,6 +4833,8 @@ cvx bind /LoadCff exch def
     by_orig_data = {}
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
+    # Maps obj_nums to string values to the orignal values of
+    # self.objs[obj_num].Get('Mask').
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
 
@@ -4852,8 +4857,19 @@ cvx bind /LoadCff exch def
       # convert the /Mask to RGB8, remove it, and add it back (properly
       # converted back) to the final PDF; pay attention to /Decode
       # differences as well.
-      mask, _ = PdfObj.ResolveReferences(obj.Get('Mask'), objs=self.objs)
+      # TODO(pts): Support an image mask (with /Mask x 0 R pointing to
+      # an obj << /Subtype/Image /ImageMask true >>).
+      mask = obj.Get('Mask')
+      do_remove_mask = False
+      try:
+        mask, _ = PdfObj.ResolveReferences(mask, objs=self.objs)
+      except UnexpectedStreamError:
+        assert isinstance(mask, str)
+        mask = PdfObj.ParseSimpleValue(mask)
+        match = re.match(r'(\d+) (\d+) R\Z', mask)
+        do_remove_mask = True
       if (isinstance(mask, str) and mask and
+          not do_remove_mask and
           not re.match(r'\[\s*\]\Z', mask)):
         continue
 
@@ -4942,6 +4958,11 @@ cvx bind /LoadCff exch def
       if not re.match(r'(?:/Device(?:RGB|Gray)\Z|\[\s*/Indexed\s*'
                       r'/Device(?:RGB|Gray)\s)', colorspace):
         continue
+
+      if obj.Get('Mask') and do_remove_mask:
+        if obj is obj0:
+          obj = PdfObj(obj)
+        obj.Set('Mask', None)
 
       # !! TODO(pts): proper PDF token sequence parsing
       # !! add resolving of references
@@ -5184,6 +5205,8 @@ cvx bind /LoadCff exch def
         assert obj_infos[0][3].Get('Width') == obj.Get('Width')
         assert obj_infos[0][3].Get('Height') == obj.Get('Height')
         self.objs[obj_num] = obj = obj_infos[0][3]
+        # At this point, obj.Get('Mask') contains `x y R' if it contained it
+        # before.
 
       if obj_infos[0][4] is not None:
         by_rendered_tuple[rendered_tuple] = obj_infos[0][4]
