@@ -5925,6 +5925,26 @@ cvx bind /LoadCff exch def
                              (len(data), output_size))
     return ''.join(output)
 
+  def FindMultivalentJar(self, file_name):
+    """Find Multivalent.jar
+    
+    Args:
+      file_name: e.g. 'Multivalent.jar'
+    Returns:
+      Pathname to Multivalent.jar or None.
+    """
+    assert '/' not in file_name
+    multivalent_jar = FindOnPath(file_name)
+    if multivalent_jar is None:
+      slash_file_name = '/' + file_name
+      for item in os.getenv('CLASSPATH', '').split(':'):
+        if not item:
+          continue
+        if item.endswith(slash_file_name):
+          multivalent_jar = item
+          break
+    return multivalent_jar
+
   def SaveWithMultivalent(self, file_name, do_escape_images):
     """Save this PDF to file_name, return self."""
     # TODO(pts): Specify args to Multivalent.jar.
@@ -5946,14 +5966,9 @@ cvx bind /LoadCff exch def
     self.file_size = orig_file_size
     EnsureRemoved(out_pdf_tmp_file_name)
 
-    multivalent_jar = FindOnPath('Multivalent.jar')
+    multivalent_jar = self.FindMultivalentJar('Multivalent.jar')
     if multivalent_jar is None:
-      for item in os.getenv('CLASSPATH', '').split(':'):
-        if not item:
-          continue
-        if item.endswith('/Multivalent.jar'):
-          multivalent_jar = item
-          break
+      multivalent_jar = self.FindMultivalentJar('Multivalent20060102.jar')
     if not multivalent_jar:
       print >>sys.stderr, (
           'error: Multivalent.jar not found. Make sure it is on the $PATH, '
