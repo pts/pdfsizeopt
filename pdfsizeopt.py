@@ -2217,9 +2217,9 @@ class PdfObj(object):
                 (((-operand - 108) >> 8) + 251, (-operand - 108) & 255))
             assert 251 <= ord(output[-1][0]) <= 254
           elif -32768 <= operand <= 32767:
-            output.append(chr(28) + struct.pack('>H', operand))
+            output.append(chr(28) + struct.pack('>H', operand & 0xffff))
           elif ~0x7fffffff <= operand <= 0x7fffffff:
-            output.append(chr(29) + struct.pack('>L', operand))
+            output.append(chr(29) + struct.pack('>L', operand & 0xffffffff))
           else:
             assert 0, 'CFF DICT integer operand %r out of range' % operand
         else:
