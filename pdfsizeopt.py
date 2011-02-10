@@ -1973,7 +1973,7 @@ class PdfObj(object):
     if not is_gs_ok:
       raise FilterNotImplementedError('filter not implemented: ' + filter)
     tmp_file_name = 'pso.filter.tmp.bin'
-    f = open(tmp_file_name, 'w')
+    f = open(tmp_file_name, 'wb')
     write_ok = False
     try:
       f.write(self.stream)
@@ -1997,7 +1997,7 @@ class PdfObj(object):
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
         '/Filter%s%s' % (len(self.stream), filter, decodeparms_pair))
-    f = os.popen(gs_defilter_cmd)
+    f = os.popen(gs_defilter_cmd, 'rb')
     data = f.read()  # TODO(pts): Handle IOError etc.
     assert not f.close(), 'Ghostscript decompression failed: %s' % (
         gs_defilter_cmd)
@@ -4064,7 +4064,7 @@ cvx bind /LoadCff exch def
     # ps_tmp_file_name is usually about 5 times as large as the input of
     # Type1CParse (pdf_tmp_file_name)
     os.remove(ps_tmp_file_name)
-    f = open(data_tmp_file_name)
+    f = open(data_tmp_file_name, 'rb')
     try:
       data = f.read()
     finally:
@@ -4602,7 +4602,7 @@ cvx bind /LoadCff exch def
     assert os.path.exists(targetfn), (
         '%s has not created the output image %r' % (cmd_name, targetfn))
     if do_just_read:
-      f = open(targetfn)
+      f = open(targetfn, 'rb')
       try:
         return cmd_name, f.read()
       finally:
@@ -6064,7 +6064,7 @@ cvx bind /LoadCff exch def
           out_pdf_tmp_file_name)
       assert 0, 'Multivalent failed (no output)'
 
-    f = open(out_pdf_tmp_file_name)
+    f = open(out_pdf_tmp_file_name, 'rb')
     try:
       data = f.read()
     finally:
@@ -6082,7 +6082,7 @@ cvx bind /LoadCff exch def
 
     print >>sys.stderr, 'info: saving PDF to: %s' % (
         file_name)
-    f = open(file_name, 'w')
+    f = open(file_name, 'wb')
     try:
       f.write(data)
     finally:
@@ -6123,8 +6123,9 @@ def main(argv):
     # we don't do that either, and keep size = None for simplicity.
     size = None
   try:
-    match = re.search(r'\npdfsizeopt.py\nfile\n(\d+)\n',
-                      open(os.path.dirname(__file__) + '/.svn/entries').read())
+    match = re.search(
+        r'\npdfsizeopt.py\r?\nfile\r?\n(\d+)\r?\n',
+        open(os.path.dirname(__file__) + '/.svn/entries', 'rb').read())
     if match:
       rev = int(match.group(1))
     else:
