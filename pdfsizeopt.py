@@ -3043,17 +3043,27 @@ class PdfData(object):
       if ('endstream' not in this_obj_data and
           '<' not in this_obj_data and
           '(' not in this_obj_data):
-        self.objs[obj_num] = PdfObj(
-            obj_data[obj_num],
-            file_ofs=obj_starts[obj_num],
-            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+        try:
+          self.objs[obj_num] = PdfObj(
+              obj_data[obj_num],
+              file_ofs=obj_starts[obj_num],
+              do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+        except PdfTokenParseError, e:
+          print >>sys.stderr, (
+              'warning: cannot parse obj %d: %s.%s: %s' % (
+              obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
     # Second pass once we have all length numbers.
     for obj_num in obj_data:
       if obj_num not in self.objs:
-        self.objs[obj_num] = PdfObj(
-            obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
-            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+        try:
+          self.objs[obj_num] = PdfObj(
+              obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
+              do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+        except PdfTokenParseError, e:
+          print >>sys.stderr, (
+              'warning: cannot parse obj %d: %s.%s: %s' % (
+              obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
     return self
 
