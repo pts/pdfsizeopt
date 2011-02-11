@@ -4346,7 +4346,7 @@ cvx bind /LoadCff exch def
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       parsed_font['FontName'] = obj.Get('FontName')
-      if (parsed_font.get('FontType') != 3 or 
+      if (parsed_font.get('FontType') != 2 or 
           not isinstance(parsed_font.get('CharStrings'), dict) or
           'FontMatrix' not in parsed_font or
           'PaintType' not in parsed_font):
