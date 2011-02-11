@@ -4579,7 +4579,7 @@ cvx bind /LoadCff exch def
 
   @classmethod
   def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
-                   do_just_read=False):
+                   do_just_read=False, return_none_if_status=None):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
     if not isinstance(sourcefn, str): raise TypeError
     if not isinstance(targetfn, str): raise TypeError
@@ -4594,6 +4594,9 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, ('info: executing image optimizer %s: %s' %
         (cmd_name, cmd))
     status = os.system(cmd)
+    if (return_none_if_status is not None and
+        status == return_none_if_status):
+      return None
     if status:
       print >>sys.stderr, 'info: %s failed, status=0x%x' % (cmd_name, status)
       assert 0, '%s failed (status)' % cmd_name
@@ -5165,12 +5168,18 @@ cvx bind /LoadCff exch def
               pngout_gray_flags = '-c0 '
             else:
               pngout_gray_flags = ''
-            obj_images.append(self.ConvertImage(
+            image = self.ConvertImage(
                 sourcefn=rendered_image_file_name,
                 targetfn='pso.conv-%d.pngout.png' % obj_num,
                 cmd_pattern='pngout ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
-                cmd_name='pngout'))
+                cmd_name='pngout',
+                # New pngout if: 'Unable to compress further: copying
+                # original file'
+                return_none_if_status=0x200)
+            if image is not None:
+              obj_images.append(image)
+              image = None
           # TODO(pts): For very small (10x10) images, try uncompressed too.
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
