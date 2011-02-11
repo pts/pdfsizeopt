@@ -4160,6 +4160,8 @@ cvx bind /LoadCff exch def
 
   @classmethod
   def GetStrippedPrivate(cls, private_dict):
+    if private_dict is None:
+      return None
     private_dict = dict(private_dict)
     # TODO(pts): Unify these meaningfully.
     # Example:
@@ -4203,23 +4205,32 @@ cvx bind /LoadCff exch def
       FontsNotMergeable: If cannot be merged. In that case, target_fd is not
         modified.
     """
+    # A /Subrs list prevents easy merging, because then we would have to
+    # renumber to calling instructions in the /CharStrings values.
+    # TODO(pts): Implement this refactoring.
+    #
+    # Our callers should make sure that we are not called with fonts with
+    # /Subrs.
     assert 'Subrs' not in target_font
-    assert 'Subrs' not in target_font['Private']  # !! not mergeable
+    assert 'Subrs' not in target_font.get('Private', ())
     assert 'Subrs' not in source_font
-    assert 'Subrs' not in source_font['Private']  # !! not mergeable
+    assert 'Subrs' not in source_font.get('Private', ())
     # Our caller should take care of removing FontBBox.
     assert 'FontBBox' not in source_font
     assert 'FontBBox' not in target_font
+    assert source_font['FontType'] == 2
+    assert target_font['FontType'] == 2
     # !! proper check for FontMatrix floats.
     # We ignore FontInfo and UniqueID.
-    for key in ('FontMatrix', 'FontType', 'PaintType'):
+    for key in ('FontMatrix', 'PaintType'):
       target_value = target_font[key]
       source_value = source_font[key]
       if target_value != source_value:
         raise FontsNotMergeable('mismatch in key %s: target=%r source=%r' %
             (key, target_value, source_value))
-    target_value = cls.GetStrippedPrivate(target_font['Private'])
-    source_value = cls.GetStrippedPrivate(source_font['Private'])
+    # This works even if target_font or source_font doesn't contain 'Private'.
+    target_value = cls.GetStrippedPrivate(target_font.get('Private'))
+    source_value = cls.GetStrippedPrivate(source_font.get('Private'))
     if target_value != source_value:
       raise FontsNotMergeable('mismatch in Private: target=%r source=%r' %
           (target_value, source_value))
@@ -4335,17 +4346,28 @@ cvx bind /LoadCff exch def
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       parsed_font['FontName'] = obj.Get('FontName')
-      assert parsed_font['FontType'] == 2
-      assert 'CharStrings' in parsed_font
-      assert 'FontMatrix' in parsed_font
-      assert 'Private' in parsed_font
-      assert 'PaintType' in parsed_font
-      assert 'FontInfo' in parsed_font  # !! delete eventually
-      assert 'CharStrings' in parsed_font
-      assert 'Subrs' not in parsed_font  # !! add a test for Subrs, maybe not in toplevel dict; maybe not dumped (because of noexec? -- but other parts of private are dumped)
-      # for testing: pdfsizeopt_charts.pdf has this (list of hex strings:
-      # ['<abc42>', ...]).
-      assert 'Subrs' not in parsed_font['Private']
+      if (parsed_font.get('FontType') != 3 or 
+          not isinstance(parsed_font.get('CharStrings'), dict) or
+          'FontMatrix' not in parsed_font or
+          'PaintType' not in parsed_font):
+        print >>sys.stderr, (
+            'warning: strange Type1 font obj %d, not attempting to merge; '
+            'CharStrings=%s FontType=%r FontMatrix=%r PaintType=%r' %
+            (obj_num, type(parsed_font.get('CharStrings')),
+             parsed_font.get('FontType'),
+             parsed_font.get('FontMatrix'),
+             parsed_font.get('PaintType')))
+        continue
+
+      if ('Subrs' in parsed_font or
+          'Subrs' in parsed_font.get('Private', ())):
+        # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex strings:
+        # ['<abc42>', ...]).
+        # See also self.MergeTwoType1CFonts why we can't merge fonts with /Subrs.
+        print >>sys.stderr, (
+            'info: not merging Type1C font obj %d because it has /Subrs' % obj_num)
+        continue
+
       # Extra, not checked: 'UniqueID'
       if 'FontBBox' in parsed_font:
         # This is part of the /FontDescriptor, we don't need it in the Type1C
