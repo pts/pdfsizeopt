@@ -2620,15 +2620,15 @@ class ImageData(object):
       raise FormatUnsupported(
           'cannot compress %s to zip-png' % self.compression)
 
-    # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
     bytes_per_row = self.bytes_per_row
-    idat_size = len(idat)
-    idat_size_mod = idat_size % bytes_per_row
+    useful_idat_size = bytes_per_row * self.height
+    assert len(idat) >= useful_idat_size, 'PNG IDAT too short (truncated?)'
+
+    # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
+    # For testing: http://code.google.com/p/pdfsizeopt/issues/detail?id=26
     # For testing: idat_size_mod == 1 in vrabimintest.pdf
-    assert idat_size_mod in (0, 1)
-    idat_size -= idat_size_mod
     output = []
-    for i in xrange(0, idat_size, bytes_per_row):
+    for i in xrange(0, useful_idat_size, bytes_per_row):
       # We don't want to optimize here (like how libpng does) by picking the
       # best predictor, i.e. the one which probably yields the smallest output.
       # PdfData.OptimizeImages has much better and faster algorithms for that.
@@ -2944,7 +2944,6 @@ class ImageData(object):
     self.compression = 'zip-png'
     assert self, 'could not load valid PNG image'
     return self
-
 
 
 class PdfData(object):
@@ -5017,17 +5016,18 @@ cvx bind /LoadCff exch def
 
       # Try to convert to PNG in-process. If we can't, schedule rendering with
       # Ghostscript. 
+      image1 = image2 = None
       try:
         # Both LoadPdfImageObj and CompressToZipPng raise FormatUnsupported.
         image1 = ImageData().LoadPdfImageObj(obj=obj, do_zip=False)
         if not image1.CanBePngImage(do_ignore_compression=True):
           raise FormatUnsupported('cannot save to PNG')
         image2 = ImageData(image1).CompressToZipPng()
-        # image2 won't be None
+        # image2 won't be None here.
       except FormatUnsupported:
         image1 = image2 = None
 
-      if image1 is None:
+      if image1 is None:  # Impossible to save obj as PNG.
         # Keep only whitelisted names, others such as /SMask may contain
         # references.
         # For testing: bt9.pdf
@@ -5639,7 +5639,7 @@ cvx bind /LoadCff exch def
       match = scanner.match()
       assert match
       obj_num = int(match.group(1))
-      # !!! set self.has_generational_objs
+      # !! set self.has_generational_objs
       obj_num_by_ofs_out[i] = obj_num
       if trailer_ofs == i:
         self.trailer = pdf_obj
