@@ -304,7 +304,7 @@ class PdfObj(object):
 
 
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
-               obj_starts=None, do_ignore_generation_numbers=False):
+               do_ignore_generation_numbers=False):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
@@ -460,7 +460,7 @@ class PdfObj(object):
       self._head = None
       self.stream = None
     else:
-      raise TypeError
+      raise TypeError(type(other))
 
   def AppendTo(self, output, obj_num):
     """Append serialized self to output list, using obj_num."""
@@ -1320,6 +1320,21 @@ class PdfObj(object):
 
     return cls.PDF_WHITESPACE_OR_HEX_STRING_RE.sub(
         ReplacementWhiteString, data)
+
+  @classmethod
+  def SimpleValueToString(cls, value):
+    if isinstance(value, str):
+      return value
+    elif isinstance(value, bool):  # must be above int and long
+      return str(value).lower()
+    elif isinstance(value, int) or isinstance(value, long):
+      return str(value)
+    elif value is None:
+      return 'null'
+    # We deliberately don't serialize float because of precision and
+    # representation issues (PDF doesn't support exponential notation).
+    else:
+      raise TypeError
 
   @classmethod
   def SerializeSimpleValue(cls, value):
@@ -6004,6 +6019,7 @@ cvx bind /LoadCff exch def
       version = max(pdf.version, '1.5')
     else:
       version = pdf.version
+    pdf_objs = pdf.objs
 
     # Keep initial comments, including the '%PDF-' header.
     output = ['%PDF-', version, '\n%\xD0\xD4\xC5\xD0\n']
@@ -6028,7 +6044,7 @@ cvx bind /LoadCff exch def
       obj_ofs = in_offsets[offsets_idx]
       obj_num = obj_num_by_in_ofs[obj_ofs]
       obj_size = in_offsets[offsets_idx + 1] - obj_ofs
-      pdf_obj = pdf.objs[obj_num]
+      pdf_obj = pdf_objs[obj_num]
       head = pdf_obj.head
 
       while output_size_idx < len(output):
@@ -6061,6 +6077,7 @@ cvx bind /LoadCff exch def
         pdf_obj.Set('ID', None)
         pdf_obj.Set('Compress', None)
         if pdf_obj.Get('Index') != None:
+          # Multivalent doesn't generate /Index.
           raise NotImplementedError('unexpected /Index in xref object')
         if pdf_obj.Get('Prev') != None:
           raise NotImplementedError('unexpected /Prev in xref object')
@@ -6085,11 +6102,11 @@ cvx bind /LoadCff exch def
           raise PdfTokenParseError('data length does not match /W: %r' % widths)
         w0, w1, w2 = widths
         xref_out = array.array('B', xref_data)
-        if not do_generate_xref_stream:
-          raise NotImplementedError('must generate xref stream from Multivalent')
-
         i = 0
         ref_obj_num = -1
+        # Maps /Type/ObjStm obj num to the list of strings (or other basic
+        # values suitable for a PdfObj._head) it contains.
+        objstm_cache = {}
         while i < len(xref_data):
           # See Table 3.16 Entries in a cross-reference stream in
           # pdf_reference_1-7.pdf.
@@ -6116,37 +6133,86 @@ cvx bind /LoadCff exch def
                  (fx, struct.pack('>Q', fx)[-w1:],
                   f1, struct.pack('>Q', f1)[-w1:], i - w2 - w1))
             fo = out_ofs_by_num[ref_obj_num]
-            if f1 != fo:  # Update the object offset in the xref stream.
-              # TODO(pts): Optimize this.
-              j = i - w2 - 1
-              k = j - w1
-              while j > k:
-                xref_out[j] = fo & 255
-                fo >>= 8
-                j -= 1
+            if do_generate_xref_stream:
+              if f1 != fo:  # Update the object offset in the xref stream.
+                # TODO(pts): Optimize this.
+                j = i - w2 - 1
+                k = j - w1
+                while j > k:
+                  xref_out[j] = fo & 255
+                  fo >>= 8
+                  j -= 1
+          elif not do_generate_xref_stream and f0 == 2 and f1 > 0:
+            # Obj ref_obj_num can be fetched from /Type/ObjStm obj f1, index
+            # f2.
+            objstm_items = objstm_cache.get(f1)
+            if objstm_items is None:
+              objstm_items = objstm_cache[f1] = PdfObj.ParseArray(
+                  '[%s]' % pdf_objs[f1].GetUncompressedStream(objs=pdf_objs))
+              assert len(objstm_items) % 3 == 0
+              del objstm_items[:len(objstm_items) * 2 / 3]
+            pdf_objs[ref_obj_num] = PdfObj(
+                '%d 0 obj\n%s\nendobj' %
+                (ref_obj_num, PdfObj.SimpleValueToString(objstm_items[f2])),
+                objs=pdf_objs)
+            while output_size_idx < len(output):
+              output_size += len(output[output_size_idx])
+              output_size_idx += 1
+            out_ofs_by_num[ref_obj_num] = output_size
+            pdf_objs[ref_obj_num].AppendTo(output, ref_obj_num)
 
-        xref_out = xref_out.tostring()
-        # For testing: Multivalent generates
-        # /DecodeParms<</Predictor 12/Columns 5>>
-        # for agilerails3.pdf, which is 9K, instead of 22K without predictor.
-        # TODO(pts): 5176.CFF.pso.pdf has
-        # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
-        pdf_obj.SetStreamAndCompress(
-            xref_out, may_keep_old=(xref_out == xref_data),
-            predictor_width=sum(widths), pdf=None)
-        print >>sys.stderr, (
-            'info: compressed xref stream from %s to %s bytes (%s)' %
-            (len(xref_out), pdf_obj.size,
-             FormatPercent(pdf_obj.size, len(xref_out))))
+        if do_generate_xref_stream:
+          xref_out = xref_out.tostring()
+          # For testing: Multivalent generates
+          # /DecodeParms<</Predictor 12/Columns 5>>
+          # for agilerails3.pdf, which is 9K, instead of 22K without predictor.
+          # TODO(pts): 5176.CFF.pso.pdf has
+          # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
+          pdf_obj.SetStreamAndCompress(
+              xref_out, may_keep_old=(xref_out == xref_data),
+              predictor_width=sum(widths), pdf=None)
+          print >>sys.stderr, (
+              'info: compressed xref stream from %s to %s bytes (%s)' %
+              (len(xref_out), pdf_obj.size,
+               FormatPercent(pdf_obj.size, len(xref_out))))
+          del xref_out
+        else:
+          while output_size_idx < len(output):
+            output_size += len(output[output_size_idx])
+            output_size_idx += 1
+          out_ofs_by_num[trailer_obj_num] = output_size
+          # Don't add 1, because this trailer is also counted.
+          output.append('xref\n0 %d\n' % len(pdf.objs))
+          done_obj_num = 0
+          assert trailer_obj_num in pdf.objs
+          for ref_obj_num in sorted(pdf.objs):
+            if ref_obj_num == trailer_obj_num:
+              continue
+            while done_obj_num < ref_obj_num:
+              output.append('0000000000 65535 f \n')
+              done_obj_num += 1
+            output.append('%010d 00000 n \n' % out_ofs_by_num[ref_obj_num])
+            done_obj_num += 1
+          pdf_obj.Set('Type', None)
+          pdf_obj.Set('W', None)
+          pdf_obj.Set('Filter', None)
+          pdf_obj.Set('Length', None)
+          pdf_obj.Set('DecodeParms', None)
+          pdf_obj.Set('Index', None)
+          pdf_obj.Set('Prev', None)
+          pdf_obj.Set('Size', len(pdf_objs))
+          output.append('trailer\n%s\n' % pdf_obj.head)
+          pdf_obj = None
 
-      pdf_obj.AppendTo(output, obj_num)
-      while output_size_idx < len(output):
-        output_size += len(output[output_size_idx])
-        output_size_idx += 1
-      obj_out_size = output_size - old_output_size
-      if obj_out_size > obj_size:
-        raise PdfOptimizeError('size of obj %s has grown from %s to %s bytes' %
-                               (obj_num, obj_size, obj_out_size))
+      if pdf_obj:
+        pdf_obj.AppendTo(output, obj_num)
+        while output_size_idx < len(output):
+          output_size += len(output[output_size_idx])
+          output_size_idx += 1
+        obj_out_size = output_size - old_output_size
+        if obj_out_size > obj_size:
+          raise PdfOptimizeError('size of obj %s has grown from %s to %s bytes' %
+                                 (obj_num, obj_size, obj_out_size))
 
     if pdf.version != output[1]:  # upgraded because of the xref
       assert len(pdf.version) == len(output[1])
@@ -6160,7 +6226,7 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, (
         'info: optimized to %s bytes after Multivalent (%s)' %
         (output_size, FormatPercent(output_size, len(data))))
-    if output_size > len(data):
+    if do_generate_xref_stream and output_size > len(data):
       raise PdfOptimizeError('PDF size has grown from %s to %s bytes' %
                              (len(data), output_size))
     return ''.join(output)
