@@ -3233,7 +3233,94 @@ class PdfData(object):
     assert prev_obj_num == 'trailer'
     return obj_starts, has_generational_objs
 
-  def Save(self, file_name, do_update_file_name=True, do_hide_images=False):
+  @classmethod
+  def GenerateXrefStream(cls, obj_numbers, obj_ofs, xref_ofs, trailer_obj):
+    """Generate the xref stream for the specified trailer object.
+
+    Add the appropriate, size-optimized trailer_obj.stream, add the
+    following names: /Size, /Type, /W, add or remove some names: /Index.
+
+    Please note that xref streams were introduced in PDF 1.5.
+
+    Args:
+      obj_numbers: List of object numbers the PDF contains. Generation
+        numbers are all 0.
+      obj_ofs: Dict mapping object numbers to object file offsets.
+      xref_ofs: File offset of the xref stream (trailer_obj)
+      trailer_obj: PdfObj whose .head contains the PDF trailer. Will be
+        modified in place: .stream and some names added.
+    """
+    assert obj_numbers
+    assert trailer_obj.head.startswith('<<')
+    assert trailer_obj.stream is None
+    trailer_obj.Set('Size', obj_numbers[-1] + 2)
+    trailer_obj.Set('Type', '/XRef')
+    has_free_obj = False
+    max_ofs = xref_ofs
+    max_ofs_size = 1
+    if obj_numbers[0] != 0:
+      trailer_obj.Set('Index', '[%d %d]' % (
+          obj_numbers[0], obj_numbers[-1] - obj_numbers[0] + 2))
+    else:
+      trailer_obj.Set('Index', None)
+    ofs_list = [obj_ofs[obj_num] for obj_num in obj_numbers]
+    ofs_list.append(xref_ofs)
+    for i in xrange(1, len(obj_numbers)):
+      if obj_numbers[i] - 1 != obj_numbers[i - 1]:
+        has_free_obj = True
+      max_ofs = max(max_ofs, ofs_list[i])
+    
+    while max_ofs >= 1 << (8 * max_ofs_size):
+      max_ofs_size += 1
+    if max_ofs_size > 8:
+      raise NotImplementedError(
+          'unsupported max_ofs_size=%d for max_ofs=%d' %
+          (max_ofs_size, max_ofs))
+    if has_free_obj:
+      # TODO(pts): Consider encoding free objects as multiple ranges in
+      # /Index instead of the direct encoding below. Maybe the result
+      # will be smaller.
+      ofs_output = []
+      trailer_obj.Set('W', '[1 %d 0]' % max_ofs_size)
+      free_entry = '\x00' * (max_ofs_size + 1)
+      done_obj_num = 0
+      if obj_numbers[0] == 1:  # Encode free obj 0 with an offset.
+        trailer_obj.Set('Index', None)
+        ofs_output.append(free_entry)
+        done_obj_num = 1
+      i = 0
+      for ofs in ofs_list:
+        if i < len(obj_numbers):
+          while done_obj_num < obj_numbers[i]:
+            ofs_output.append(free_entry)
+            done_obj_num += 1
+          i += 1
+        ofs_output.append('\x01')
+        if max_ofs_size <= 4:
+          ofs_output.append(struct.pack('>L', ofs)[4 - max_ofs_size:])
+        else:
+          ofs_output.append(struct.pack('>Q', ofs)[8 - max_ofs_size:])
+        done_obj_num += 1
+      trailer_obj.SetStreamAndCompress(
+          ''.join(ofs_output), predictor_width=max_ofs_size + 1)
+      del ofs_output
+    else:
+      trailer_obj.Set('W', '[0 %d 0]' % max_ofs_size)
+      if max_ofs_size == 1:
+        data = struct.pack('>%dB' % len(ofs_list), *ofs_list)
+      elif max_ofs_size == 2:
+        data = struct.pack('>%dH' % len(ofs_list), *ofs_list)
+      elif max_ofs_size == 3:
+        data = ''.join(struct.pack('>L', ofs)[1:] for ofs in ofs_list)
+      elif max_ofs_size == 4:
+        data = struct.pack('>%dL' % len(ofs_list), *ofs_list)
+      else:
+        i = 8 - max_ofs_size
+        data = ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
+      trailer_obj.SetStreamAndCompress(data, predictor_width=max_ofs_size)
+
+  def Save(self, file_name, do_update_file_name=True, do_hide_images=False,
+           do_generate_xref_stream=True):
     """Save this PDF to file_name, return self.
     
     Args:
@@ -3249,10 +3336,14 @@ class PdfData(object):
     assert obj_count
     assert self.trailer.head.startswith('<<')
     assert self.trailer.head.endswith('>>')
+    if do_generate_xref_stream:
+      version = max(self.version, '1.5')
+    else:
+      version = self.version
     f = open(file_name, 'wb')
     try:
       # Emit header.
-      output = ['%PDF-', self.version, '\n%\xD0\xD4\xC5\xD0\n']
+      output = ['%PDF-', version, '\n%\xD0\xD4\xC5\xD0\n']
 
       output_size = [0]
       output_size_idx = [0]
@@ -3297,32 +3388,6 @@ class PdfData(object):
           pdf_obj.Set('Filter', '/JPXDecode')
         pdf_obj.AppendTo(output, obj_num)
 
-      # Emit xref.
-      xref_ofs = GetOutputSize()
-      if obj_numbers[0] == 1:
-        i = 0
-        j = i + 1
-        while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
-          j += 1
-        output.append('xref\n0 %s\n0000000000 65535 f \n' % (j + 1))
-        while i < j:
-          output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
-          i += 1
-      else:
-        output.append('xref\n0 1\n0000000000 65535 f \n')
-        i = 0
-
-      # Add subsequent xref subsections.
-      while i < obj_count:
-        j = i + 1
-        while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
-          j += 1
-        output.append('%s %s\n' % (obj_numbers[i], j - i))
-        while i < j:
-          output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
-          i += 1
-
-      # Emit trailer etc.
       trailer_obj = PdfObj(self.trailer)
       trailer_obj.Set('Size', obj_numbers[-1] + 1)
       trailer_obj.Set('Prev', None)
@@ -3333,7 +3398,38 @@ class PdfData(object):
       trailer_obj.Set('ID', None)
       assert trailer_obj.head.startswith('<<')
       assert trailer_obj.head.endswith('>>')
-      output.append('trailer\n%s\n' % trailer_obj.head)
+      assert trailer_obj.stream is None
+
+      xref_ofs = GetOutputSize()
+      if do_generate_xref_stream:  # Emit xref stream containing trailer.
+        self.GenerateXrefStream(obj_numbers, obj_ofs, xref_ofs, trailer_obj)
+        trailer_obj.AppendTo(output, obj_numbers[-1] + 1)
+      else:  # Emit xref and trailer.
+        if obj_numbers[0] == 1:
+          i = 0
+          j = i + 1
+          while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
+            j += 1
+          output.append('xref\n0 %s\n0000000000 65535 f \n' % (j + 1))
+          while i < j:
+            output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
+            i += 1
+        else:
+          output.append('xref\n0 1\n0000000000 65535 f \n')
+          i = 0
+
+        # Add subsequent xref subsections.
+        while i < obj_count:
+          j = i + 1
+          while j < obj_count and obj_numbers[j] - 1 == obj_numbers[j - 1]:
+            j += 1
+          output.append('%s %s\n' % (obj_numbers[i], j - i))
+          while i < j:
+            output.append('%010d 00000 n \n' % obj_ofs[obj_numbers[i]])
+            i += 1
+
+        output.append('trailer\n%s\n' % trailer_obj.head)
+
       output.append('startxref\n%d\n' % xref_ofs)
       output.append('%%EOF\n')  # Avoid doubling % in printf().
       print >>sys.stderr, 'info: generated %s bytes (%s)' % (
@@ -5505,7 +5601,6 @@ cvx bind /LoadCff exch def
       self.
     """
     # TODO(pts): Inline ``obj null endobj'' and ``obj<<>>endobj'' etc.
-
     self.objs['trailer'] = self.trailer
     new_objs = self.FindEqclasses(
         self.objs, do_remove_unused=True, do_renumber=True)
@@ -5890,7 +5985,7 @@ cvx bind /LoadCff exch def
       return ret
 
   @classmethod
-  def FixPdfFromMultivalent(cls, data):
+  def FixPdfFromMultivalent(cls, data, do_generate_xref_stream):
     """Fix PDF contents file in data, generated by Mulitvalent.jar."""
     offsets_out = []
     obj_num_by_in_ofs = {}
@@ -5903,10 +5998,13 @@ cvx bind /LoadCff exch def
       raise PdfTokenParseError('expected xref stream from Multivalent')
     if pdf.trailer.Get('Type') != '/XRef':
       raise PdfTokenParseError('expected /Type/XRef from Multivalent')
-    pdf.version = max(pdf.version, '1.5')
+    if do_generate_xref_stream:
+      version = max(pdf.version, '1.5')
+    else:
+      version = pdf.version
 
     # Keep initial comments, including the '%PDF-' header.
-    output = ['%PDF-', pdf.version, '\n%\xD0\xD4\xC5\xD0\n']
+    output = ['%PDF-', version, '\n%\xD0\xD4\xC5\xD0\n']
     output_size = 0
     output_size_idx = 0
     total_padding_size = 0
@@ -5980,6 +6078,8 @@ cvx bind /LoadCff exch def
           raise PdfTokenParseError('data length does not match /W: %r' % widths)
         w0, w1, w2 = widths
         xref_out = array.array('B', xref_data)
+        if not do_generate_xref_stream:
+          raise NotImplementedError('must generate xref stream from Multivalent')
 
         i = 0
         ref_obj_num = -1
@@ -6078,7 +6178,8 @@ cvx bind /LoadCff exch def
           break
     return multivalent_jar
 
-  def SaveWithMultivalent(self, file_name, do_escape_images):
+  def SaveWithMultivalent(self, file_name, do_escape_images,
+                          do_generate_xref_stream):
     """Save this PDF to file_name, return self."""
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
@@ -6145,7 +6246,8 @@ cvx bind /LoadCff exch def
          out_data_size, FormatPercent(out_data_size, in_data_size)))
     assert out_data_size, (
         'Multivalent generated empty output (see its error above)')
-    data = self.FixPdfFromMultivalent(data)
+    data = self.FixPdfFromMultivalent(
+        data, do_generate_xref_stream=do_generate_xref_stream)
     os.remove(in_pdf_tmp_file_name)
     os.remove(out_pdf_tmp_file_name)
 
@@ -6234,6 +6336,7 @@ def main(argv):
     # since Multivalent handles some predictors in buggy way, thus garbling
     # images data with /Predictor.
     do_escape_images_from_multivalent = True
+    do_generate_xref_stream = True
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -6245,6 +6348,7 @@ def main(argv):
         'do-double-check-missing-glyphs=',
         'do-regenerate-all-fonts=',
         'do-escape-images-from-multivalent=',
+        'do-generate-xref-stream=',
         'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
 
     for key, value in opts:
@@ -6263,6 +6367,8 @@ def main(argv):
         do_ignore_generation_numbers = ParseBoolFlag(key, value)
       elif key == '--do-escape-images-from-multivalent':
         do_optimize_images = ParseBoolFlag(key, value)
+      elif key == '--do-generate-xref-stream':
+        do_generate_xref_stream = ParseBoolFlag(key, value)
       elif key == '--do-optimize-images':
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-objs':
@@ -6340,10 +6446,12 @@ def main(argv):
     pdf.OptimizeObjs()
   if use_multivalent:
     pdf.SaveWithMultivalent(
-        output_file_name, do_escape_images=do_escape_images_from_multivalent)
+        output_file_name, do_escape_images=do_escape_images_from_multivalent,
+        do_generate_xref_stream=do_generate_xref_stream)
   else:
     # !! emit a warning if we have an image with a predictor
-    pdf.Save(output_file_name)
+    pdf.Save(output_file_name,
+             do_generate_xref_stream=do_generate_xref_stream)
 
 
 if __name__ == '__main__':
