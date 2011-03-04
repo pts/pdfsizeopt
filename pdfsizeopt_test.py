@@ -847,8 +847,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(('(12 0  R \0)', True), e('(12 0  R \\000)', objs))
     self.assertEqual(('foo bar  bat   baz', True), e('16 0 R   baz', objs))
     # Unexpected stream.
-    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '41 0 R', objs)
-    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '42 0 R', objs)
+    self.assertRaises(pdfsizeopt.UnexpectedStreamError, e, '41 0 R', objs)
+    self.assertRaises(pdfsizeopt.UnexpectedStreamError, e, '42 0 R', objs)
     self.assertEqual(('(hello)', True), e('41 0 R', objs, do_strings=True))
     self.assertEqual(('(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)', True),
                       e('42 0 R', objs, do_strings=True))
