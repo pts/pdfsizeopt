@@ -252,7 +252,7 @@ class PdfObj(object):
   """Matches an `obj' definition, xref or startxref."""
 
   NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
-  """Matches and captures a nonneagative integer."""
+  """Matches and captures a nonnegative integer."""
 
   PDF_STARTXREF_EOF_RE = re.compile(
       r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z')
@@ -1221,7 +1221,7 @@ class PdfObj(object):
         hex <...>.
     Returns:
       The most compact PDF token sequence form of data: without superfluous
-      whitespce; with '(' string literals. It may contain \n only in
+      whitespace; with '(' string literals. It may contain \n only in
       string literals.
     Raises:
       PdfTokenParseError
@@ -1582,7 +1582,7 @@ class PdfObj(object):
         not self.stream is not None or
         self.Get('Subtype') != '/Form' or
         self.Get('FormType', 1) != 1 or
-        # !! get rid of these checks one we can decompress anything
+        # !! get rid of these checks once we can decompress anything
         self.Get('Filter') not in (None, '/FlateDecode') or
         self.Get('DecodeParms') is not None or
         not str(self.Get('BBox')).startswith('[')): return None
@@ -1701,7 +1701,7 @@ class PdfObj(object):
       start: Offset in data to start the parsing at.
       end_ofs_out: None or a list for the first output byte
         (which is unparsed) offset to be appended. Terminating whitespace is
-        not included, except for a single withespace is only after
+        not included, except for a single whitespace is only after
         do_terminate_obj.
       do_terminate_obj: Boolean indicating whether look for and include the
         `stream' or `endobj' (or any other non-literal name)
@@ -1952,7 +1952,7 @@ class PdfObj(object):
         if i < data_size:
           i += 1  # Don't increase it further.
       else:
-        raise PdfTokenParseError('syntax error, expecing PDF token, got %r' %
+        raise PdfTokenParseError('syntax error, expecting PDF token, got %r' %
                                  data[i])
 
     assert i <= data_size
@@ -2528,7 +2528,7 @@ class ImageData(object):
       assert 0, 'cannot convert to PDF color space'
 
   def GetPdfImageData(self):
-    """Return a dictinary useful as a PDF image."""
+    """Return a dictionary useful as a PDF image."""
     assert self.CanBePdfImage()  # asserts not interlaced
     pdf_image_data = {
         'Width': self.width,
@@ -2616,11 +2616,11 @@ class ImageData(object):
     pdf_obj.Set('Filter', pdf_image_data['Filter'])
     pdf_obj.Set('DecodeParms', pdf_image_data.get('DecodeParms'))
     pdf_obj.Set('Length', len(pdf_image_data['.stream']))
-    # Don't pdf_obj.Set('Decode', ...): it is goot as is.
+    # Don't pdf_obj.Set('Decode', ...): it is good as is.
     pdf_obj.stream = pdf_image_data['.stream']
 
   def CompressToZipPng(self):
-    """Compress self.idat to self.compresson == 'zip-png'."""
+    """Compress self.idat to self.compression == 'zip-png'."""
     assert self
     if self.compression == 'zip-png':
       # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf 
@@ -3000,7 +3000,7 @@ class PdfData(object):
     self.file_size = len(data)
     match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
     if not match:
-      raise PdfTokenParseError('uncrecognized PDF signature %r' % data[0: 16])
+      raise PdfTokenParseError('unrecognized PDF signature %r' % data[0: 16])
     self.version = match.group(1)
     self.objs = {}
     self.trailer = None
@@ -3418,6 +3418,10 @@ class PdfData(object):
 
       xref_ofs = GetOutputSize()
       if do_generate_xref_stream:  # Emit xref stream containing trailer.
+        # TODO(pts): Please note that one more size optimization would also
+        # be possible (which GenerateXrefStream doesn't do): converting small
+        # objects to a (compressed) object stream (/Type/ObjStm). Multivalent
+        # does that already.
         self.GenerateXrefStream(obj_numbers=obj_numbers, obj_ofs=obj_ofs,
                                 xref_ofs=xref_ofs, trailer_obj=trailer_obj)
         trailer_obj.AppendTo(output, obj_numbers[-1] + 1)
@@ -3452,7 +3456,7 @@ class PdfData(object):
       print >>sys.stderr, 'info: generated %s bytes (%s)' % (
           GetOutputSize(), FormatPercent(GetOutputSize(), self.file_size))
 
-      # TODO(pts): Don't keep enverything in memory.
+      # TODO(pts): Don't keep everything in memory.
       f.write(''.join(output))
     finally:
       f.close()
@@ -3669,7 +3673,7 @@ class PdfData(object):
   % We want to make sure that:
   %
   % S1. All glyphs in /CharStrings are part of the /Encoding array. This is
-  %     needed for Ghostsccript 8.54, which would sometimes generate two (or
+  %     needed for Ghostscript 8.54, which would sometimes generate two (or
   %     more?) PDF font objects if not all glyphs are encoded.
   %
   % S2. All non-/.notdef elements of the /Encoding array remain unchanged.
@@ -4792,8 +4796,8 @@ cvx bind /LoadCff exch def
               image_obj.Get('ImageMask', False) is True)
       #if image_obj.Get('Filter') == '/FlateDecode':
       # If we do a zlib.decompress(stream) now, it will succeed even if stream
-      # has trailing garbage. But zlib.decompress(steram[:-1]) would fail. In
-      # Python, there is no way the get te real end on the compressed zlib
+      # has trailing garbage. But zlib.decompress(stream[:-1]) would fail. In
+      # Python, there is no way to get te real end on the compressed zlib
       # stream (see also http://www.faqs.org/rfcs/rfc1950.html and
       # http://www.faqs.org/rfcs/rfc1951.html). We may just check the last
       # 4 bytes (adler32).
@@ -5249,7 +5253,7 @@ cvx bind /LoadCff exch def
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
             targetfn='pso.conv-%d.sam2p-np.pdf' % obj_num,
-            # We specify -s here to explicitly exclue SF_Opaque for single-color
+            # We specify -s here to explicitly exclude SF_Opaque for single-color
             # images.
             # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
             # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
@@ -5425,7 +5429,8 @@ cvx bind /LoadCff exch def
     return self
 
   @classmethod
-  def FindEqclasses(cls, objs, do_remove_unused=False, do_renumber=False):
+  def FindEqclasses(cls, objs, do_remove_unused=False, do_renumber=False,
+                    do_unify_pages=True):
     """Find equivalence classes in objs, return new objs.
     
     Args:
@@ -5439,7 +5444,7 @@ cvx bind /LoadCff exch def
       A new dict mapping object numbers to PdfObj instances.
     """
     # List of list of desc ([obj_num, head_minus, stream, refs_to,
-    # inrefs_count]). Each list of eqclasses is an eqivalence class of
+    # inrefs_count]). Each list of eqclasses is an eqiuvalence class of
     # object descs.
     eqclasses = []
     # Maps object numbers to an element of eqclasses.
@@ -5464,6 +5469,17 @@ cvx bind /LoadCff exch def
         eqclass_of[obj_num] = eqclasses[-1]
         if do_remove_unused:
           search_todo.append(desc)
+      elif (not do_unify_pages and
+            stream is None and head_minus.startswith('<<') and
+            objs[obj_num].Get('Type') == '/Page'):
+        # Make sure that /Page objects are not unified. xpdf and evince
+        # display the error message `Loop in Pages tree' (but still display
+        # the PDF) if we unify equivalent pages, but since the PDF spec
+        # doesn't say that it's not allowed to unify equivalent pages, we do
+        # unify (by avoiding this code block) by default, but the user can
+        # say --do-unify-pages=false to disable /Page object unification.
+        eqclasses.append([desc])
+        eqclass_of[obj_num] = eqclasses[-1]
       else:
         form = (head_minus, stream)
         form_desc = by_form.get(form)
@@ -5593,7 +5609,7 @@ cvx bind /LoadCff exch def
 
     return objs_ret
 
-  def OptimizeObjs(self):
+  def OptimizeObjs(self, do_unify_pages):
     """Optimize PDF objects.
 
     This method does the following:
@@ -5614,13 +5630,16 @@ cvx bind /LoadCff exch def
     TODO(pts): Implement this, using equivalence class separation.
     For testing: pts2.zip.4times.pdf and tuzv.pdf
 
-    Return:
+    Args:
+      do_unify_pages: Unify equivalent /Type/Page objects to a single object.
+    Returns:
       self.
     """
     # TODO(pts): Inline ``obj null endobj'' and ``obj<<>>endobj'' etc.
     self.objs['trailer'] = self.trailer
     new_objs = self.FindEqclasses(
-        self.objs, do_remove_unused=True, do_renumber=True)
+        self.objs, do_remove_unused=True, do_renumber=True,
+        do_unify_pages=do_unify_pages)
     self.trailer = new_objs.pop('trailer')
     self.objs.clear()
     self.objs.update(new_objs)
@@ -5669,10 +5688,10 @@ cvx bind /LoadCff exch def
 
     match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
     if not match:
-      raise PdfTokenParseError('uncrecognized PDF signature %r' % data[0: 16])
+      raise PdfTokenParseError('unrecognized PDF signature %r' % data[0: 16])
     version = match.group(1)
 
-    # We set startxref ofs if avaialable. It is not an error not to have it
+    # We set startxref ofs if available. It is not an error not to have it
     # (e.g. with a broken PDF with xref + trailer).
     trailer_ofs = None
     i = data.rfind('startxref')
@@ -5850,7 +5869,7 @@ cvx bind /LoadCff exch def
           raise PdfTokenParseError('invalid ref %r' % (ref_data,))
         if int(match.group(2)) != 0:
           raise PdfTokenParseError(
-              'invalid ref geneartion in %r' % (ref_data,))
+              'invalid ref generation in %r' % (ref_data,))
         set_obj.add(int(match.group(1)))
 
     pdf = PdfData()
@@ -6285,8 +6304,8 @@ cvx bind /LoadCff exch def
 
     # See http://code.google.com/p/pdfsizeopt/issues/detail?id=30
     # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .   
-    # TODO(pts): Implement -nocore14 (unembewdding the core 15 fonts) as a
-    # pdfsizeopt feature.
+    # TODO(pts): Implement -nocore14 (unembewdding the core 14 fonts) as a
+    # pdfsizeopt feature, also implement it if Multivalent is not used.
     multivalent_flags = '-nopagepiece -noalt'
 
     multivalent_cmd = 'java -cp %s tool.pdf.Compress %s %s' % (
@@ -6410,6 +6429,7 @@ def main(argv):
     # images data with /Predictor.
     do_escape_images_from_multivalent = True
     do_generate_xref_stream = True
+    do_unify_pages = True
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -6422,6 +6442,7 @@ def main(argv):
         'do-regenerate-all-fonts=',
         'do-escape-images-from-multivalent=',
         'do-generate-xref-stream=',
+        'do-unify-pages=',
         'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
 
     for key, value in opts:
@@ -6442,6 +6463,8 @@ def main(argv):
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-generate-xref-stream':
         do_generate_xref_stream = ParseBoolFlag(key, value)
+      elif key == '--do-unify-pages':
+        do_unify_pages = ParseBoolFlag(key, value)
       elif key == '--do-optimize-images':
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-objs':
@@ -6513,10 +6536,10 @@ def main(argv):
     pdf.ConvertInlineImagesToXObjects()
     pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
   if do_optimize_objs:
-    pdf.OptimizeObjs()
+    pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
   elif pdf.has_generational_objs:
     # TODO(pts): Do only a simpler optimization with renumbering.
-    pdf.OptimizeObjs()
+    pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
   if use_multivalent:
     pdf.SaveWithMultivalent(
         output_file_name, do_escape_images=do_escape_images_from_multivalent,
