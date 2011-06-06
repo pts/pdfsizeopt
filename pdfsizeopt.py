@@ -6389,7 +6389,7 @@ def main(argv):
     match = re.search(
         r'\npdfsizeopt.py\r?\nfile\r?\n(\d+)\r?\n',
         open(os.path.dirname(__file__) + '/.svn/entries', 'rb').read())
-    if match:
+    if match: 
       rev = int(match.group(1))
     else:
       rev = None
