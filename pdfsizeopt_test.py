@@ -861,6 +861,31 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual((42, False), e(42, objs))
     self.assertEqual((42.5, False), e(42.5, objs))
 
+  def testParseTokenList(self):
+    f = pdfsizeopt.PdfObj.ParseTokenList
+    self.assertEqual(repr([42, True]), repr(f('42 true')))
+    self.assertEqual([], f(''))
+    self.assertEqual([], f(' \t'))
+    self.assertEqual(['<666f6f>', 6, 7], f(' \n\r(foo)\t6%foo\n7'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7(')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7[')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7<<')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7)')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7]')
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, ' \n\r(foo)\t6\f7>>')
+    end_ofs_ary = []
+    self.assertEqual(['<666f6f>', 6, 7],
+                     f(' \n\r(foo)\t6\f7\f', 3, end_ofs_out=end_ofs_ary))
+    self.assertEqual([len(' \n\r(foo)\t6\f7')], end_ofs_ary)  # No whitespace.
+    end_ofs_ary = []
+    self.assertEqual(['<666f6f>', 6, 7],
+                     f(' \n\r(foo)\t6\f7\f', end_ofs_out=end_ofs_ary))
+    self.assertEqual([len(' \n\r(foo)\t6\f7')], end_ofs_ary)  # No whitespace.
+    self.assertEqual(['<666f6f>', 6], f(' \n\r(foo)\t6(', 2))
+    self.assertEqual(['<666f6f>'], f(' \n\r(foo)]', 1))
+    self.assertEqual([], f('<<', 0))
+    self.assertEqual(['<<>>', 51], f('<<%]\r>>51'))
+    self.assertEqual(['[]', -3], f('[%<<\n]-3'))
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])

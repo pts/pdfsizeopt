@@ -177,6 +177,12 @@ class FormatUnsupported(Error):
 class PdfXrefError(Error):
   """Raised if the PDF file doesn't contain a valid cross-reference table."""
 
+class PdfXrefStreamError(PdfXrefError):
+  """Raised if the PDF file doesn't contain a valid cross-reference stream."""
+
+class PdfXrefStreamWidthsError(PdfXrefStreamError):
+  """Raised if the xref stream trailer does not contain a valid /W value."""
+
 
 class FontsNotMergeable(Error):
   """Raised if the specified fonts cannot be merged.
@@ -203,6 +209,9 @@ class PdfObj(object):
 
   PDF_WHITESPACE_CHARS = '\0\t\n\r\f '
   """String containing all PDF whitespace characters."""
+
+  #PDF_WHITESPACES_RE = re.compile('[' + PDF_WHITESPACE_CHARS + ']+')
+  #"""Matches one or more PDF whitespace characters."""
 
   PDF_STREAM_OR_ENDOBJ_RE_STR = (
       r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
@@ -246,6 +255,14 @@ class PdfObj(object):
       r'(?=[\0\t\n\r\f /<\[({])[\0\t\n\r\f ]*')
   PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
   """Matches an `obj' definition no leading, with trailing whitespace."""
+
+  PDF_OBJ_DEF_CAPTURE_RE_STR = (
+      r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj'
+      r'(?=[\0\t\n\r\f /<\[({])[\0\t\n\r\f ]*')
+  PDF_OBJ_DEF_CAPTURE_RE = re.compile(PDF_OBJ_DEF_CAPTURE_RE_STR)
+  """Matches an `obj' definition no leading, with trailing whitespace.
+
+  Captures the object number and the generation number."""
 
   PDF_OBJ_DEF_OR_XREF_RE = re.compile(
       PDF_OBJ_DEF_RE_STR + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
@@ -998,10 +1015,12 @@ class PdfObj(object):
         # token. Restart from the beginning to match everything properly.
         # TODO(pts): Cancel only the last key.
         dict_obj.clear()
-        list_obj = cls._ParseArrayContents(data=data, start=2, end=end)
+        list_obj = cls._ParseTokens(
+            data=data, start=2, end=end, count_limit=end)
       else:
-        list_obj = cls._ParseArrayContents(
-            data=data, start=start, end=end, scanner=scanner, match=match)
+        list_obj = cls._ParseTokens(
+            data=data, start=start, end=end, scanner=scanner, match=match,
+            count_limit=end)
       if 0 != (len(list_obj) & 1):
         raise PdfTokenParseError('odd item count in dict')
       for i in xrange(0, len(list_obj), 2):
@@ -1047,11 +1066,52 @@ class PdfObj(object):
     assert data.endswith(']')
     start = 1
     end = len(data) - 1
-    return cls._ParseArrayContents(data, start, end)
+    return cls._ParseTokens(data, start, end, end)
 
   @classmethod
-  def _ParseArrayContents(cls, data, start, end, scanner=None, match=None):
-    """Helper method to scan token list in data[start : end]."""
+  def ParseTokenList(cls, data, count_limit=None, start=0, end=None,
+                     end_ofs_out=None):
+    """Return an array of parsed PDF values.
+
+    Limitation: If the object end with `x y R', then count_limit is enforced
+    at `x'. This is not a problem for object streams, because uncontained
+    reference values are forbidden there.
+
+    As soon as count_limit is reached, the rest of the string is not parsed,
+    and it is not even checked for syntax errors.
+
+    Args:
+      data: String containing a PDF token sequence. It might contain leading
+        or trailing whitespace.
+    Returns:
+      A list of parsed PDF values (None, int, bool or str).
+    Raises:
+      PdfTokenParseError:
+    """
+    if end is None:
+      end = len(data)
+    if count_limit is None:
+      count_limit = end
+    return cls._ParseTokens(data, start, end, count_limit,
+                            end_ofs_out=end_ofs_out)
+
+  @classmethod
+  def _ParseTokens(cls, data, start, end, count_limit,
+                   scanner=None, match=None, end_ofs_out=None):
+    """Helper method to scan tokens and build values in data[start : end].
+
+    Limitation: If the object end with `x y R', then count_limit is enforced
+    at `x'. This is not a problem for object streams, because uncontained
+    reference values are forbidden there.
+
+    As soon as count_limit is reached, the rest of the string is not parsed,
+    and it is not even checked for syntax errors.
+
+    Raises:
+      PdfTokenParseError:
+    """
+    if count_limit <= 0:
+      return []
     list_obj = []
     if scanner is None:
       scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
@@ -1182,14 +1242,94 @@ class PdfObj(object):
         list_obj.pop()
       else:
         list_obj.append(value)
+        if len(list_obj) >= count_limit:
+          if end_ofs_out is not None:
+            end_ofs_out.append(start)
+          return list_obj
       match = scanner.match()
     if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
       # TODO(pts): Be more specific, e.g. if we get this in a truncated
       # string literal `(foo'.
       raise PdfTokenParseError(
-          'array parse error at %d, got %r' %
+          'token list parse error at %d, got %r' %
           (start, data[start : start + 16]))
+    if end_ofs_out is not None:
+      end_ofs_out.append(start)
     return list_obj
+
+  @classmethod
+  def ParseXrefStreamWidths(cls, w_value):
+    """Parse the /W key of a PDF cross-reference stream.
+
+    Args:
+      w_value: Result of trailer_obj.Get('W').
+    Returns:
+      A tuple of 3 integers.
+    Raises:
+      PdfXrefStreamWidthsError:
+    """
+    if w_value is None:
+      raise PdfTokenParseError('missing /W in xref object')
+    if not isinstance(w_value, str) or not w_value.startswith('['):
+      raise PdfTokenParseError('item /W in xref object is not an array')
+    widths = PdfObj.ParseArray(w_value)
+    if (len(widths) != 3 or
+        [1 for item in widths if not isinstance(item, int) or
+         item < 0 or item > 10] or
+        widths[1] < 1):
+      raise PdfTokenParseError('bad /W array: %r' % widths)
+    return tuple(widths)
+
+  def GetXrefStream(self):
+    """Parse and return the xref stream data and its parameters.
+    
+    Returns:
+      Tuple (w0, w1, w2, index0, index1, xref_data), where w0, w1 and w2 are
+      the field lengths; index is a tuple of an even number of values:
+      startidx, count for each subsection; and xref_data is the uncompressed
+      xref stream data,
+    Raises:
+      PdfXrefStreamError:
+    """
+    if self.Get('Type') != '/XRef':
+      raise PdfXrefStreamError('expected /Type/XRef for xref stream')
+    widths = list(self.ParseXrefStreamWidths(self.Get('W')))
+    index_value = self.Get('Index')
+    if index_value is None:
+      size = self.Get('Size')
+      if not isinstance(size, int) or size < 0:
+        raise PdfXrefStreamError('bad or missing /Size for xref stream')
+      index = [0, size]
+    else:
+      if not isinstance(index_value, str) or not index_value.startswith('['):
+        raise PdfTokenParseError('item /Index in xref object is not an array')
+      index = tuple(PdfObj.ParseArray(index_value))
+      if (not index or len(index) % 2 != 0 or
+          [1 for item in index if not isinstance(item, int) or item < 0] or
+          [1 for i in xrange(1, len(index), 2) if index[i] <= 0]):
+        raise PdfTokenParseError('bad /Index array: %r' % (index,))
+    xref_data = self.GetUncompressedStream()
+    if len(xref_data) % sum(widths) != 0:
+      raise PdfXrefStreamError('data length does not match /W: %r' % widths)
+    if len(xref_data) / sum(widths) != sum(
+        index[i] for i in xrange(1, len(index), 2)):
+      raise PdfXrefStreamError('data length does not match /Index: '
+                               'widths=%r index=%r' % (withds, index))
+    widths.append(index)
+    widths.append(xref_data)
+    return tuple(widths)
+
+  def GetAndClearXrefStream(self):
+    """Like GetXrefStream, and removes xref stream entries from self.head."""
+    xref_tuple = self.GetXrefStream()
+    self.stream = None
+    self.Set('Type', None)
+    self.Set('W', None)
+    self.Set('Index', None)
+    self.Set('Filter', None)
+    self.Set('Length', None)
+    self.Set('DecodeParms', None)
+    return xref_tuple
 
   @classmethod
   def GetReferenceTarget(cls, data):
@@ -1962,10 +2102,8 @@ class PdfObj(object):
       end_ofs_out.append(i)
     return output_data
 
-  # !! def OptimizeSource()
-
   def GetUncompressedStream(self, objs=None):
-    """Return the uncompressed stream data in this obisj.
+    """Return the uncompressed stream data in this obj.
 
     Args:
       objs: None or a dict mapping object numbers to PdfObj objects. It will be
@@ -3008,10 +3146,13 @@ class PdfData(object):
     try:
       obj_starts, self.has_generational_objs = self.ParseUsingXref(
           data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-      #assert 0, obj_starts
+    except PdfXrefStreamError, exc:
+      # !! TODO(pts): Implement a fallback, uncompress /Type/ObjStm etc.
+      raise
     except PdfXrefError, exc:
+      print >>sys.stderr, 'warning: problem with xref table: %s' % exc
       print >>sys.stderr, (
-          'warning: problem with xref table, finding objs anyway: %s' % exc)
+          'warning: trying to load objs without the xref table')
       obj_starts, self.has_generational_objs = self.ParseWithoutXref(
           data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
 
@@ -3028,18 +3169,30 @@ class PdfData(object):
     print >>sys.stderr, 'info: separated to %s objs%s' %  (
         obj_count, obj_count_extra)
     last_ofs = trailer_ofs = obj_starts.pop('trailer')
-    self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
-    self.trailer.Set('Prev', None)
-
-    if 'xref' in obj_starts:
-      last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
+    if isinstance(trailer_ofs, PdfObj):
+      self.trailer = trailer_ofs
+      trailer_ofs = None
+      last_ofs = len(data)
+      obj_starts.pop('xref', None)
+    else:
+      self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
+      self.trailer.Set('Prev', None)
+      if 'xref' in obj_starts:
+        last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
 
     def ComparePair(a, b):
       return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
 
-    obj_items = sorted(
-        [(obj_starts[obj_num], obj_num) for obj_num in obj_starts],
-        ComparePair)
+    obj_items = []
+    preparsed_objs = {}
+    for obj_num in obj_starts:
+      obj_ofs = obj_starts[obj_num]
+      if isinstance(obj_ofs, PdfObj):
+        preparsed_objs[obj_num] = obj_ofs
+      else:
+        obj_items.append((obj_ofs, obj_num))
+    obj_items.sort(ComparePair)
+
     if last_ofs <= obj_items[-1][0]:
       last_ofs = len(data)
     obj_items.append((last_ofs, 'last'))
@@ -3081,38 +3234,292 @@ class PdfData(object):
               'warning: cannot parse obj %d: %s.%s: %s' % (
               obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
+    self.objs.update(preparsed_objs)
     return self
 
   @classmethod
-  def ParseUsingXref(cls, data, do_ignore_generation_numbers):
-    """Parse a PDF file using the cross-reference table.
-    
-    This method doesn't consult the cross-reference table (`xref'): it just
-    searches for objects looking at '\nX Y obj' strings in `data'. 
+  def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
+                           xref_ofs, match):
+    """Determine obj offsets in a  PDF file using the cross-reference stream.
 
     Args:
       data: String containing the PDF file.
     Returns:
       (obj_starts, has_generational_objs)
       obj_starts is a dict mapping object numbers (and the string
-      'trailer', possibly also 'xref') to their start offsets within a file.
+      'trailer', possibly also 'xref') to pre-parsed PdfObj instances.
     Raises:
+      PdfXrefStreamError: If the cross-reference stream is corrupt.
       PdfXrefError: If the cross-reference table is corrupt, but there is
         a chance to parse the file without it.
       AssertionError: If the PDF file us totally unparsable.
       NotImplementedError: If the PDF file needs parsing code not implemented.
+      other: If the PDF file us totally unparsable.
     """
     has_generational_objs = False
+    # Parse the cross-reference stream (xref stream).
+    # Maps object numbers to offset or (objstm_obj_num, index) values.
+    obj_starts = {'xref': xref_ofs}  # 'xref' is just informational.
+    # Maps /Type/ObjStm object numbers to inner_obj_headbufs, or
+    # None if that object stream is not loaded yet.
+    obj_streams = {}
+    trailer_obj = None
+    xref_obj_nums = set()
+
+    while True:
+      xref_obj_num = int(match.group(1))
+      xref_generation = int(match.group(2))
+      if xref_generation:
+        if not do_ignore_generation_numbers:
+          raise NotImplementedError(
+              'generational objects (in xref %s %s) not supported at %d' %
+              (xref_obj_num, xref_generation, xref_ofs))
+        has_generational_objs = True
+      if xref_obj_num in xref_obj_nums:
+        raise PdfXrefStreamError('duplicate xref obj %d' % xref_obj_num)
+      xref_obj_nums.add(xref_obj_num)
+      try:
+        xref_obj = PdfObj(data, start=xref_ofs, file_ofs=xref_ofs)
+      except PdfTokenParseError, e:
+        raise PdfXrefStreamError('parse xref obj %d: %s' % (xref_obj_num, e))
+      if trailer_obj is None:
+        trailer_obj = xref_obj
+
+      # Parse the xref stream data.
+      # TODO(pts): Handle the various exceptions raised by
+      #            trailer_obj.GetUncompressedStream().
+      w0, w1, w2, index, xref_data = trailer_obj.GetAndClearXrefStream()
+      w01 = w0 + w1
+      w012 = w01 + w2
+      ii = 0
+      obj_num = None
+      ii_remaining = 0
+      for i in xrange(0, len(xref_data), w012):
+        if not ii_remaining:
+          # PdfObj.GetXrefStream() guarantees that we get a positive
+          # ii_remaining and we don't exhaust the index array below.
+          obj_num = index[ii]
+          ii_remaining = index[ii + 1]
+          ii += 2
+        else:
+          obj_num += 1
+          ii_remaining -= 1
+        if w0:
+          f0 = cls.MSBFirstToInteger(xref_data[i : i + w0])
+        else:
+          f0 = 1
+        f1 = cls.MSBFirstToInteger(xref_data[i + w0 : i + w01])
+        if w2:
+          f2 = cls.MSBFirstToInteger(xref_data[i + w01 : i + w012])
+        else:
+          f2 = 0
+        if not f0:  # A free object, ignore it.
+          continue
+        if obj_num in obj_starts:
+          raise PdfXrefStreamError('duplicate obj %d' % obj_num)
+        if f0 == 1:  # f1 is the object offset in the file.
+          if f2:
+            if not do_ignore_generation_numbers:
+              raise NotImplementedError(
+                  'generational objects (in %s %s) not supported at %d' %
+                  (obj_num, f2, xref_ofs))
+            has_generational_objs = True
+          if f1 < 9:
+            raise PdfXrefStreamError('offset of obj %d too small: %d' %
+                               (obj_num, f1))
+          obj_starts[obj_num] = f1
+        elif f0 == 2:
+          # f1: Object number of the object stream of obj_num.
+          # f2: Index of obj_num within its object stream.
+          obj_starts[obj_num] = (f1, f2)
+          obj_streams.setdefault(f1, None)
+      trailer_obj.Set('Prev', None)
+      if xref_obj is not trailer_obj:
+        dict_obj = xref_obj._cache
+        assert dict_obj is not None, '/Type/ObjStm obj not parsed yet.'
+        # TODO(pts): Is this the correct way to merge the trailer part of
+        # xref objects?
+        for name in sorted(dict_obj):
+          if name in ('Prev', 'Size'):
+            continue
+          if trailer_obj.Get(name) is not None:
+            raise PdfXrefStreamError(
+                'duplicate name in xref streams: /%s' % name)
+          trailer_obj.Set(name, dict_obj[name])
+      prev = xref_obj.Get('Prev')
+      if prev is None:
+        break
+      # TODO(pts): Test this.
+      if not isinstance(prev, int) or prev < 9:
+        raise PdfXrefStreamError('invalid /Prev at %d: %r' % (xref_ofs, prev))
+      match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, xref_ofs).match()
+      if not match:
+        raise PdfXrefStreamError('could not find obj at /Prev at %d: %d' %
+                                 (xref_ofs, prev))
+      xref_ofs = prev
+    print >>sys.stderr, (
+        'info: found %d obj offsets and %d obj streams in xref stream' %
+        (len(obj_starts) - 1,  # `- 1' for the key 'xref' itself.
+         len(obj_streams)))
+    for xref_obj_num in sorted(xref_obj_nums):
+      obj_start = obj_starts.get(xref_obj_num)
+      if obj_start is None:
+        print >>sys.stderr, (
+            'warning: missing offset for xref stream obj %d' % xref_obj_num)  
+      else:
+        if not isinstance(obj_start, int):
+          print >>sys.stderr, (
+              'warning: in-object-stream xref stream obj %d' % xref_obj_num)
+        del obj_starts[xref_obj_num]
+
+    # Load the object streams.
+    for obj_num in sorted(obj_streams):
+      obj_start = obj_starts.get(obj_num)
+      if obj_start is None:
+        raise PdfXrefStreamError('missing obj stream %d' % obj_num)
+      if not isinstance(obj_start, int):
+        raise PdfXrefStreamError('in-object-stream obj stream %d' % obj_num)
+      try:
+        objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start)
+      except PdfTokenParseError, e:
+        raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
+      if objstm_obj.Get('Type') != '/ObjStm':
+        raise PdfXrefStreamError(
+            'expected /Type/ObjStm for obj %d' % obj_num)
+      n = objstm_obj.Get('N')  # Number of objects in objstm_obj.
+      if n is None:
+        raise PdfXrefStreamError('missing /N in objstm obj %d' % obj_num)
+      if not isinstance(n, int) or n <= 1:
+        raise PdfXrefStreamError('invalid /N in objstm obj %d' % obj_num)
+      first = objstm_obj.Get('First')  # Offset of the first object.
+      if first is None:
+        raise PdfXrefStreamError('missing /First in objstm obj %d' % obj_num)
+      if not isinstance(first, int) or first <= 0:
+        raise PdfXrefStreamError('invalid /First in objstm obj %d' % obj_num)
+      if objstm_obj.Get('Extends') is not None:
+        # TODO(pts): Implement this.
+        raise NotImplementedError('/Extends in /Type/ObjStm not implemented')
+      # TODO(pts): Handle the various exceptions raised by
+      #            trailer_obj.GetUncompressedStream().
+      objstm_data = objstm_obj.GetUncompressedStream()
+      objstm_obj = None  # Save memory.
+      end_ofs_ary = []
+      numbers = PdfObj.ParseTokenList(
+          objstm_data, 2 * n, end_ofs_out=end_ofs_ary)
+      end_ofs = end_ofs_ary[0]
+      match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(
+          objstm_data, end_ofs).match()
+      if match:  # Skip whitespace and comments after the last number.
+        # TODO(pts): Maybe skip only one character of whitespace?
+        end_ofs = match.end()
+      if first < end_ofs:
+        print >>sys.stderr, (
+            'warning: first too early in objstm obj %d: first=%d end_ofs=%d'
+            % (obj_num, first, end_ofs))
+      if len(numbers) != 2 * n:
+        raise PdfXrefStreamError(
+            'expected %d, but got %d values in token list objstm obj %d' %
+            (2 * n, len(numbers), obj_num))
+      inner_obj_nums = []
+      # List of (str) buffer objects corresponding to the PDF token stream
+      # string in the respective inner_obj_nums item.
+      inner_obj_headbufs = []
+      prev_offset = -1
+      for i in xrange(0, len(numbers), 2):
+        inner_obj_num = numbers[i]
+        inner_obj_ofs = numbers[i + 1]
+        if not isinstance(inner_obj_num, int):
+          raise PdfXrefStreamError(
+              'expected int inner_obj_num in objstm obj %d' % obj_num)
+        if not isinstance(inner_obj_ofs, int):
+          raise PdfXrefStreamError(
+              'expected int inner_obj_ofs in objstm obj %d' % obj_num)
+        if inner_obj_num < 1:
+          raise PdfXrefStreamError(
+              'bad inner_obj_num %d in objstm obj %d' % obj_num)
+        if inner_obj_ofs < 0 or inner_obj_ofs + first >= len(objstm_data):
+          raise PdfXrefStreamError(
+              'bad inner_obj_obs %d in objstm obj %d' % obj_num)
+        inner_obj_ofs += first
+        inner_obj_nums.append(inner_obj_num)
+        # Although the PDF spec doesn't say, we assume that inner
+        # (compressed) objects don't overlap. This is reasonable, because
+        # the PDF spec requires increasing offsets.
+        if prev_offset > 0:
+          inner_obj_headbufs.append(
+              buffer(objstm_data, prev_offset, inner_obj_ofs - prev_offset))
+        prev_offset = inner_obj_ofs
+      if prev_offset > 0:
+        inner_obj_headbufs.append(
+            buffer(objstm_data, prev_offset, len(objstm_data) - prev_offset))
+      assert len(inner_obj_nums) == len(inner_obj_headbufs)
+      for i in xrange(0, len(inner_obj_nums), 2):
+        inner_obj_num = inner_obj_nums[i]
+        inner_obj_start = obj_starts.get(inner_obj_num)
+        if inner_obj_start is not None and inner_obj_start != (obj_num, i):
+          raise PdfXrefStreamError(
+              'location mismatch for compressed obj %d: '
+              'objstm obj %d has index %d, xref stream has %r' %
+              (inner_obj_num, obj_num, i, obj_starts.get(inner_obj_num)))
+        obj_streams[obj_num] = inner_obj_headbufs
+
+    # Parse used compressed objects, and add them to obj_starts with the
+    # PdfObj (instead of the offset) as a value.
+    for obj_num in sorted(obj_starts):
+      obj_start = obj_starts.get(obj_num)
+      if not isinstance(obj_start, int):
+        objstm_obj_num, i = obj_start
+        inner_obj_headbufs = obj_streams.get(objstm_obj_num)
+        assert inner_obj_headbufs  # Already set above.
+        if i >= len(inner_obj_headbufs):
+          raise PdfXrefStreamError(
+              'too few compressed objs (%d) in objstm obj %d, '
+              'needed index %d for obj %d' %
+              (len(inner_obj_headbufs), objstm_obj_num, i, obj_num))
+        if isinstance(inner_obj_headbufs[i], PdfObj):
+          obj_starts[obj_num] = inner_obj_headbufs[i]
+        else:
+          obj_starts[obj_num] = inner_obj_headbufs[i] = PdfObj(
+              '%d 0 obj\n%s\nendobj\n' % (obj_num, inner_obj_headbufs[i]))
+
+    for obj_num in sorted(obj_streams):
+      del obj_starts[obj_num]
+    obj_starts['trailer'] = trailer_obj
+    return obj_starts, has_generational_objs
+
+  @classmethod
+  def ParseUsingXref(cls, data, do_ignore_generation_numbers):
+    """Determine obj offsets in a  PDF file using the cross-reference table.
+
+    If this method detects a cross-reference stream, it calls
+    cls.ParseUsingXrefStream instead.
+
+    Args:
+      data: String containing the PDF file.
+    Returns:
+      (obj_starts, has_generational_objs)
+      obj_starts is a dict mapping object numbers (and the string
+      'trailer', possibly also 'xref') to their start offsets (or to
+      pre-parsed PdfObj instances) within a file.
+    Raises:
+      PdfXrefStreamError: If the cross-reference stream is corrupt.
+      PdfXrefError: If the cross-reference table is corrupt, but there is
+        a chance to parse the file without it.
+      AssertionError: If the PDF file us totally unparsable.
+      NotImplementedError: If the PDF file needs parsing code not implemented.
+      other: If the PDF file us totally unparsable. Example: zlib.error.
+    """
     match = PdfObj.PDF_STARTXREF_EOF_RE.search(data[-128:])
     if not match:
       raise PdfXrefError('startxref+%%EOF not found')
     xref_ofs = int(match.group(1))
-    xref_head = data[xref_ofs : xref_ofs + 128]
-    match = re.match(r'(\d+)\s+(\d+)\s+obj\b', xref_head)
+    match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, xref_ofs).match()
     if match:
-      raise NotImplementedError(
-          'PDF-1.5 cross reference streams not implemented')
-    obj_starts = {'xref': xref_ofs}
+      return cls.ParseUsingXrefStream(data, do_ignore_generation_numbers,
+                                      xref_ofs, match)
+
+    has_generational_objs = False
+    obj_starts = {'xref': xref_ofs}  # 'xref' is just informational.
     obj_starts_rev = {}
     # Set of object numbers not to be overwritten.
     keep_obj_nums = set()
@@ -3169,6 +3576,7 @@ class PdfData(object):
                 raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
                                    (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
               obj_starts_rev[obj_ofs] = obj_num
+              # TODO(pts): Check that we match PdfObj.OBJ_DEF_RE at obj_ofs.
               obj_starts[obj_num] = obj_ofs
           obj_num += 1
           obj_count -= 1
@@ -6022,7 +6430,12 @@ cvx bind /LoadCff exch def
 
   @classmethod
   def FixPdfFromMultivalent(cls, data, do_generate_xref_stream=True):
-    """Fix PDF contents file in data, generated by Mulitvalent.jar."""
+    """Fix PDF contents file in data, generated by Mulitvalent.jar.
+    
+    Raises:
+      PdfXrefStreamError:
+      many:
+    """
     in_offsets = []
     obj_num_by_in_ofs = {}
     # TODO(pts): Use a setitem_callback here to save memory.
@@ -6102,24 +6515,10 @@ cvx bind /LoadCff exch def
           raise NotImplementedError('unexpected /Prev in xref object')
 
         # Please note that Multivalent generates a PDF which uses
-        # /Type/ObjStm objects holding small objects (f0=2 in xref_data). We
-        # won't touch those in xref_data.
+        # /Type/ObjStm object stream objects holding small objects
+        # (f0=2 in xref_data). We won't touch those in xref_data.
 
-        widths = pdf_obj.Get('W')
-        if widths is None:
-          raise PdfTokenParseError('missing /W in xref object')
-        if not isinstance(widths, str) or not widths.startswith('['):
-          raise PdfTokenParseError('item /W in xref object is not an array')
-        widths = PdfObj.ParseArray(widths)
-        if (len(widths) != 3 or
-            [1 for item in widths if not isinstance(item, int) or
-             item < 0 or item > 10] or
-            widths[1] < 1):
-          raise PdfTokenParseError('bad /W array: %r' % widths)
-        xref_data = pdf_obj.GetUncompressedStream()
-        if len(xref_data) % sum(widths) != 0:
-          raise PdfTokenParseError('data length does not match /W: %r' % widths)
-        w0, w1, w2 = widths
+        w0, w1, w2, unused_index, xref_data = pdf_obj.GetXrefStream()
         xref_out = array.array('B', xref_data)
         i = 0
         ref_obj_num = -1
@@ -6189,7 +6588,7 @@ cvx bind /LoadCff exch def
           # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
           pdf_obj.SetStreamAndCompress(
               xref_out, may_keep_old=(xref_out == xref_data),
-              predictor_width=sum(widths), pdf=None)
+              predictor_width=(w0 + w1 + w2), pdf=None)
           print >>sys.stderr, (
               'info: compressed xref stream from %s to %s bytes (%s)' %
               (len(xref_out), pdf_obj.size,
