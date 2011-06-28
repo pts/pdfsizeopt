@@ -56,7 +56,12 @@ class Error(Exception):
 
 def GetGsCommand():
   """Return shell command-line prefix for running Ghostscript (gs)."""
-  return os.getenv('PDFSIZEOPT_GS', 'gs')
+  gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
+  if gs_cmd is None:
+    if sys.platform.startswith('win'):  # Windows: win32 or win64
+      return 'gswin32c'  # gswin32c.exe in Ghostscript.
+    return 'gs'
+  return gs_cmd
 
 
 def ShellQuote(string):
@@ -91,7 +96,7 @@ def EnsureRemoved(file_name):
 def FindOnPath(file_name):
   """Find file_name on $PATH, and return the full pathname or None."""
   # TODO(pts): Make this work on non-Unix systems.
-  for item in os.getenv('PATH', '/bin:/usr/bin').split(':'):
+  for item in os.getenv('PATH', '/bin:/usr/bin').split(os.pathsep):
     if not item:
       item = '.'
     path_name = '%s/%s' % (item, file_name)
@@ -6661,7 +6666,7 @@ cvx bind /LoadCff exch def
     multivalent_jar = FindOnPath(file_name)
     if multivalent_jar is None:
       slash_file_name = '/' + file_name
-      for item in os.getenv('CLASSPATH', '').split(':'):
+      for item in os.getenv('CLASSPATH', '').split(os.pathsep):
         if not item:
           continue
         if item.endswith(slash_file_name):
@@ -6787,7 +6792,8 @@ def main(argv):
   try:
     match = re.search(
         r'\npdfsizeopt[.]py\r?\nfile\r?\n(?:(?:[^\r\n]*\r?\n){7})??(\d+)\r?\n',
-        open(os.path.dirname(__file__) + '/.svn/entries', 'rb').read())
+        open(os.path.join(os.path.dirname(__file__), '.svn', 'entries'), 'rb'
+            ).read())
     if match:
       rev = int(match.group(1))
     else:
@@ -6795,11 +6801,12 @@ def main(argv):
   except IOError:
     rev = None
   print >>sys.stderr, 'info: This is %s r%s size=%s.' % (
-      os.path.basename(__file__), rev, size)
+      os.path.basename(__file__), rev or 'UNKNOWN', size)
       
   # Find image converters in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
-  os.environ['PATH'] = '%s:%s' % (script_dir, os.getenv('PATH', ''))
+  os.environ['PATH'] = '%s%s%s' % (
+      script_dir, os.pathsep, os.getenv('PATH', ''))
   if (not os.getenv('PDFSIZEOPT_GS', '') and
       os.path.isfile(script_dir + '/gs-pdfsizeopt/gs')):
     os.environ['PDFSIZEOPT_GS'] = ShellQuote(script_dir + '/gs-pdfsizeopt/gs')
