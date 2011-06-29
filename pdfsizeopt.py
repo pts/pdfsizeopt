@@ -65,10 +65,13 @@ def GetGsCommand():
 
 
 def ShellQuote(string):
-  # TODO(pts): Make it work on non-Unix systems.
+  # TODO(pts): Make it work properly on non-Unix systems.
   string = str(string)
   if string and not re.search('[^-_.+,:/a-zA-Z0-9]', string):
     return string
+  elif sys.platform.startswith('win'):
+    # TODO(pts): Does this replace make sense?
+    return '"%s"' % string.replace('"', '""')
   else:
     return "'%s'" % string.replace("'", "'\\''")
 
@@ -76,7 +79,7 @@ def ShellQuote(string):
 def ShellQuoteFileName(string):
   # TODO(pts): Make it work on non-Unix systems.
   if string.startswith('-') and len(string) > 1:
-    string = './' + string
+    string = '.%s%s' % (os.sep, string)
   return ShellQuote(string)
 
 
@@ -99,7 +102,7 @@ def FindOnPath(file_name):
   for item in os.getenv('PATH', '/bin:/usr/bin').split(os.pathsep):
     if not item:
       item = '.'
-    path_name = '%s/%s' % (item, file_name)
+    path_name = os.path.join(item, file_name)
     try:
       os.stat(path_name)
       return path_name
@@ -6662,10 +6665,10 @@ cvx bind /LoadCff exch def
     Returns:
       Pathname to Multivalent.jar or None.
     """
-    assert '/' not in file_name
+    assert os.sep not in file_name
     multivalent_jar = FindOnPath(file_name)
     if multivalent_jar is None:
-      slash_file_name = '/' + file_name
+      slash_file_name = os.sep + file_name
       for item in os.getenv('CLASSPATH', '').split(os.pathsep):
         if not item:
           continue
