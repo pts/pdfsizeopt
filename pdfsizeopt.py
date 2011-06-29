@@ -6704,7 +6704,7 @@ cvx bind /LoadCff exch def
           'error: Multivalent.jar not found. Make sure it is on the $PATH, '
           'or it is one of the files on the $CLASSPATH.')
       assert 0, 'Multivalent.jar not found, see above'
-    assert ':' not in multivalent_jar  # $CLASSPATH separator
+    assert os.pathsep not in multivalent_jar  # $CLASSPATH separator
 
     # See http://code.google.com/p/pdfsizeopt/issues/detail?id=30
     # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .   
