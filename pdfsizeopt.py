@@ -2085,6 +2085,11 @@ class PdfObj(object):
               string_output.append('\\n')  # for eval() below
               j += 1
               i = j
+            elif c == '\r':  # Not needed in Python 2.6, needed in 2.7.
+              string_output.append(data[i : j])
+              string_output.append('\\r')  # for eval() below
+              j += 1
+              i = j
             else:
               j += 1
           string_output.append("'")
