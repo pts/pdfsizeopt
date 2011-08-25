@@ -3160,7 +3160,6 @@ class PdfData(object):
       obj_starts, self.has_generational_objs = self.ParseUsingXref(
           data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
     except PdfXrefStreamError, exc:
-      # !! TODO(pts): Implement a fallback, uncompress /Type/ObjStm etc.
       raise
     except PdfXrefError, exc:
       print >>sys.stderr, 'warning: problem with xref table: %s' % exc
@@ -3248,6 +3247,16 @@ class PdfData(object):
               obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
     self.objs.update(preparsed_objs)
+
+    # TODO(pts): Add decrypted input support.
+    if self.trailer.Get('Encrypt') is not None:
+      raise NotImplementedError(
+          'encrypted PDF input not supported, use this command to '
+          'decrypt first: qpdf --decrypt %s %s' %
+          (ShellQuoteFileName(self.file_name),
+           ShellQuoteFileName(os.path.splitext(self.file_name)[0] +
+           '.decrypted.pdf')))
+
     return self
 
   @classmethod
