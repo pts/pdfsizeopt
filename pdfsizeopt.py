@@ -5423,6 +5423,18 @@ cvx bind /LoadCff exch def
           obj.Get('Filter'), objs=self.objs)
       filter2 = (filter or '').replace(']', ' ]') + ' '
 
+      smask = obj.Get('SMask')
+      if isinstance(smask, str):
+        try:
+          smask = PdfObj.ParseSimpleValue(smask)
+        except PdfTokenParseError:
+          pass
+      if isinstance(smask, str):
+        match = re.match(r'(\d+) (\d+) R\Z', smask)
+        if match:
+          # The target image of an /SMask must be /ColorSpace /DeviceGray.
+          force_grayscale_obj_nums.add(int(match.group(1)))
+
       # Don't touch lossy-compressed images.
       # TODO(pts): Read lossy-compressed images, maybe a small, uncompressed
       # representation would be smaller.
@@ -5447,18 +5459,6 @@ cvx bind /LoadCff exch def
           not do_remove_mask and
           not re.match(r'\[\s*\]\Z', mask)):
         continue
-
-      smask = obj.Get('SMask')
-      if isinstance(smask, str):
-        try:
-          smask = PdfObj.ParseSimpleValue(smask)
-        except PdfTokenParseError:
-          pass
-      if isinstance(smask, str):
-        match = re.match(r'(\d+) (\d+) R\Z', smask)
-        if match:
-          # The target image of an /SMask must be /ColorSpace /DeviceGray.
-          force_grayscale_obj_nums.add(int(match.group(1)))
 
       bpc, bpc_has_changed = PdfObj.ResolveReferences(
           obj.Get('BitsPerComponent'), objs=self.objs)
