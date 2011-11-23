@@ -697,7 +697,7 @@ class PdfSizeOptTest(unittest.TestCase):
 
   def testParseAndSerializeCffDict(self):
     # TODO(pts): Add more tests.
-    # TODO(pts): PdfObj.ParseCffHeader
+    # TODO(pts): Add test for PdfObj.ParseCffHeader.
     cff_dict = {
         12000: [394], 1: [391], 2: [392], 3: [393], 12004: [0],
         5: [0, -270, 812, 769],
@@ -713,6 +713,39 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str))
     self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str2))
     self.assertEqual(cff_str2, pdfsizeopt.PdfObj.SerializeCffDict(cff_dict))
+
+  def testParseCffDifferent(self):
+    # Different integer representations have different length.
+    self.assertEqual({17: [410]}, pdfsizeopt.PdfObj.ParseCffDict(
+        '\x1d\x00\x00\x01\x9a\x11'))
+    self.assertEqual({17: [410]}, pdfsizeopt.PdfObj.ParseCffDict(
+        '\xf8.\x11'))
+    self.assertEqual('\xf8.\x11', pdfsizeopt.PdfObj.SerializeCffDict(
+        {17: [410]}))
+  
+    # The same, but longer.
+    data = 'XY%sZT' % (
+        #'\xf8!\x00\xf8"\x01\xf8#\x02\xf8#\x03\xf8\x18\x04<\xfbl\xfa\x85\xfa)'
+        #'\x05\xf7\x87\x0f\xf7\x83\x10\xf8.\x11\x91\x1c$\xcb\x12\x1e\n\x00\x1f'
+        #'\x8b\x8b\x1e\n\x00\x1f\x8b\x8b\x0c\x07')
+        '\xf8!\x00\xf8"\x01\xf8#\x02\xf8#\x03\xf8\x18\x04<\xfbl\xfa\x85\xfa)'
+        '\x05\x1e\n\x00\x1f\x8b\x8b\x1e\n\x00\x1f\x8b\x8b\x0c\x07\x1d\x00\x00'
+        '\x00\xf3\x0f\x1d\x00\x00\x00\xef\x10\x1d\x00\x00\x01\x9a\x11\x91\x1d'
+        '\x00\x00$\xcb\x12')
+    expected_cff_dict = {
+        0: [397], 1: [398], 2: [399], 3: [399], 4: [388],
+        5: [-79, -216, 1009, 917], 12007: ['0.001', 0, 0, '0.001', 0, 0],
+        15: [243], 16: [239], 17: [410], 18: [6, 9419]}
+    i = 2
+    j = len(data) - 2 
+    cff_dict = pdfsizeopt.PdfObj.ParseCffDict(data=data, start=i, end=j)
+    cff_ser = pdfsizeopt.PdfObj.SerializeCffDict(cff_dict=cff_dict)
+    cff_dict2 = pdfsizeopt.PdfObj.ParseCffDict(cff_ser)
+    cff_ser2 = pdfsizeopt.PdfObj.SerializeCffDict(cff_dict=cff_dict2)
+    self.assertEqual(cff_dict, cff_dict2)
+    self.assertEqual(cff_ser, cff_ser2)
+    # We could emit an optiomal serialization.
+    self.assertTrue(len(cff_ser) < len(data[i : j]))
 
   def testFixPdfFromMultivalent(self):
     e = pdfsizeopt.PdfData.FixPdfFromMultivalent
