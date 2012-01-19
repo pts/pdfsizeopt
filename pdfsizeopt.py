@@ -6830,6 +6830,20 @@ def ParseBoolFlag(flag_name, flag_value):
   return BOOL_VALUES[flag_value_lower]
 
 
+def GetDir(file_name):
+  readlink = getattr(os, 'readlink', None)  # Not available on Windows.
+  if readlink:
+    while True:
+      try:
+        target_name = readlink(file_name)
+      except OSError:  # Happens on Linux if file_name is not a symlink.
+        break
+      if target_name == file_name:  # This doesn't happen on Linux.
+        break
+      file_name = target_name
+  return os.path.dirname(file_name)
+
+
 def main(argv):
   try:
     size = os.stat(__file__).st_size
@@ -6841,7 +6855,7 @@ def main(argv):
   try:
     match = re.search(
         r'\npdfsizeopt[.]py\r?\nfile\r?\n(?:(?:[^\r\n]*\r?\n){7})??(\d+)\r?\n',
-        open(os.path.join(os.path.dirname(__file__), '.svn', 'entries'), 'rb'
+        open(os.path.join(GetDir(__file__), '.svn', 'entries'), 'rb'
             ).read())
     if match:
       rev = int(match.group(1))
