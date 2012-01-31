@@ -6761,10 +6761,16 @@ cvx bind /LoadCff exch def
     # pdfsizeopt feature, also implement it if Multivalent is not used.
     multivalent_flags = '-nopagepiece -noalt'
 
-    multivalent_cmd = 'java -cp %s tool.pdf.Compress %s %s' % (
-        ShellQuoteFileName(multivalent_jar),
-        multivalent_flags,
-        ShellQuoteFileName(in_pdf_tmp_file_name))
+    # Without -Djava.awt.headless=true on Mac OS X within an ssh as a
+    # currently non-interactive user, Multivalent will fail with
+    #
+    #   java.lang.InternalError: Can't connect to window server -
+    #   not enough permissions.
+    multivalent_cmd = (
+        'java -cp %s -Djava.awt.headless=true tool.pdf.Compress %s %s' %
+        (ShellQuoteFileName(multivalent_jar),
+         multivalent_flags,
+         ShellQuoteFileName(in_pdf_tmp_file_name)))
     print >>sys.stderr, (
         'info: executing Multivalent to optimize PDF: %s' % multivalent_cmd)
     status = os.system(multivalent_cmd)
