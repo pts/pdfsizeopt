@@ -2028,7 +2028,7 @@ class PdfObj(object):
           s = data[i : j]
         else:
           s = '('
-        if '(' not in s and ')' not in s and '\\' not in s:
+        if '(' not in s and ')' not in s and '\\' not in s and '\r' not in s:
           output.append(' <%s>' % s.encode('hex'))
           i = j + 1
         else:
