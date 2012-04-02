@@ -2066,9 +2066,15 @@ class PdfObj(object):
                 string_output.append('\\00' + c)
                 j += 2
                 i = j
-              elif c == '\n':
+              elif c == '\n':  # Skip '\n'.
                 string_output.append(data[i : j])
                 j += 2
+                i = j
+              elif c == '\r':  # Skip '\r' or '\r\n'.
+                string_output.append(data[i : j])
+                j += 2
+                if j < data_size and data[j] == '\n':
+                  j += 1
                 i = j
               else:
                 string_output.append(data[i : j])
