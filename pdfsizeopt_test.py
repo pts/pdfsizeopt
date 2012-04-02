@@ -65,10 +65,11 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' <48656c6c6f2c20576f726c6421>', e('(Hello, World!)'))
     self.assertEqual(' <2828666f6f2929296261725c>', e('(((foo))\\)bar\\\\)'))
     self.assertEqual(' <0a280d2900>', e('(\\n(\\r)\\0)'))
-    self.assertEqual(' <0a280d2900780d0a790a0d7a>', e('(\n(\r)\0x\r\ny\n\rz)'))
+    self.assertEqual(' <0a280a2900780a790a0a7a>', e('(\n(\r)\0x\r\ny\n\rz)'))
     self.assertEqual(' <466f6f42617242617a>', e('(Foo\\\nBar\\\rBaz)'))
-    self.assertEqual(' <466f6f4261720d42617a>', e('(Foo\\\r\nBar\\\n\rBaz)'))
-    self.assertEqual(' <2829%s>' % ''.join(['%02x' % i for i in xrange(33)]),
+    self.assertEqual(' <466f6f4261720a42617a>', e('(Foo\\\r\nBar\\\n\rBaz)'))
+    self.assertEqual(' <2829%s>' % ''.join(['%02x' % {13: 10}.get(i, i)
+                                            for i in xrange(33)]),
                      e('(()%s)' % ''.join(map(chr, xrange(33)))))
     self.assertEqual(' <face422829>', e('(\xfa\xCE\x42())'))
     self.assertEqual(' <00210023>', e('(\0!\\0#)'))

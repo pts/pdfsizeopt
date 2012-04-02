@@ -2033,6 +2033,22 @@ class PdfObj(object):
           i = j + 1
         else:
           # Compose a Python eval()able string in string_output.
+          #
+          # FYI Section 3.2. of the PDF reference 1.7 says thes about CR and
+          # LF in string literals:
+          #
+          # * The carriage return (CR) and line feed (LF) characters, also
+          #   called newline characters, are treated as end-of-line (EOL)
+          #   markers. The combination of a carriage return followed
+          #   immediately by a line feed is treated as one EOL marker.
+          #
+          # * The backslash and the end-of-line marker following it are not
+          #   considered part of the string.
+          #
+          # * If an end-of-line marker appears within
+          #   a literal string without a preceding backslash, the result is
+          #   equivalent to \n (regardless of whether the end-of-line marker
+          #   was a carriage return, a line feed, or both).''
           string_output = ["'"]
           j = i
           while True:
@@ -2093,8 +2109,10 @@ class PdfObj(object):
               i = j
             elif c == '\r':  # Not needed in Python 2.6, needed in 2.7.
               string_output.append(data[i : j])
-              string_output.append('\\r')  # for eval() below
+              string_output.append('\\n')  # for eval() below
               j += 1
+              if j < data_size and data[j] == '\n':
+                j += 1
               i = j
             else:
               j += 1
