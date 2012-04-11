@@ -431,7 +431,7 @@ class PdfObj(object):
         scanner = self.LENGTH_OF_STREAM_RE.scanner(head)
         match = scanner.search()
         if not match:
-          # We happlily accept the invalid PDF obj
+          # We happily accept the invalid PDF obj
           # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
           # we don't implement a validating PDF parser.
           raise PdfTokenParseError(
@@ -448,7 +448,7 @@ class PdfObj(object):
         if match.group(2) is None:
           stream_end_idx = stream_start_idx + int(match.group(1))
         else:
-          # For testing: lme_v6.pdf
+          # For testing: lme_v6.pdf (and eurotex2006.final.pdf?)
           if (int(match.group(2)) != 0 and
               not do_ignore_generation_numbers):
             raise NotImplementedError(
@@ -3279,36 +3279,36 @@ class PdfData(object):
                      for i in xrange(1, len(obj_items))])
     assert '' not in obj_data.values(), 'duplicate object start offset'
 
-    # Get numbers first, so later we can resolve '/Length 42 0 R'.
-    # !! TODO(pts): proper PDF token sequence parsing (e.g. if `endstream'
-    # appears in a comment in ths_obj_data).
-    # TODO(pts): Add proper parsing, so this first pass is not needed.
-    for obj_num in obj_data:
-      this_obj_data = obj_data[obj_num]
-      if ('endstream' not in this_obj_data and
-          '<' not in this_obj_data and
-          '(' not in this_obj_data):
-        try:
-          self.objs[obj_num] = PdfObj(
-              obj_data[obj_num],
-              file_ofs=obj_starts[obj_num],
-              do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-        except PdfTokenParseError, e:
-          print >>sys.stderr, (
-              'warning: cannot parse obj %d: %s.%s: %s' % (
-              obj_num, e.__class__.__module__, e.__class__.__name__, e))
-
-    # Second pass once we have all length numbers.
-    for obj_num in obj_data:
-      if obj_num not in self.objs:
+    obj_nums_with_indirect_length = set()
+    for obj_num in sorted(obj_data):
+      try:
         try:
           self.objs[obj_num] = PdfObj(
               obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
               do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-        except PdfTokenParseError, e:
-          print >>sys.stderr, (
-              'warning: cannot parse obj %d: %s.%s: %s' % (
-              obj_num, e.__class__.__module__, e.__class__.__name__, e))
+        except PdfIndirectLengthError, exc:
+          # For testing: eurotex2006.final.pdf and lme_v6.pdf
+          # Defer parsing this obj later, after we have the length objects
+          # parsed.
+          obj_nums_with_indirect_length.add(obj_num)
+      except PdfTokenParseError, e:
+        # We just skip unparsable objects (so we don't add them to
+        # obj_starts).
+        print >>sys.stderr, (
+            'warning: cannot parse obj %d: %s.%s: %s' % (
+            obj_num, e.__class__.__module__, e.__class__.__name__, e))
+
+    for obj_num in sorted(obj_nums_with_indirect_length):
+      try:
+        self.objs[obj_num] = PdfObj(
+            obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
+            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+      except PdfTokenParseError, e:
+        # We just skip unparsable objects (so we don't add them to
+        # obj_starts).
+        print >>sys.stderr, (
+            'warning: cannot parse obj %d: %s.%s: %s' % (
+            obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
     self.objs.update(preparsed_objs)
 
@@ -6279,7 +6279,6 @@ cvx bind /LoadCff exch def
           obj_starts, self.has_generational_objs = self.ParseUsingXref(
               data,
               do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-        # TODO(pts): Cache length_objs.
         j = obj_starts[exc.length_obj_num]
         if exc.length_obj_num not in length_objs:
           length_objs[exc.length_obj_num] = PdfObj(
