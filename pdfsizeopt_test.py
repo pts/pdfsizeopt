@@ -434,8 +434,14 @@ class PdfSizeOptTest(unittest.TestCase):
     # Parses the comment properly, but doesn't replace it with the non-comment
     # version.
     self.assertEqual('[/Foo%]endobj\n42  43\t]', obj.head)
+    obj = pdfsizeopt.PdfObj('42 0 obj%hello\r  \t\f%more\n/Foo%bello\nendobj')
+    # Leading comments are removed, but trailing comments aren't.
+    self.assertEqual('/Foo%bello', obj.head)
 
     # TODO(pts): Add more tests.
+
+  #def testPdfObjGetInt(self):
+  #  
 
   def testPdfObjGetSet(self):
     obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj junk stream\r\n')
@@ -694,7 +700,7 @@ class PdfSizeOptTest(unittest.TestCase):
 
   def testFindEqclassesCircularReferences(self):
     pdf = pdfsizeopt.PdfData()
-    # The Rs are needed here, otherwise objects would be discarded.
+    # The Rs are needed in the trailer, otherwise objects would be discarded.
     pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<4 0 R 5 0 R 9 0 R 10 0 R>>endobj')
     pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</Parent  1 0 R/Type/Pages/Kids[9 0 R]/Count 1>>endobj')
     pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</Parent 1  0 R/Type/Pages/Kids[10 0 R]/Count 1>>endobj')

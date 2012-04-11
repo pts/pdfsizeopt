@@ -260,7 +260,7 @@ class PdfObj(object):
 
   PDF_OBJ_DEF_RE_STR = (
       r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
-      r'(?=[\0\t\n\r\f /<\[({])[\0\t\n\r\f ]*')
+      r'(?=[\0\t\n\r\f %/<\[({])[\0\t\n\r\f ]*')
   PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
   """Matches an `obj' definition no leading, with trailing whitespace."""
 
@@ -371,7 +371,14 @@ class PdfObj(object):
         raise PdfTokenParseError(
             'X Y obj expected, got %r at ofs=%s' %
             (other[start : start + 32], file_ofs))
+      # This already strips leaning whitespace after `obj'.
       skip_obj_number_idx = match.end()
+      if other[skip_obj_number_idx : skip_obj_number_idx + 1] == '%':
+        match = self.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(
+            other, skip_obj_number_idx).match()
+        assert match
+        skip_obj_number_idx = match.end()
+  
       stream_start_idx = None
 
       # We do the simplest and fastest parsing approach first to find
@@ -3270,11 +3277,11 @@ class PdfData(object):
     obj_data = dict([(obj_items[i - 1][1],
                      data[obj_items[i - 1][0] : obj_items[i][0]])
                      for i in xrange(1, len(obj_items))])
-    # !! we get this for pdf_reference_1-7.pdf
     assert '' not in obj_data.values(), 'duplicate object start offset'
 
     # Get numbers first, so later we can resolve '/Length 42 0 R'.
-    # !! TODO(pts): proper PDF token sequence parsing
+    # !! TODO(pts): proper PDF token sequence parsing (e.g. if `endstream'
+    # appears in a comment in ths_obj_data).
     # TODO(pts): Add proper parsing, so this first pass is not needed.
     for obj_num in obj_data:
       this_obj_data = obj_data[obj_num]
