@@ -3820,7 +3820,7 @@ class PdfData(object):
       else:
         i = 8 - max_ofs_size
         data = ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
-      extra_width = 1
+      extra_width = 0
     trailer_obj.SetStreamAndCompress(
         data, predictor_width=(max_ofs_size + extra_width))
 
@@ -6110,14 +6110,9 @@ cvx bind /LoadCff exch def
     * Removes gaps between obj numbers.
     * Reorders objs so most-referenced objs come early.
 
-    This method doesn't unify equivalent sets with circular references, e.g.
-      4 0 obj<</Parent 1 0 R/Type/Pages/Kids[9 0 R]/Count 1>>endobj
-      5 0 obj<</Parent 1 0 R/Type/Pages/Kids[10 0 R]/Count 1>>endobj
-      9 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 4 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj
-      10 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 5 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj
-    Use Multivalent.jar for that.
-    TODO(pts): Implement this, using equivalence class separation.
-    For testing: pts2.zip.4times.pdf and tuzv.pdf
+    This method unifies equivalent sets with circular references (just like
+    Multivalent).
+    TODO(pts): Test this with: pts2.zip.4times.pdf and tuzv.pdf
 
     Args:
       do_unify_pages: Unify equivalent /Type/Page objects to a single object.
