@@ -347,6 +347,8 @@ class PdfSizeOptTest(unittest.TestCase):
     e = pdfsizeopt.PdfObj.CompressValue
     self.assertEqual('', e('\t\f\0\r \n'))
     self.assertEqual('foo bar', e('   foo\n\t  bar\f'))
+    self.assertEqual('foo 123', e('foo%bar\r123'))
+    self.assertEqual('foo 123', e('foo%bar\n123'))
     self.assertEqual(']foo/bar(\xba\xd0)>>', e(' ]  foo\n\t  /bar\f <bAd>>>'))
     self.assertEqual('<<bAd CAFE>>', e('<<bAd  CAFE>>'))
     self.assertEqual('<<(\xba\xdc\xaf\xe0)>>', e('<<<bad CAFE>>>'))
@@ -427,6 +429,11 @@ class PdfSizeOptTest(unittest.TestCase):
     obj = pdfsizeopt.PdfObj(s + t, end_ofs_out=end_ofs_out)
     self.assertEqual('<</Producer(A)/CreationDate(B)/Creator(C)>>', obj.head)
     self.assertEqual([len(s)], end_ofs_out) 
+    obj = pdfsizeopt.PdfObj(
+        '42 0 obj[/Foo%]endobj\n42  43\t]\nendobj')
+    # Parses the comment properly, but doesn't replace it with the non-comment
+    # version.
+    self.assertEqual('[/Foo%]endobj\n42  43\t]', obj.head)
 
     # TODO(pts): Add more tests.
 

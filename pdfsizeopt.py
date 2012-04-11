@@ -1404,6 +1404,7 @@ class PdfObj(object):
       output.append(data[i:])
       data = ''.join(output)
     else:
+      # According the the PDF reference, comments are equivalent to whitespace.
       data = cls.PDF_COMMENT_RE.sub(' ', data)
 
     def ReplacementHexEscape(match):
@@ -3803,9 +3804,9 @@ class PdfData(object):
         else:
           ofs_output.append(struct.pack('>Q', ofs)[8 - max_ofs_size:])
         done_obj_num += 1
-      trailer_obj.SetStreamAndCompress(
-          ''.join(ofs_output), predictor_width=max_ofs_size + 1)
+      data = ''.join(ofs_output)
       del ofs_output
+      extra_width = 1
     else:
       trailer_obj.Set('W', '[0 %d 0]' % max_ofs_size)
       if max_ofs_size == 1:
@@ -3819,7 +3820,9 @@ class PdfData(object):
       else:
         i = 8 - max_ofs_size
         data = ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
-      trailer_obj.SetStreamAndCompress(data, predictor_width=max_ofs_size)
+      extra_width = 1
+    trailer_obj.SetStreamAndCompress(
+        data, predictor_width=(max_ofs_size + extra_width))
 
   def Save(self, file_name, do_update_file_name=True, do_hide_images=False,
            do_generate_xref_stream=True):
@@ -6205,7 +6208,7 @@ cvx bind /LoadCff exch def
       i0 = i
       if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
         scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
-        i = scanner.match().end()  # always matches
+        i = scanner.match().end()  # Always matches.
 
       scanner = PdfObj.PDF_OBJ_DEF_OR_XREF_RE.scanner(data, i)
       match = scanner.search()
