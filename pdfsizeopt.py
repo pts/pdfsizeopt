@@ -382,7 +382,7 @@ class PdfObj(object):
             other, skip_obj_number_idx).match()
         assert match
         skip_obj_number_idx = match.end()
-  
+
       stream_start_idx = None
 
       # We do the simplest and fastest parsing approach first to find
@@ -532,7 +532,7 @@ class PdfObj(object):
   head = property(__GetHead, __SetHead)
 
   @property
-  def size(self):
+  def size(self):  # GetSize().
     # + 20 for obj...endobj, + 20 for the xref entry
     if self.stream is None:
       return len(self.head) + 40
@@ -2636,7 +2636,7 @@ class PdfObj(object):
 
   def ParseObjStm(self):
     """Parses a /Type/ObjStm trailer_obj.
-    
+
     Returns:
       Tuple (compressed_obj_nums, compressed_obj_headbufs), both of items
       being lists of the same size, the first containing object numbers, the
@@ -3521,7 +3521,7 @@ class PdfData(object):
                   'generational objects (in %s %s) not supported at %d' %
                   (obj_num, f2, xref_ofs))
             has_generational_objs = True
-          
+
           if f1 < 9:
             # Accept (and ignore) a 0 offset, Multivalent generates such files:
             # `/W [0 x 0]', and some offsets are 0.
@@ -3589,7 +3589,7 @@ class PdfData(object):
       for i in xrange(len(compressed_obj_nums)):
         compressed_obj_num = compressed_obj_nums[i]
         compressed_obj_start = obj_starts.get(compressed_obj_num)
-        if (compressed_obj_start is not None and 
+        if (compressed_obj_start is not None and
             compressed_obj_start != (obj_num, i)):
           raise PdfXrefStreamError(
               'location mismatch for compressed obj %d: '
@@ -3828,7 +3828,7 @@ class PdfData(object):
     assert trailer_obj_num not in obj_numbers  # Slow.
     if objstm_obj_numbers:
       assert trailer_obj_num not in objstm_obj_numbers  # Slow.
-    need_w0 = False  # Do we need w0 be 1 instead of 0? 
+    need_w0 = False  # Do we need w0 be 1 instead of 0?
     max_w2 = -1
     max_obj_num = obj_numbers[-1]
     if objstm_obj_numbers:
@@ -3851,7 +3851,7 @@ class PdfData(object):
       for obj_num in obj_numbers:
         if obj_num in objstm_obj_numbers_rev:
           ofs_list.append(objstm_obj_numbers_rev[obj_num])  # Negative or 0.
-        else: 
+        else:
           ofs_list.append(obj_ofs[obj_num])  # Positive.
       del objstm_obj_numbers_rev  # Save memory.
     else:
@@ -3996,7 +3996,7 @@ class PdfData(object):
                           do_generate_object_stream=True,
                           may_obj_heads_contain_comments=True):
     """Appends a serialized PDF file to the list output.
-    
+
     Args:
       output: A list of strings, will be appended in place. Must be empty
         in the beginning.
@@ -4039,10 +4039,6 @@ class PdfData(object):
     objstm_obj_numbers = None
 
     if do_generate_object_stream:
-      # TODO(pts): For some very small files (e.g. emptypage.pdf), the xref
-      # stream may increase the optimized file size (from 449 bytes to 452
-      # bytes). If the file seems to be very small, try without an xref stream.
-      # Do the same with Multivalent.
       objstm_output = ['9']  # Simulated digit for IsSpaceNeeded below.
       objstm_size = 0  # In bytes.
       objstm_numbers = []
@@ -6349,7 +6345,7 @@ cvx bind /LoadCff exch def
       head = PdfObj.PDF_SIMPLE_REF_RE.sub(ReplacementRef, head_minus)
       assert not refs_to_rev
 
-      # Since above we've called PdfObj.CompressValue(..., 
+      # Since above we've called PdfObj.CompressValue(...,
       # do_emit_strings_as_hex=True), we have to undo it (i.e. make hex strings
       # binary instead) here.
       head = PdfObj.PDF_HEX_STRING_OR_DICT_RE.sub(
@@ -7078,8 +7074,8 @@ cvx bind /LoadCff exch def
           # GenerateXrefStream() also sets or clears /Type, /W, /Filter,
           # /Length, /DecodeParms, /Index and /Size of trailer_obj properly.
           cls.GenerateXrefStream(
-              obj_numbers=sorted(out_ofs_by_num), xref_ofs=xref_ofs, 
-              trailer_obj_num=out_trailer_obj_num, trailer_obj=trailer_obj, 
+              obj_numbers=sorted(out_ofs_by_num), xref_ofs=xref_ofs,
+              trailer_obj_num=out_trailer_obj_num, trailer_obj=trailer_obj,
               obj_ofs=out_ofs_by_num, objstm_obj_num=None,
               objstm_obj_numbers=None)
         else:
@@ -7165,24 +7161,17 @@ cvx bind /LoadCff exch def
           break
     return multivalent_jar
 
-  def AppendSerializedPdfWithMultivalent(self, output, do_escape_images,
-                                         do_generate_xref_stream,
-                                         do_generate_object_stream,
-                                         may_obj_heads_contain_comments):
-    """Save this PDF to file_name, return self.
+  def _RunMultivalent(self, do_escape_images,
+                      may_obj_heads_contain_comments):
+    """Run Multivalent, and read its output.
 
    Args:
       output: A list of strings, will be appended in place. Must be empty
         in the beginning.
     Returns:
-      Total number of bytes appended to output.
+      The tuple (data, files_to_remove), where data is the string containing
+      the PDF Multivalent has written.
     """
-    if not isinstance(output, list):
-      raise TypeError
-    assert not output  # This restriction could be easily eliminated.
-    assert do_generate_xref_stream or not do_generate_object_stream, (
-        'Object streams need an xref stream.')
-
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
     in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
@@ -7194,14 +7183,11 @@ cvx bind /LoadCff exch def
 
     print >>sys.stderr, (
         'info: writing Multivalent input PDF: %s' % in_pdf_tmp_file_name)
-    # The values of arguments do_generate_xref_stream= and
-    # do_generate_object_stream= don't matter here, because
-    # in_pdf_tmp_file_name is just a temporary file.
     tmp_output = []
     in_data_size = self.AppendSerializedPdf(
         output=tmp_output, do_hide_images=do_escape_images,
-        do_generate_xref_stream=do_generate_xref_stream,
-        do_generate_object_stream=do_generate_object_stream,
+        do_generate_xref_stream=True,
+        do_generate_object_stream=True,
         may_obj_heads_contain_comments=may_obj_heads_contain_comments)
     f = open(in_pdf_tmp_file_name, 'wb')
     try:
@@ -7266,14 +7252,8 @@ cvx bind /LoadCff exch def
          out_data_size, FormatPercent(out_data_size, in_data_size)))
     assert out_data_size, (
         'Multivalent generated empty output (see its error above)')
-    output_size = self.FixPdfFromMultivalent(
-        data, output=output,
-        do_generate_xref_stream=do_generate_xref_stream,
-        do_generate_object_stream=do_generate_object_stream)
-    del data  # Save memory.
-    os.remove(in_pdf_tmp_file_name)
-    os.remove(out_pdf_tmp_file_name)
-    return output_size
+    return data, (in_pdf_tmp_file_name, out_pdf_tmp_file_name)
+
 
   def Save(self, file_name, use_multivalent,
            do_update_file_meta,
@@ -7299,19 +7279,74 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, 'info: saving PDF with %s objs %sto: %s' % (
         len(self.objs), with_multivalent_msg, file_name)
     self._AssertBeforeWrite()
-    output = []
+
+    jobs = [[dict(
+        do_generate_xref_stream=do_generate_xref_stream,
+        do_generate_object_stream=do_generate_object_stream),
+        'original', 0, None]]
+    # This is an upper estimate of the byte size of the generated PDF files,
+    # because it assumes do_generate_xref_stream=False and
+    # do_generate_object_stream=False.
+    estimated_size = 40 + self.trailer.size + sum(
+        pdf_obj.size for pdf_obj in self.objs.itervalues())
+    if estimated_size < 10000 and len(self.objs) < 40:
+      # The file is small, so it may be worth trying other settings.
+      if do_generate_xref_stream and do_generate_object_stream:
+        jobs.append([dict(
+            do_generate_xref_stream=True,
+            do_generate_object_stream=False), 'xrefstm', 1, None])
+      if do_generate_xref_stream:
+        jobs.append([dict(
+            do_generate_xref_stream=False,
+            do_generate_object_stream=False), 'nostm', 2, None])
+    if len(jobs) > 1:
+      print >>sys.stderr, 'info: trying %d jobs and using the smallest' % (
+          len(jobs))
+
     if use_multivalent:
-      output_size = self.AppendSerializedPdfWithMultivalent(
-          output=output, do_escape_images=do_escape_images_from_multivalent,
-          do_generate_xref_stream=do_generate_xref_stream,
-          do_generate_object_stream=do_generate_object_stream,
+      # TODO(pts): Work around exception for emptypage.pdf:
+      # pso.conv.mi.tmp.pdf: java.lang.ClassCastException:
+      # multivalent.std.adaptor.pdf.Dict cannot be cast to
+      # multivalent.std.adaptor.pdf.IRef
+      multivalent_output_data, tmp_files_to_remove = self._RunMultivalent(
+          do_escape_images=do_escape_images_from_multivalent,
           may_obj_heads_contain_comments=may_obj_heads_contain_comments)
     else:
-      output_size = self.AppendSerializedPdf(
-          output=output,
-          do_generate_xref_stream=do_generate_xref_stream,
-          do_generate_object_stream=do_generate_object_stream,
-          may_obj_heads_contain_comments=may_obj_heads_contain_comments)
+      tmp_files_to_remove = ()
+      multivalent_output_data = None
+
+    for job in jobs:
+      output = []
+      if use_multivalent:
+        output_size = self.FixPdfFromMultivalent(
+            data=multivalent_output_data, output=output, **job[0])
+      else:
+        output_size = self.AppendSerializedPdf(
+            output=output,
+            may_obj_heads_contain_comments=may_obj_heads_contain_comments,
+            **job[0])
+      if len(jobs) > 1:
+        print >>sys.stderr, 'info: job %s generated %d bytes %s(%s)' % (
+            job[1], output_size, with_multivalent_msg,
+            FormatPercent(output_size, self.file_size))
+      job[3] = ''.join(output)
+      del output  # Save memory.
+      assert len(job[3]) == output_size
+
+    for tmp_file_name in tmp_files_to_remove:
+      os.remove(tmp_file_name)
+    del multivalent_output_data  # Save memory.
+
+    if len(jobs) > 1:
+      def CompareJob(joba, jobb):
+        # Smallest output size first, then simplicity first.
+        return len(joba[3]).__cmp__(len(jobb[3])) or jobb[2].__cmp__(joba[2])
+      jobs.sort(CompareJob)
+      print >>sys.stderr, 'info: jobs result: %s' % (
+          ' '.join(['%s=%d' % (job[1], len(job[3])) for job in jobs]))
+      del jobs[1:]  # Save memory.
+
+    output_size = len(jobs[0][3])
     print >>sys.stderr, 'info: generated %d bytes %s(%s)' % (
         output_size, with_multivalent_msg,
         FormatPercent(output_size, self.file_size))
@@ -7319,7 +7354,7 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'warning: optimized PDF larger than original'
     f = open(file_name, 'wb')
     try:
-      f.write(''.join(output))
+      f.write(jobs[0][3])
     finally:
       f.close()
     if do_update_file_meta:
