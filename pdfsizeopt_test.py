@@ -849,7 +849,9 @@ class PdfSizeOptTest(unittest.TestCase):
          'startxref\n'
          '463\n'
          '%%EOF\n')
-    self.assertEqual(t, e(s, do_generate_object_stream=False))
+    output = []
+    e(s, output=output, do_generate_object_stream=False)
+    self.assertEqual(t, ''.join(output))
     # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
 
   def testPermissiveZlibDecompress(self):
