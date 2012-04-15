@@ -3815,7 +3815,8 @@ class PdfData(object):
     assert not [obj_num for obj_num in obj_numbers if obj_ofs[obj_num] <= 0]
     assert xref_ofs not in obj_ofs
     assert trailer_obj_num not in obj_numbers  # Slow.
-    assert trailer_obj_num not in objstm_obj_numbers  # Slow.
+    if objstm_obj_numbers:
+      assert trailer_obj_num not in objstm_obj_numbers  # Slow.
     need_w0 = False  # Do we need w0 be 1 instead of 0? 
     max_w2 = -1
     max_obj_num = obj_numbers[-1]
@@ -3996,6 +3997,10 @@ class PdfData(object):
     objstm_obj_numbers = None
 
     if do_generate_object_stream:
+      # TODO(pts): For some very small files (e.g. emptypage.pdf), the xref
+      # stream may increase the optimized file size (from 449 bytes to 452
+      # bytes). If the file seems to be very small, try without an xref stream.
+      # Do the same with Multivalent.
       objstm_output = ['9']  # Simulated digit for IsSpaceNeeded below.
       objstm_size = 0  # In bytes.
       objstm_numbers = []
