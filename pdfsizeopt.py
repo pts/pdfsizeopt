@@ -647,7 +647,10 @@ class PdfObj(object):
 
   def SetStreamAndCompress(self, data, may_keep_old=False,
                            predictor_width=None, pdf=None):
-    """Set self.stream, compress it and set Length, Filter and DecodeParms).
+    """Set self.stream, compress it and set /Length, /Filter and /DecodeParms.
+
+    If the uncompressed version is the shortest, then clear /Filter and
+    /DecodeParms.
 
     This method tries all the following compression methods, and picks the
     one which produces the smallest output: original, uncompressed, ZIP, ZIP
@@ -1343,7 +1346,8 @@ class PdfObj(object):
     if len(xref_data) / sum(widths) != sum(
         index[i] for i in xrange(1, len(index), 2)):
       raise PdfXrefStreamError('data length does not match /Index: '
-                               'widths=%r index=%r' % (withds, index))
+                               'xref_data_size=%d widths=%r index=%r' %
+                               (len(xref_data), widths, index))
     widths.append(index)
     widths.append(xref_data)
     return tuple(widths)
@@ -3517,10 +3521,15 @@ class PdfData(object):
                   'generational objects (in %s %s) not supported at %d' %
                   (obj_num, f2, xref_ofs))
             has_generational_objs = True
+          
           if f1 < 9:
-            raise PdfXrefStreamError('offset of obj %d too small: %d' %
-                               (obj_num, f1))
-          obj_starts[obj_num] = f1
+            # Accept (and ignore) a 0 offset, Multivalent generates such files:
+            # `/W [0 x 0]', and some offsets are 0.
+            if f1:
+              raise PdfXrefStreamError('offset of obj %d too small: %d' %
+                                 (obj_num, f1))
+          else:
+            obj_starts[obj_num] = f1
         elif f0 == 2:
           # f1: Object number of the object stream of obj_num.
           # f2: Index of obj_num within its object stream.
@@ -3801,7 +3810,9 @@ class PdfData(object):
         modified. Must not contain the offset of the trailer (xref_ofs).
       xref_ofs: File offset of the xref stream (trailer_obj)
       trailer_obj: PdfObj whose .head contains the PDF trailer. Will be
-        modified in place: .stream and some names (including /Size) added.
+        modified in place: .stream and some names (including /Size, /Type, /W
+        and /Length) added, some other names (including /Index, /Filter and
+        /DecodeParms) added or cleared.
       trailer_obj_num: Obect number of trailer_obj, must not be present in
         obj_numbers.
       objstm_obj_num: Object number of the /Type/ObjStm obj, or None. Must not
@@ -3855,20 +3866,28 @@ class PdfData(object):
     trailer_obj.Set('Type', '/XRef')
     max_ofs = xref_ofs
     if obj_numbers[0] != 0:  # /Index [0 Size] is the default.
-      # Usuall obj_numbers[0] == 1, and we'll take care of emitting a
+      # Usually obj_numbers[0] == 1, and we'll take care of emitting a
       # free_entry later for that, and removing /Index (so it can be the
       # default).
-      trailer_obj.Set('Index', '[%d %d]' % (
-          obj_numbers[0], max_obj_num - obj_numbers[0] + 1))
+      index_data = '[%d %d]' % (
+          obj_numbers[0], max_obj_num - obj_numbers[0] + 1)
+      trailer_obj.Set('Index', index_data)
+      index_size = len(index_data) + 7  # 7 == len('/Index ').
+      del index_data
     else:
       trailer_obj.Set('Index', None)
+      index_size = 0
 
     for i in xrange(1, len(obj_numbers)):
       if obj_numbers[i] - 1 != obj_numbers[i - 1]:
-        need_w0 = True
+        if not (obj_numbers[i] - 2 == obj_numbers[i - 1] and
+                obj_numbers[i] - 1 == trailer_obj_num):
+          need_w0 = True
       max_ofs = max(max_ofs, ofs_list[i])  # Negative entries are ignored.
     if objstm_obj_numbers:
       max_ofs = max(max_ofs, objstm_obj_num)
+    if trailer_obj_num != obj_numbers[-1] + 1:
+      need_w0 = True
 
     max_ofs_size = 1
     while max_ofs >= 1 << (8 * max_ofs_size):
@@ -3892,17 +3911,25 @@ class PdfData(object):
       trailer_obj.Set('W', '[1 %d %d]' % (max_ofs_size, max_w2_size))
       free_entry = '\x00' * (1 + max_ofs_size + max_w2_size)
       done_obj_num = 0
-      if obj_numbers[0] == 1:  # Encode free obj 0 with an offset.
-        trailer_obj.Set('Index', None)
-        ofs_output.append(free_entry)
-        done_obj_num = 1
+      if index_size:
+        assert obj_numbers[0] != 0
+        if obj_numbers[0] <= (index_size - 1) / max_ofs_size:
+          # For testing: --use-multivalent=yes --do-generate-xref-stream=yes
+          # --do-generate-object-stream=yes /mnt/mandel/warez/tmp/issue57.pdf
+          done_obj_num = obj_numbers[0]
+          ofs_output.append(free_entry * done_obj_num)
+          trailer_obj.Set('Index', None)
       i = 0
       for ofs in ofs_list:
         if i < len(obj_numbers):
-          while done_obj_num < obj_numbers[i]:
-            ofs_output.append(free_entry)
-            done_obj_num += 1
-          i += 1
+          obj_num_limit = obj_numbers[i]
+        else:
+          assert i == len(obj_numbers)
+          obj_num_limit = trailer_obj_num
+        while done_obj_num < obj_num_limit:
+          ofs_output.append(free_entry)
+          done_obj_num += 1
+        i += 1
         if ofs <= 0:  # An object from the /Type/ObjStm obj.
           ofs_output.append('\x02')
           if max_ofs_size <= 4:
@@ -3928,20 +3955,32 @@ class PdfData(object):
       del ofs_output
       extra_width = 1 + max_w2_size
     else:
+      data = ''
+      if index_size:
+        assert obj_numbers[0] != 0
+        if obj_numbers[0] <= (index_size - 1) / max_ofs_size:
+          # Save a few bytes by removing /Index and adding zeros to the
+          # beginning of the stream.
+          #
+          # For testing: --use-multivalent=no --do-generate-xref-stream=yes
+          # --do-generate-object-stream=no issue57.pdf
+          data = '\0' * (obj_numbers[0] * max_ofs_size)
+          trailer_obj.Set('Index', None)
       assert max_w2 == -1
       trailer_obj.Set('W', '[0 %d 0]' % max_ofs_size)
       if max_ofs_size == 1:
-        data = struct.pack('>%dB' % len(ofs_list), *ofs_list)
+        data += struct.pack('>%dB' % len(ofs_list), *ofs_list)
       elif max_ofs_size == 2:
-        data = struct.pack('>%dH' % len(ofs_list), *ofs_list)
+        data += struct.pack('>%dH' % len(ofs_list), *ofs_list)
       elif max_ofs_size == 3:
-        data = ''.join(struct.pack('>L', ofs)[1:] for ofs in ofs_list)
+        data += ''.join(struct.pack('>L', ofs)[1:] for ofs in ofs_list)
       elif max_ofs_size == 4:
-        data = struct.pack('>%dL' % len(ofs_list), *ofs_list)
+        data += struct.pack('>%dL' % len(ofs_list), *ofs_list)
       else:
         i = 8 - max_ofs_size
-        data = ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
+        data += ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
       extra_width = 0
+      #assert 0, (len(data), max_ofs_size, extra_width)
     trailer_obj.SetStreamAndCompress(
         data, predictor_width=(max_ofs_size + extra_width))
 
@@ -6765,8 +6804,9 @@ cvx bind /LoadCff exch def
       return ret
 
   @classmethod
-  def FixPdfFromMultivalent(cls, data, do_generate_xref_stream=True,
-                            may_add_object_stream=True):
+  def FixPdfFromMultivalent(cls, data,
+                            do_generate_xref_stream=True,
+                            do_generate_object_stream=True):
     """Fix PDF contents file in data, generated by Mulitvalent.jar.
 
     It's implicitly assumed that do_generate_object_stream ==
@@ -6783,6 +6823,9 @@ cvx bind /LoadCff exch def
       PdfXrefStreamError:
       many:
     """
+    assert do_generate_xref_stream or not do_generate_object_stream, (
+        'Object streams need an xref stream.')
+
     in_offsets = []
     obj_num_by_in_ofs = {}
     # TODO(pts): Use a setitem_callback here to save memory.
@@ -6872,8 +6915,8 @@ cvx bind /LoadCff exch def
           obj_type = pdf_obj.Get('Type')
           if obj_type == '/ObjStm':
             has_objstm_obj = True
-            objstm_objs[obj_num] = pdf_obj
-            if not do_generate_xref_stream:
+            if not do_generate_object_stream:
+              objstm_objs[obj_num] = pdf_obj
               continue  # Don't emit the object, don't add it to out_ofs_by_num.
 
       while output_size_idx < len(output):
@@ -6890,7 +6933,7 @@ cvx bind /LoadCff exch def
                                (obj_num, obj_size, obj_out_size))
 
     # Save memory if not needed later.
-    if not (do_generate_xref_stream and not has_objstm_obj):
+    if not (do_generate_object_stream and not has_objstm_obj):
       pdf_objs = None  # Save memory. Some objects still in objstm_objs.
 
     # Calculate the preliminary trailer offset to be saved in xref_out.
@@ -6912,7 +6955,12 @@ cvx bind /LoadCff exch def
     # objects unreferenced from the xref stream earlier -- but Multivalent
     # doesn't emit such unreferenced objects.
     w0, w1, w2, unused_index, xref_data = trailer_obj.GetXrefStream()
-    xref_out = array.array('B', xref_data)
+    if (do_generate_xref_stream and
+        bool(do_generate_object_stream) == bool(has_objstm_obj)):
+      xref_out = array.array('B', xref_data)
+    else:
+      # We're sure we won't need xref_out, so we're not computing it.
+      xref_out = None
     i = 0
     ref_obj_num = -1
     # dict mapping object numbers to (objstm_obj_num, idx) pairs.
@@ -6948,7 +6996,7 @@ cvx bind /LoadCff exch def
              (fx, struct.pack('>Q', fx)[-w1:],
               f1, struct.pack('>Q', f1)[-w1:], i - w2 - w1))
         fo = out_ofs_by_num.get(ref_obj_num, 0)
-        if do_generate_xref_stream:
+        if xref_out:
           if f1 != fo:  # Update the object offset in the xref stream.
             assert fo < (1 << (8 * w1)), (
                 'Output offset %d too large for w1=%d.' % (fo, w1))
@@ -6961,16 +7009,16 @@ cvx bind /LoadCff exch def
               j -= 1
           if not fo and w0:
             xref_out[i - w2 - w1 - 1] = 0  # Signify a free object.
-      elif not do_generate_xref_stream and f0 == 2 and f1 > 0:
+      elif not do_generate_object_stream and f0 == 2 and f1 > 0:
         # Obj ref_obj_num can be fetched from /Type/ObjStm obj f1, index
         # f2.
         # For testing: tuzv.pdf
         compressed_objects[ref_obj_num] = (f1, f2)
-      # If do_generate_xref_stream, then we don't
+      # If do_generate_object_stream is true, then we don't
       # trailer_obj.Set('Size', ...), because we don't change the number of
       # objects.
 
-    if do_generate_xref_stream and not has_objstm_obj and may_add_object_stream:
+    if do_generate_object_stream and not has_objstm_obj:
       # Multivalent hasn't generated an object stream. This happens for small
       # inputs. We generate an object stream anyway, because it will make the
       # output file smaller.
@@ -7005,12 +7053,11 @@ cvx bind /LoadCff exch def
                               may_obj_heads_contain_comments=False)
       del pdf  # Save memory.
     else:
-      assert not (not do_generate_xref_stream and has_objstm_obj and
+      assert not (not do_generate_object_stream and has_objstm_obj and
                   not compressed_objects), (
           'Multivalent has generated an unnecessary /Type/ObjStm.')
       del pdf_objs  # Save memory. Some objects still in objstm_objs.
-
-      if not do_generate_xref_stream and compressed_objects:
+      if not do_generate_object_stream and compressed_objects:
         # Uncompress compressed objects.
         # Maps /Type/ObjStm obj num to the list of strings (or other basic
         # values suitable for a PdfObj._head) it contains.
@@ -7050,22 +7097,41 @@ cvx bind /LoadCff exch def
         output_size += len(output[output_size_idx])
         output_size_idx += 1
       xref_ofs = output_size
+      del out_ofs_by_num[trailer_obj_num]
+      del trailer_obj_num  # To avoid confusion in the future.
       if do_generate_xref_stream:
-        xref_out = xref_out.tostring()
-        # For testing: Multivalent generates
-        # /DecodeParms<</Predictor 12/Columns 5>>
-        # for agilerails3.pdf, which is 9K, instead of 22K without predictor.
-        # TODO(pts): 5176.CFF.pso.pdf has
-        # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
-        trailer_obj.SetStreamAndCompress(
-            xref_out, may_keep_old=(xref_out == xref_data),
-            predictor_width=(w0 + w1 + w2), pdf=None)
+        out_trailer_obj_num = max(out_ofs_by_num) + 1
+        if not do_generate_object_stream and has_objstm_obj:
+          # We generate a completely new xref stream, because we have to include
+          # objects formerly in object streams.
+          xref_out = None  # Save memory.
+          trailer_obj.stream = None  # For GenerateXrefStream.
+          # GenerateXrefStream() also sets or clears /Type, /W, /Filter,
+          # /Length, /DecodeParms, /Index and /Size of trailer_obj properly.
+          cls.GenerateXrefStream(
+              obj_numbers=sorted(out_ofs_by_num), xref_ofs=xref_ofs, 
+              trailer_obj_num=out_trailer_obj_num, trailer_obj=trailer_obj, 
+              obj_ofs=out_ofs_by_num, objstm_obj_num=None,
+              objstm_obj_numbers=None)
+        else:
+          xref_out = xref_out.tostring()
+          # For testing: Multivalent generates
+          # /DecodeParms<</Predictor 12/Columns 5>>
+          # for agilerails3.pdf, which is 9K, instead of 22K without predictor.
+          # TODO(pts): 5176.CFF.pso.pdf has
+          # /Filter/FlateDecode/DecodeParms <</Predictor 12/Columns 5>>
+          #
+          # We use may_keep_old= to keep the old, compressed xref_data in case
+          # it's smaller than what we could create.
+          trailer_obj.SetStreamAndCompress(
+              xref_out, may_keep_old=(xref_out == xref_data),
+              predictor_width=(w0 + w1 + w2), pdf=None)
         print >>sys.stderr, (
             'info: compressed xref stream from %s to %s bytes (%s)' %
-            (len(xref_out), trailer_obj.size,
-             FormatPercent(trailer_obj.size, len(xref_out))))
-        del xref_out  # Save memory.
-        trailer_obj.AppendTo(output, trailer_obj_num)
+            (len(xref_data), trailer_obj.size,
+             FormatPercent(trailer_obj.size, len(xref_data))))
+        del xref_out, xref_data  # Save memory.
+        trailer_obj.AppendTo(output, out_trailer_obj_num)
         while output_size_idx < len(output):
           output_size += len(output[output_size_idx])
           output_size_idx += 1
@@ -7073,7 +7139,6 @@ cvx bind /LoadCff exch def
         xref_idx = len(output)
         output.append('xref\n0 ?\n')  # Placeholder, will be modified below.
         done_obj_num = 0
-        del out_ofs_by_num[trailer_obj_num]
         for ref_obj_num in sorted(out_ofs_by_num):
           while done_obj_num < ref_obj_num:
             output.append('0000000000 65535 f \n')
@@ -7101,7 +7166,8 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, (
         'info: optimized to %s bytes after Multivalent (%s)' %
         (output_size, FormatPercent(output_size, len(data))))
-    if do_generate_xref_stream and output_size > len(data):
+    if (do_generate_xref_stream and output_size > len(data) and
+        (do_generate_object_stream or not has_objstm_obj)):
       raise PdfOptimizeError('PDF size has grown from %s to %s bytes' %
                              (len(data), output_size))
     return ''.join(output)
@@ -7128,12 +7194,12 @@ cvx bind /LoadCff exch def
 
   def SaveWithMultivalent(self, file_name, do_escape_images,
                           do_generate_xref_stream,
+                          do_generate_object_stream,
                           may_obj_heads_contain_comments):
-    """Save this PDF to file_name, return self.
+    """Save this PDF to file_name, return self."""
+    assert do_generate_xref_stream or not do_generate_object_stream, (
+        'Object streams need an xref stream.')
 
-    It's implicitly assumed that do_generate_object_stream ==
-    do_generate_xref_stream.
-    """
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
     in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
@@ -7147,9 +7213,12 @@ cvx bind /LoadCff exch def
         'info: writing Multivalent input PDF: %s' % in_pdf_tmp_file_name)
     orig_file_name = self.file_name
     orig_file_size = self.file_size
+    # The values of arguments do_generate_xref_stream= and
+    # do_generate_object_stream= don't matter here, because
+    # in_pdf_tmp_file_name is just a temporary file.
     self.Save(in_pdf_tmp_file_name, do_hide_images=do_escape_images,
               do_generate_xref_stream=do_generate_xref_stream,
-              do_generate_object_stream=do_generate_xref_stream,
+              do_generate_object_stream=do_generate_object_stream,
               may_obj_heads_contain_comments=may_obj_heads_contain_comments)
     in_data_size = self.file_size
     self.file_name = orig_file_name
@@ -7209,7 +7278,9 @@ cvx bind /LoadCff exch def
     assert out_data_size, (
         'Multivalent generated empty output (see its error above)')
     data = self.FixPdfFromMultivalent(
-        data, do_generate_xref_stream=do_generate_xref_stream)
+        data,
+        do_generate_xref_stream=do_generate_xref_stream,
+        do_generate_object_stream=do_generate_object_stream)
     os.remove(in_pdf_tmp_file_name)
     os.remove(out_pdf_tmp_file_name)
 
@@ -7447,6 +7518,7 @@ def main(argv):
     pdf.SaveWithMultivalent(
         output_file_name, do_escape_images=do_escape_images_from_multivalent,
         do_generate_xref_stream=do_generate_xref_stream,
+        do_generate_object_stream=do_generate_object_stream,
         may_obj_heads_contain_comments=may_obj_heads_contain_comments)
   else:
     # !! emit a warning if we have an image with a predictor
