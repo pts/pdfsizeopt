@@ -6955,7 +6955,7 @@ cvx bind /LoadCff exch def
         # (f0=2 in xref_data). We won't touch those in xref_data.
         #
         fx = in_ofs_by_num[ref_obj_num]
-        # TODO(pts): Make it work for w1 > 8 ('Q' is max 8)
+        # TODO(pts): Make the error work for w1 > 8 ('Q' is max 8)
         assert  fx == f1, (
              'expected %d (%r), read %d (%r) in xref stream at %d' %
              (fx, struct.pack('>Q', fx)[-w1:],
@@ -6968,9 +6968,10 @@ cvx bind /LoadCff exch def
             # TODO(pts): Optimize this.
             j = i - w2 - 1
             k = j - w1
+            fw = fo  # Tmp variable to be modified in the loop below.
             while j > k:
-              xref_out[j] = fo & 255
-              fo >>= 8
+              xref_out[j] = fw & 255
+              fw >>= 8
               j -= 1
           if not fo and w0:
             xref_out[i - w2 - w1 - 1] = 0  # Signify a free object.
