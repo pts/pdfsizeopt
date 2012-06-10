@@ -5323,7 +5323,7 @@ cvx bind /LoadCff exch def
       new_char_count = len(merged_font['CharStrings'])
       unified_obj_nums.add(group_obj_nums[0])
       print >>sys.stderr, (
-          'info: merged fonts %r, reduced char count from %d  to %d (%s)' %
+          'info: merged fonts %r, reduced char count from %d to %d (%s)' %
           (font_group_names[font_group], orig_char_count, new_char_count,
            FormatPercent(new_char_count, orig_char_count)))
 
