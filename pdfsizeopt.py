@@ -7550,12 +7550,6 @@ def main(argv):
     print >>sys.stderr, ('error: --do-generate-object-stream=yes requires '
                          '--do-generate-xref-stream=yes')
     sys.exit(1)
-  if use_multivalent and do_generate_object_stream != do_generate_xref_stream:
-    # Relaxing this restriction would be possible, but I don't see the point,
-    # so most likely it won't happen.
-    print >>sys.stderr, ('error: with --use-multivalent=yes, '
-                         '--do-generate-object-stream= and '
-                         '--do-generate-xref-stream= must be the same')
 
   # It's OK that file_name == output_file_name.
   pdf = PdfData(
