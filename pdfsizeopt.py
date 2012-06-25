@@ -2634,9 +2634,11 @@ class PdfObj(object):
        end -= 1
      return buffer(data, start, end - start)
 
-  def ParseObjStm(self):
+  def ParseObjStm(self, obj_num):
     """Parses a /Type/ObjStm trailer_obj.
 
+    Args:
+      obj_num: Object number, used only in exception texts.
     Returns:
       Tuple (compressed_obj_nums, compressed_obj_headbufs), both of items
       being lists of the same size, the first containing object numbers, the
@@ -2651,8 +2653,8 @@ class PdfObj(object):
     n = self.Get('N')  # Number of objects in self.
     if n is None:
       raise PdfXrefStreamError('missing /N in objstm obj %d' % obj_num)
-    if not isinstance(n, int) or n <= 1:
-      raise PdfXrefStreamError('invalid /N in objstm obj %d' % obj_num)
+    if not isinstance(n, int) or n < 1:
+      raise PdfXrefStreamError('invalid /N in objstm obj %d %r' % obj_num)
     first = self.Get('First')  # Offset of the first object.
     if first is None:
       raise PdfXrefStreamError('missing /First in objstm obj %d' % obj_num)
@@ -3436,7 +3438,7 @@ class PdfData(object):
 
   @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
-                           xref_ofs, match):
+                           xref_ofs, xref_obj_num, xref_generation):
     """Determine obj offsets in a  PDF file using the cross-reference stream.
 
     Args:
@@ -3464,8 +3466,6 @@ class PdfData(object):
     xref_obj_nums = set()
 
     while True:
-      xref_obj_num = int(match.group(1))
-      xref_generation = int(match.group(2))
       if xref_generation:
         if not do_ignore_generation_numbers:
           raise NotImplementedError(
@@ -3479,13 +3479,12 @@ class PdfData(object):
         xref_obj = PdfObj(data, start=xref_ofs, file_ofs=xref_ofs)
       except PdfTokenParseError, e:
         raise PdfXrefStreamError('parse xref obj %d: %s' % (xref_obj_num, e))
-      if trailer_obj is None:
-        trailer_obj = xref_obj
 
       # Parse the xref stream data.
+      #
       # TODO(pts): Handle the various exceptions raised by
-      #            trailer_obj.GetUncompressedStream().
-      w0, w1, w2, index, xref_data = trailer_obj.GetAndClearXrefStream()
+      #            xref_obj.GetUncompressedStream().
+      w0, w1, w2, index, xref_data = xref_obj.GetAndClearXrefStream()
       w01 = w0 + w1
       w012 = w01 + w2
       ii = 0
@@ -3535,30 +3534,53 @@ class PdfData(object):
           # f2: Index of obj_num within its object stream.
           obj_starts[obj_num] = (f1, f2)
           obj_streams.setdefault(f1, None)
-      trailer_obj.Set('Prev', None)
-      if xref_obj is not trailer_obj:
+      if trailer_obj is None:
+        trailer_obj = xref_obj  # Takes ownership.
+      else:
         dict_obj = xref_obj._cache
         assert dict_obj is not None, '/Type/ObjStm obj not parsed yet.'
+        duplicate_names = set()
         # TODO(pts): Is this the correct way to merge the trailer part of
         # xref objects?
         for name in sorted(dict_obj):
           if name in ('Prev', 'Size'):
             continue
-          if trailer_obj.Get(name) is not None:
-            raise PdfXrefStreamError(
-                'duplicate name in xref streams: /%s' % name)
-          trailer_obj.Set(name, dict_obj[name])
+          old_value = trailer_obj.Get(name)
+          new_value = dict_obj[name]
+          if old_value is not None:
+            # /ID, /Info and /Root are usually duplicates. Accept them if
+            # their string representation is the same. Example:
+            #
+            #   /ID [<03A5...><C90F...>]
+            #   /Info 36 0 R
+            #   /Root 38 0 R
+            if (old_value != new_value and
+                trailer_obj.CompressValue(old_value) !=
+                trailer_obj.CompressValue(new_value)):
+              duplicate_names.add(name)
+          else:
+            trailer_obj.Set(name, new_value)
+        if duplicate_names:
+          raise PdfXrefStreamError(
+              'duplicate names in xref streams: %r' % sorted(duplicate_names))
+
       prev = xref_obj.Get('Prev')
       if prev is None:
         break
-      # TODO(pts): Test this.
+      trailer_obj.Set('Prev', None)
+      # TODO(pts): For testing: issue58.pdf.
       if not isinstance(prev, int) or prev < 9:
         raise PdfXrefStreamError('invalid /Prev at %d: %r' % (xref_ofs, prev))
-      match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, xref_ofs).match()
+      match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, prev).match()
       if not match:
         raise PdfXrefStreamError('could not find obj at /Prev at %d: %d' %
                                  (xref_ofs, prev))
       xref_ofs = prev
+      xref_obj_num = int(match.group(1))
+      xref_generation = int(match.group(2))
+
+    del xref_obj  # Save complexity (and a little bit of memory).
+    assert trailer_obj
     print >>sys.stderr, (
         'info: found %d obj offsets and %d obj streams in xref stream' %
         (len(obj_starts) - 1,  # `- 1' for the key 'xref' itself.
@@ -3585,7 +3607,8 @@ class PdfData(object):
         objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start)
       except PdfTokenParseError, e:
         raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
-      compressed_obj_nums, compressed_obj_headbufs = objstm_obj.ParseObjStm()
+      compressed_obj_nums, compressed_obj_headbufs = objstm_obj.ParseObjStm(
+          obj_num)
       for i in xrange(len(compressed_obj_nums)):
         compressed_obj_num = compressed_obj_nums[i]
         compressed_obj_start = obj_starts.get(compressed_obj_num)
@@ -3651,8 +3674,10 @@ class PdfData(object):
     xref_ofs = int(match.group(1))
     match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, xref_ofs).match()
     if match:
+      xref_obj_num = int(match.group(1))
+      xref_generation = int(match.group(2))
       return cls.ParseUsingXrefStream(data, do_ignore_generation_numbers,
-                                      xref_ofs, match)
+                                      xref_ofs, xref_obj_num, xref_generation)
 
     has_generational_objs = False
     obj_starts = {'xref': xref_ofs}  # 'xref' is just informational.
@@ -7033,7 +7058,7 @@ cvx bind /LoadCff exch def
           objstm_items = objstm_cache.get(f1)
           if objstm_items is None:
             compressed_obj_nums, compressed_obj_headbufs = (
-                objstm_objs[f1].ParseObjStm())
+                objstm_objs[f1].ParseObjStm(ref_obj_num))
             for i in xrange(len(compressed_obj_nums)):
               compressed_obj_num = compressed_obj_nums[i]
               cf12 = compressed_objects.get(compressed_obj_num)
