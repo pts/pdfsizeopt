@@ -55,13 +55,74 @@ class Error(Exception):
   """Comon base class for exceptions defined in this file."""
 
 
+def VerifyGs(gs_cmd):
+  q = '\''
+  if sys.platform.startswith('win'):
+    q = ''
+  f = os.popen(gs_cmd + ' -dNODISPLAY -c %s/GSOK === quit%s' % (q, q), 'rb')
+  data = f.read()
+  if f.close():
+    return False
+  lines = data.rstrip('\n').split('\n')
+  if not lines or lines[-1] != '/GSOK':
+    return False
+  lines.pop()
+  if not lines or ' Ghostscript ' not in lines[0]:
+    return False
+  lines = [line for line in lines if not line.startswith('Copyright ') and
+           'NO WARRANTY' not in line]
+  data = '; '.join(lines)
+  # Example: data == 'GPL Ghostscript 9.02 (2011-03-30)'.
+  return data
+
+
+gs_cmd_ary = []
+  
+
 def GetGsCommand():
   """Return shell command-line prefix for running Ghostscript (gs)."""
+  if gs_cmd_ary:
+    return gs_cmd_ary[0]
+  data = None
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
     if sys.platform.startswith('win'):  # Windows: win32 or win64
-      return 'gswin32c'  # gswin32c.exe in Ghostscript.
-    return 'gs'
+      gs_cmd = 'gswin32c'
+      data = VerifyGs(gs_cmd)
+      if not data:
+        # if os.getenv('PROCESSOR_ARCHITECTURE', 'x86') != 'x86':
+        if not os.getenv('PROGRAMFILES(X86)', ''):  # 32-bit Windows.
+          envs = ('PROGRAMFILES',)
+        else:
+          envs = ('PROGRAMW6432', 'PROGRAMFILES(X86)', 'PROGRAMFILES')
+        gs_cmd = None
+        for env_name in envs:
+          env_value = os.getenv(env_name, '')
+          if env_value:
+            d = os.path.join(env_value, 'gs')
+            if os.path.isdir(d):
+              for entry in os.listdir(d):
+                if re.match(r'gs[89][.]\d\d\Z', entry):
+                  fn = os.path.join(d, entry, 'bin', 'gswin32c.exe')
+                  if os.path.isfile(fn):
+                    gs_cmd = ShellQuote(fn)
+                    data = VerifyGs(gs_cmd)
+                    if data:
+                      break
+                    print >>sys.stderr, (
+                        'info: this Ghostscript does not work: %s' % gs_cmd)
+                    data = gs_cmd = None
+              if gs_cmd is not None:
+                break
+          if gs_cmd is None:
+            assert 0, 'Could not find a working Ghostscript.'
+    else:
+      gs_cmd = 'gs'
+  if data is None:
+    data = VerifyGs(gs_cmd)
+  assert data, 'Ghostscript %s does not seem to work.' % gs_cmd
+  print >>sys.stderr, 'info: using Ghostscript %s: %s' % (gs_cmd, data)
+  gs_cmd_ary.append(gs_cmd)
   return gs_cmd
 
 
@@ -2187,6 +2248,7 @@ class PdfObj(object):
     is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
     if not is_gs_ok:
       raise FilterNotImplementedError('filter not implemented: ' + filter)
+    ps_file_name = None
     tmp_file_name = 'pso.filter.tmp.bin'
     f = open(tmp_file_name, 'wb')
     write_ok = False
@@ -2200,23 +2262,47 @@ class PdfObj(object):
     decodeparms_pair = ''
     if decodeparms:
       decodeparms_pair = '/DecodeParms ' + decodeparms
+
     # !! batch all decompressions, so we don't have to run gs again.
-    gs_defilter_cmd = (
-        '%s -dNODISPLAY -q -sINFN=%s -c \'/i INFN(r)file<</CloseSource true '
+
+    gs_code = (
+        '/i INFN(r)file<</CloseSource true '
         '/Intent 2/Filter %s%s>>/ReusableStreamDecode filter def '
         '/o(%%stdout)(w)file def/s 4096 string def '
         '{i s readstring exch o exch writestring not{exit}if}loop '
-        'o closefile quit\'' %
-        (GetGsCommand(),
-         ShellQuoteFileName(tmp_file_name), filter, decodeparms_pair))
+        'o closefile quit' %
+        (filter, decodeparms_pair))
+    if sys.platform.startswith('win'):
+      # TODO(pts): If tmp_file_name contains funny characters, Ghostscript
+      # will fails with data == ''. Fix it (possibly not use -s...="..." on
+      # Windows?).
+      ps_file_name = 'pso.filter.tmp.ps'
+      f = open(ps_file_name, 'wb')
+      try:
+        f.write(gs_code)
+      finally:
+        f.close()
+      gs_defilter_cmd = (
+          '%s -dNODISPLAY -sINFN=%s -q %s' %
+          (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
+           ShellQuoteFileName(ps_file_name)))
+    else:
+      gs_defilter_cmd = (
+          '%s -dNODISPLAY -sINFN=%s -q -c %s' %
+          (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
+           ShellQuote(gs_code)))
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
         '/Filter%s%s' % (len(self.stream), filter, decodeparms_pair))
     f = os.popen(gs_defilter_cmd, 'rb')
+    # On Windows, data would start with 'Error: ' on a Ghostscript error, and
+    # data will be '' if gswin32c is not found.
     data = f.read()  # TODO(pts): Handle IOError etc.
-    assert not f.close(), 'Ghostscript decompression failed: %s' % (
-        gs_defilter_cmd)
+    assert not f.close(), 'Ghostscript decompression failed: %s (%r)' % (
+        gs_defilter_cmd, data)
     os.remove(tmp_file_name)
+    if ps_file_name:
+      os.remove(ps_file_name)
     return data
 
   @classmethod
