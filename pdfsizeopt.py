@@ -289,6 +289,10 @@ class PdfObj(object):
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches stream or endobj in a PDF obj."""
 
+  FLATEDECODE_ARY1_RE = re.compile(
+      r'\[[\0\t\n\r\f ]*/FlateDecode[\0\t\n\r\f ]*\]\Z')
+  """Matches a single-element array token containing /FlateDecode."""
+
   REST_OF_R_RE = re.compile(
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f /%<>\[\](])')
@@ -2243,7 +2247,10 @@ class PdfObj(object):
       objs = {}
     filter, _ = self.ResolveReferences(filter, objs)
     decodeparms, _ = self.ResolveReferences(decodeparms, objs)
-    if filter == '/FlateDecode' and '/Predictor' not in decodeparms:
+    if ((filter == '/FlateDecode' or
+        ('/FlateDecode' in filter and
+         self.FLATEDECODE_ARY1_RE.match(filter))) and
+        '/Predictor' not in decodeparms):
       return PermissiveZlibDecompress(self.stream)
     is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
     if not is_gs_ok:
@@ -6469,6 +6476,27 @@ cvx bind /LoadCff exch def
 
     return objs_ret
 
+  def DecompressFlate(self):
+    """Decompress all stream data containing /FlateDecode filter.
+    
+    This usually greatly increases the size of the PDF file, but it's a useful
+    debug tool.
+    """
+    # !! TODO(pts): Replace [/FlateDecode] with /FlateDecode elsewhere.
+    # TODO(pts): Pass self.objs instead of self as arg.
+    uncompress_count = 0
+    for pdf_obj in self.objs.itervalues():
+      if '/FlateDecode' in pdf_obj.head:
+        filter = pdf_obj.Get('Filter')
+        if isinstance(filter, str) and '/FlateDecode' in filter:
+          pdf_obj.stream = pdf_obj.GetUncompressedStream(self.objs)
+          pdf_obj.Set('Filter', None)
+          pdf_obj.Set('DecodeParms', None)
+          pdf_obj.Set('Length', len(pdf_obj.stream))
+          uncompress_count += 1
+    print >>sys.stderr, 'info: uncompressed %d /FlateDecode streams' % (
+        uncompress_count)
+
   def OptimizeObjs(self, do_unify_pages):
     """Optimize PDF objects.
 
@@ -7564,6 +7592,7 @@ def main(argv):
     do_generate_xref_stream = True
     do_generate_object_stream = True
     do_unify_pages = True
+    do_decompress_flate = False
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -7578,6 +7607,7 @@ def main(argv):
         'do-generate-xref-stream=',
         'do-generate-object-stream=',
         'do-unify-pages=',
+        'do-decompress-flate=',
         'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
 
     for key, value in opts:
@@ -7614,6 +7644,8 @@ def main(argv):
         do_double_check_missing_glyphs = ParseBoolFlag(key, value)
       elif key == '--do-regenerate-all-fonts':
         do_regenerate_all_fonts = ParseBoolFlag(key, value)
+      elif key == '--do-decompress-flate':
+        do_decompress_flate = ParseBoolFlag(key, value)
       elif key == '--help':
         print >>sys.stderr, (
             'info: usage for statistics computation: %s --stats <input.pdf>' %
@@ -7684,6 +7716,11 @@ def main(argv):
     # TODO(pts): Do only a simpler optimization with renumbering.
     pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
     may_obj_heads_contain_comments = False  # OptimizeObj removes comments.
+  if do_decompress_flate:
+    # This usually greatly increases the size of the PDF file, but it's a useful
+    # debug tool.
+    # TODO(pts): Affect do_generate_xref_stream and do_generate_object_stream.
+    pdf.DecompressFlate()
   pdf.Save(
       output_file_name,
       use_multivalent=use_multivalent,
