@@ -87,8 +87,14 @@ def GetGsCommand():
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
     if sys.platform.startswith('win'):  # Windows: win32 or win64
-      gs_cmd = 'gswin32c'
-      data = VerifyGs(gs_cmd)
+      gs_cmd = FindOnPath(r'pdfsizeopt_gswin\gswin32c.exe')
+      if gs_cmd is None:
+        data = None
+      else:
+        data = VerifyGs(gs_cmd)
+      if not data:
+        gs_cmd = 'gswin32c'
+        data = VerifyGs(gs_cmd)
       if not data:
         # if os.getenv('PROCESSOR_ARCHITECTURE', 'x86') != 'x86':
         if not os.getenv('PROGRAMFILES(X86)', ''):  # 32-bit Windows.
@@ -114,8 +120,8 @@ def GetGsCommand():
                     data = gs_cmd = None
               if gs_cmd is not None:
                 break
-          if gs_cmd is None:
-            assert 0, 'Could not find a working Ghostscript.'
+      if not data or gs_cmd is None:
+        assert 0, 'Could not find a working Ghostscript.'
     else:
       gs_cmd = 'gs'
   if data is None:
@@ -160,8 +166,11 @@ def EnsureRemoved(file_name):
 
 def FindOnPath(file_name):
   """Find file_name on $PATH, and return the full pathname or None."""
-  # TODO(pts): Make this work on non-Unix systems.
-  for item in os.getenv('PATH', '/bin:/usr/bin').split(os.pathsep):
+  path = os.getenv('PATH', None)
+  if path is None and not sys.platform.startswith('win'):
+    path = '/bin:/usr/bin'
+  # TODO(pts): On Win32, do we want to append .exe to file_name?
+  for item in path.split(os.pathsep):
     if not item:
       item = '.'
     path_name = os.path.join(item, file_name)
@@ -7353,15 +7362,22 @@ cvx bind /LoadCff exch def
         (in_data_size, in_pdf_tmp_file_name))
 
     EnsureRemoved(out_pdf_tmp_file_name)
-    multivalent_jar = self.FindMultivalentJar('Multivalent.jar')
-    if multivalent_jar is None:
+    exe_ext = ''
+    if sys.platform.startswith('win'):
+      exe_ext = '.exe'
+    compress_exe = FindOnPath('multivalent_compress' + exe_ext)
+    multivalent_jar = None
+    if compress_exe is None:
+      multivalent_jar = self.FindMultivalentJar('Multivalent.jar')
+    if multivalent_jar is None and compress_exe is None:
       multivalent_jar = self.FindMultivalentJar('Multivalent20060102.jar')
-    if not multivalent_jar:
+    if not multivalent_jar and not compress_exe:
       print >>sys.stderr, (
           'error: Multivalent.jar not found. Make sure it is on the $PATH, '
           'or it is one of the files on the $CLASSPATH.')
       assert 0, 'Multivalent.jar not found, see above'
-    assert os.pathsep not in multivalent_jar  # $CLASSPATH separator
+    if multivalent_jar is not None:
+      assert os.pathsep not in multivalent_jar  # $CLASSPATH separator
 
     # See http://code.google.com/p/pdfsizeopt/issues/detail?id=30
     # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .
@@ -7369,16 +7385,21 @@ cvx bind /LoadCff exch def
     # pdfsizeopt feature, also implement it if Multivalent is not used.
     multivalent_flags = '-nopagepiece -noalt'
 
-    # Without -Djava.awt.headless=true on Mac OS X within an ssh as a
-    # currently non-interactive user, Multivalent will fail with
-    #
-    #   java.lang.InternalError: Can't connect to window server -
-    #   not enough permissions.
-    multivalent_cmd = (
-        'java -cp %s -Djava.awt.headless=true tool.pdf.Compress %s %s' %
-        (ShellQuoteFileName(multivalent_jar),
-         multivalent_flags,
-         ShellQuoteFileName(in_pdf_tmp_file_name)))
+    if compress_exe is not None:
+      compress_cmd = ShellQuote(compress_exe)
+    else:
+      assert multivalent_jar is not None
+      # Without -Djava.awt.headless=true on Mac OS X within an ssh as a
+      # currently non-interactive user, Multivalent will fail with
+      #
+      #   java.lang.InternalError: Can't connect to window server -
+      #   not enough permissions.
+      compress_cmd = (
+          'java -cp %s -Djava.awt.headless=true tool.pdf.Compress' %
+          ShellQuoteFileName(multivalent_jar))
+    multivalent_cmd = '%s %s %s' % (
+        compress_cmd, multivalent_flags,
+        ShellQuoteFileName(in_pdf_tmp_file_name))
     print >>sys.stderr, (
         'info: executing Multivalent to optimize PDF: %s' % multivalent_cmd)
     status = os.system(multivalent_cmd)
@@ -7575,7 +7596,7 @@ def main(argv):
   print >>sys.stderr, 'info: This is %s r%s size=%s.' % (
       os.path.basename(__file__), rev or 'UNKNOWN', size)
 
-  # Find image converters in script dir first.
+  # Find image converters etc. in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
   os.environ['PATH'] = '%s%s%s' % (
       script_dir, os.pathsep, os.getenv('PATH', ''))
