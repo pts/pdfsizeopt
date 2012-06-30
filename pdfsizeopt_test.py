@@ -965,3 +965,4 @@ class PdfSizeOptTest(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
+
