@@ -1,3 +1,4 @@
+
 #! /usr/bin/python2.4
 #
 # pdfsizeopt.py: do various PDF size optimizations
@@ -91,6 +92,9 @@ def GetGsCommand():
       if gs_cmd is None:
         data = None
       else:
+        # wine-1.2 works with or without quoting here, but Windows XP
+        # requires quoting if the path to gs_cmd contains whitespace.
+        gs_cmd = ShellQuote(gs_cmd)
         data = VerifyGs(gs_cmd)
       if not data:
         gs_cmd = 'gswin32c'
@@ -148,6 +152,12 @@ def ShellQuoteFileName(string):
   # TODO(pts): Make it work on non-Unix systems.
   if string.startswith('-') and len(string) > 1:
     string = '.%s%s' % (os.sep, string)
+  if sys.platform.startswith('win'):
+    # os.system on Windows XP doesn't seem to accept "..." escaping for
+    # aguments. (It accepts that for the command name.)
+    assert not re.search(r'\s', string), (
+        'Unexpected space in filename argument: %r' % string)
+    return string
   return ShellQuote(string)
 
 
@@ -167,10 +177,14 @@ def EnsureRemoved(file_name):
 def FindOnPath(file_name):
   """Find file_name on $PATH, and return the full pathname or None."""
   path = os.getenv('PATH', None)
-  if path is None and not sys.platform.startswith('win'):
+  is_win = sys.platform.startswith('win')
+  if path is None and not is_win:
     path = '/bin:/usr/bin'
   # TODO(pts): On Win32, do we want to append .exe to file_name?
   for item in path.split(os.pathsep):
+    if is_win and item.startswith('"') and item.endswith('"') and len(item) >= 2:
+      # TODO(pts): Do proper unquoting (inverse of ShellQuote), e.g. "" --> "?
+      item = item[1 : -1].replace('""', '')
     if not item:
       item = '.'
     path_name = os.path.join(item, file_name)
@@ -7598,11 +7612,10 @@ def main(argv):
 
   # Find image converters etc. in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
+  if sys.platform.startswith('win'):
+    script_dir = ShellQuote(script_dir)
   os.environ['PATH'] = '%s%s%s' % (
       script_dir, os.pathsep, os.getenv('PATH', ''))
-  if (not os.getenv('PDFSIZEOPT_GS', '') and
-      os.path.isfile(script_dir + '/gs-pdfsizeopt/gs')):
-    os.environ['PDFSIZEOPT_GS'] = ShellQuote(script_dir + '/gs-pdfsizeopt/gs')
   if not argv:
     argv = [__file__]
   if len(argv) == 1:
@@ -7770,4 +7783,7 @@ def main(argv):
 
 
 if __name__ == '__main__':
+  # TODO(pts): Use `import win32api; print(win32api.GetCommandLine())' on
+  # Windows to detect double quotes around file names, and thus accept a PDF
+  # with double quotes in the file name.
   main(sys.argv)
