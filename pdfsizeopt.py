@@ -6202,10 +6202,13 @@ cvx bind /LoadCff exch def
               pngout_gray_flags = '-c0 '
             else:
               pngout_gray_flags = ''
+            # We need the -force flag specified to pngout, because on Windows
+            # pngout without the -force flag returns with a failure exit code
+            # if it can't compress the file any further.
             image = self.ConvertImage(
                 sourcefn=rendered_image_file_name,
                 targetfn='pso.conv-%d.pngout.png' % obj_num,
-                cmd_pattern='pngout ' + pngout_gray_flags +
+                cmd_pattern='pngout -force ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout',
                 # New pngout if: 'Unable to compress further: copying
