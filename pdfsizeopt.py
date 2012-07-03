@@ -1,4 +1,3 @@
-
 #! /usr/bin/python2.4
 #
 # pdfsizeopt.py: do various PDF size optimizations
