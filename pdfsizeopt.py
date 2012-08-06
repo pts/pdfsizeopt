@@ -7614,10 +7614,15 @@ def main(argv):
 
   # Find image converters etc. in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
+  libexec_dir = os.path.join(script_dir, 'pdfsizeopt_libexec')
+  if os.path.isdir(libexec_dir):
+    extrapath_dir = libexec_dir
+  else:
+    extrapath_dir = script_dir
   if sys.platform.startswith('win'):
-    script_dir = ShellQuote(script_dir)
+    extrapath_dir = ShellQuote(extrapath_dir)
   os.environ['PATH'] = '%s%s%s' % (
-      script_dir, os.pathsep, os.getenv('PATH', ''))
+      extrapath_dir, os.pathsep, os.getenv('PATH', ''))
   if not argv:
     argv = [__file__]
   if len(argv) == 1:
