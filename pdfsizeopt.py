@@ -79,6 +79,14 @@ def VerifyGs(gs_cmd):
 gs_cmd_ary = []
   
 
+def GetCompressExe():
+  """Return pathname to `multivalent_compress' or None if not found."""
+  exe_ext = ''
+  if sys.platform.startswith('win'):
+    exe_ext = '.exe'
+  return FindOnPath('multivalent_compress' + exe_ext)
+
+
 def GetGsCommand():
   """Return shell command-line prefix for running Ghostscript (gs)."""
   if gs_cmd_ary:
@@ -138,10 +146,11 @@ def GetGsCommand():
 def ShellQuote(string):
   # TODO(pts): Make it work properly on non-Unix systems.
   string = str(string)
+  # TODO(pts): Allow \ on Windows.
   if string and not re.search('[^-_.+,:/a-zA-Z0-9]', string):
     return string
   elif sys.platform.startswith('win'):
-    # TODO(pts): Does this replace make sense?
+    # TODO(pts): Does this replace make sense? No, Windows works differently.
     return '"%s"' % string.replace('"', '""')
   else:
     return "'%s'" % string.replace("'", "'\\''")
@@ -7340,7 +7349,8 @@ cvx bind /LoadCff exch def
     return multivalent_jar
 
   def _RunMultivalent(self, do_escape_images,
-                      may_obj_heads_contain_comments):
+                      may_obj_heads_contain_comments,
+                      multivalent_java):
     """Run Multivalent, and read its output.
 
    Args:
@@ -7350,6 +7360,10 @@ cvx bind /LoadCff exch def
       The tuple (data, files_to_remove), where data is the string containing
       the PDF Multivalent has written.
     """
+    if not isinstance(multivalent_java, str):
+      raise TypeError
+    assert multivalent_java
+    
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
     in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
@@ -7378,12 +7392,11 @@ cvx bind /LoadCff exch def
         (in_data_size, in_pdf_tmp_file_name))
 
     EnsureRemoved(out_pdf_tmp_file_name)
-    exe_ext = ''
-    if sys.platform.startswith('win'):
-      exe_ext = '.exe'
-    compress_exe = FindOnPath('multivalent_compress' + exe_ext)
+    compress_exe = GetCompressExe()
     multivalent_jar = None
-    if compress_exe is None:
+    if multivalent_jar is None and compress_exe is None:
+      multivalent_jar = self.FindMultivalentJar('MultivalentCompress.jar')
+    if multivalent_jar is None and compress_exe is None:
       multivalent_jar = self.FindMultivalentJar('Multivalent.jar')
     if multivalent_jar is None and compress_exe is None:
       multivalent_jar = self.FindMultivalentJar('Multivalent20060102.jar')
@@ -7399,7 +7412,7 @@ cvx bind /LoadCff exch def
     # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .
     # TODO(pts): Implement -nocore14 (unembewdding the core 14 fonts) as a
     # pdfsizeopt feature, also implement it if Multivalent is not used.
-    multivalent_flags = '-nopagepiece -noalt'
+    multivalent_flags = '-nopagepiece -noalt -mon'
 
     if compress_exe is not None:
       compress_cmd = ShellQuote(compress_exe)
@@ -7411,8 +7424,8 @@ cvx bind /LoadCff exch def
       #   java.lang.InternalError: Can't connect to window server -
       #   not enough permissions.
       compress_cmd = (
-          'java -cp %s -Djava.awt.headless=true tool.pdf.Compress' %
-          ShellQuoteFileName(multivalent_jar))
+          '%s -cp %s -Djava.awt.headless=true tool.pdf.Compress' %
+          (ShellQuote(multivalent_java), ShellQuoteFileName(multivalent_jar)))
     multivalent_cmd = '%s %s %s' % (
         compress_cmd, multivalent_flags,
         ShellQuoteFileName(in_pdf_tmp_file_name))
@@ -7445,7 +7458,7 @@ cvx bind /LoadCff exch def
     return data, (in_pdf_tmp_file_name, out_pdf_tmp_file_name)
 
 
-  def Save(self, file_name, use_multivalent,
+  def Save(self, file_name, multivalent_java,
            do_update_file_meta,
            do_escape_images_from_multivalent,
            do_generate_xref_stream,
@@ -7456,6 +7469,8 @@ cvx bind /LoadCff exch def
 
     Args:
       file_name: PDF file name to save self to.
+      multivalent_java: False, a string containing a path to 'avian'
+        or 'java' (or just these strings).
       may_obj_heads_contain_comments: bool indicating whether
         self.objs[...].head may contain comments.
       do_update_file_meta: bool indicating whether self.file_name and
@@ -7465,7 +7480,7 @@ cvx bind /LoadCff exch def
     """
     assert do_generate_xref_stream or not do_generate_object_stream, (
         'Object streams need an xref stream.')
-    if use_multivalent:
+    if multivalent_java:
       with_multivalent_msg = 'with Multivalent '
     else:
       with_multivalent_msg = ''
@@ -7497,21 +7512,22 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: trying %d jobs and using the smallest' % (
           len(jobs))
 
-    if use_multivalent:
+    if multivalent_java:
       # TODO(pts): Work around exception for emptypage.pdf:
       # pso.conv.mi.tmp.pdf: java.lang.ClassCastException:
       # multivalent.std.adaptor.pdf.Dict cannot be cast to
       # multivalent.std.adaptor.pdf.IRef
       multivalent_output_data, tmp_files_to_remove = self._RunMultivalent(
           do_escape_images=do_escape_images_from_multivalent,
-          may_obj_heads_contain_comments=may_obj_heads_contain_comments)
+          may_obj_heads_contain_comments=may_obj_heads_contain_comments,
+          multivalent_java=multivalent_java)
     else:
       tmp_files_to_remove = ()
       multivalent_output_data = None
 
     for job in jobs:
       output = []
-      if use_multivalent:
+      if multivalent_java:
         output_size = self.FixPdfFromMultivalent(
             data=multivalent_output_data, output=output, **job[0])
       else:
@@ -7615,8 +7631,12 @@ def main(argv):
   # Find image converters etc. in script dir first.
   script_dir = os.path.dirname(os.path.abspath(__file__))
   libexec_dir = os.path.join(script_dir, 'pdfsizeopt_libexec')
+  avian_pathname = None
   if os.path.isdir(libexec_dir):
     extrapath_dir = libexec_dir
+    avian_pathname = os.path.join(libexec_dir, 'avian')
+    if not os.path.exists(avian_pathname):
+      avian_pathname = None
   else:
     extrapath_dir = script_dir
   if sys.platform.startswith('win'):
@@ -7751,6 +7771,21 @@ def main(argv):
     print >>sys.stderr, ('error: --do-generate-object-stream=yes requires '
                          '--do-generate-xref-stream=yes')
     sys.exit(1)
+  if not use_multivalent:
+    multivalent_java = False
+  elif GetCompressExe() is not None:
+    multivalent_java = '#multivalent_compress'  # Any true string value will do.
+  elif avian_pathname is not None:
+    multivalent_java = avian_pathname
+  else:
+    multivalent_java = FindOnPath('java')
+    if multivalent_java is None:
+      multivalent_java = FindOnPath('avian')
+      if multivalent_java is None:
+        print >>sys.stderr, 'error: Java needed by Multivalent not found. Specify --use-multivalent=no or install Java (JRE) or Avian'
+        sys.exit(2)
+  if multivalent_java is not None:
+    print >>sys.stderr, 'info: using Java for Multivalent: ' + multivalent_java
 
   # It's OK that file_name == output_file_name.
   pdf = PdfData(
@@ -7780,7 +7815,7 @@ def main(argv):
     pdf.DecompressFlate()
   pdf.Save(
       output_file_name,
-      use_multivalent=use_multivalent,
+      multivalent_java=multivalent_java,
       do_update_file_meta=True,
       do_escape_images_from_multivalent=do_escape_images_from_multivalent,
       do_generate_xref_stream=do_generate_xref_stream,
@@ -7794,4 +7829,3 @@ if __name__ == '__main__':
   # Windows to detect double quotes around file names, and thus accept a PDF
   # with double quotes in the file name.
   main(sys.argv)
-
