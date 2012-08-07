@@ -151,9 +151,6 @@
   sys	0m0.560s
   * optipng uses very little memory (50M for 00008.png), it doesn't read the
     whole PNG input image to memory.
-* TODO: JPEG optimization
-* http://lyncd.com/2009/03/imgopt-lossless-optimize-png-jpeg/
-  shell script using jpegtran, optipng, advpng and pngout
 * OptiPNG is a PNG optimizer that recompresses image files to a smaller
   size, without losing any information. This program also converts external
   formats (BMP, GIF, PNM and TIFF) to optimized PNG, and performs PNG
@@ -435,11 +432,36 @@ additional compression may be possible with:
   (even after conversion with Multivalent.jar, try single-page
   /mnt/tardis/warez/tmp/pdfe.bad.pdf
   error message: expected a dictionary object
-* doc: packJPG: http://www.elektronik.htw-aalen.de/packjpg/
-  TODO: \cite 2007
-  theoretical average maximum JPEG compression ratio: -18%
-  -21% on 3072x2304 JPEG photos
-  ZIP gives -0.03% on JPEG
+* TODO: JPEG optimization
+** http://lyncd.com/2009/03/imgopt-lossless-optimize-png-jpeg/
+   shell script using jpegtran, optipng, advpng and pngout
+   http://lyncd.com/files/imgopt-0.1.2.tar.gz
+** doc: packJPG: http://www.elektronik.htw-aalen.de/packjpg/
+   does not create JPEG files, has its own output format
+   TODO: \cite 2007
+   theoretical average maximum JPEG compression ratio: -18%
+   -21% on 3072x2304 JPEG photos
+   ZIP gives -0.03% on JPEG
+   version 2.5 of packJPG is open source
+** TODO doc: investigate JPEG without (or trivial Huffman) + /FlateDecode
+   with predictor
+   http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
+   A JPEG file contains up to 4 huffman tables that define the mapping
+   between 1 and 16 bits) and the code values (which is an 8-bit byte).
+** TODO: apt-get install jpegoptim can save 1%..4% lossless, removing EXIF
+   tags and optimizing Huffman tables
+** These produce bytewise identical, but smaller files:
+   * jpegoptim -t --strip-all *.jpg
+   * imgopt *.jpg
+   * for F in *.jpg; do jpegtran -copy none -optimize -outfile jo.bin "$F" &&
+     mv -f jo.bin "$F"; done
+   ... but make sure to run jfifremove (part of imgopt, simple code, unused)
+   etc. first for removing JFIF, EXIF etc. metadata; `-copy none' also
+   removes some stuff
+* TODO: further: PNG optimization
+  http://lyncd.com/2009/03/imgopt-lossless-optimize-png-jpeg/
+  shell script using jpegtran, optipng, advpng and pngout
+  http://lyncd.com/files/imgopt-0.1.2.tar.gz
 * \cite http://www.verypdf.com/pdfinfoeditor/compression.htm
   pdfcompress comamnd-line tool
   removemetadata=1
@@ -456,11 +478,6 @@ additional compression may be possible with:
   Advanced PDF Tools v2.0; $38 USD for GUI, $79 for the command-line
   Win32 only, works in Wine
   it says This is trial version, it can only process first half of pages.
-* TODO doc: investigate JPEG without (or trivial Huffman) + /FlateDecode
-  with predictor
-  http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
-  A JPEG file contains up to 4 huffman tables that define the mapping
-  between 1 and 16 bits) and the code values (which is an 8-bit byte).
 * PDF 1.4 2001 JBIG2; Adobe Reader 5.0
 * PDF 1.5 2003 JPEG2000; linked multimedia; object streams;
   cross reference streams; Adobe Reader 6.0
@@ -486,8 +503,6 @@ additional compression may be possible with:
   invalid images for pts2e.pdf as input.
 * TODO (album_virag.pdf): [/FlateDecode /CCITTFaxDecode]
 * TODO: is /FlateDecode/DCTDecode bettern than /DCTDecode?
-* TODO: apt-get install jpegoptim can save 1%..4% lossless, removing EXIF
-  tags and optimizing Huffman tables
 * TODO: don't compress too small images
 * dvipdfmx rounds glyph /Widths to integers, pdftex doesn't
 * !! BUGFIX: ../pdfsizeopt.py pts_pdfsizeopt20009_talk{,.psom}.pdf
