@@ -7829,4 +7829,3 @@ if __name__ == '__main__':
   # Windows to detect double quotes around file names, and thus accept a PDF
   # with double quotes in the file name.
   main(sys.argv)
-
