@@ -7469,7 +7469,7 @@ cvx bind /LoadCff exch def
 
     Args:
       file_name: PDF file name to save self to.
-      multivalent_java: False, a string containing a path to 'avian'
+      multivalent_java: None, a string containing a path to 'avian'
         or 'java' (or just these strings).
       may_obj_heads_contain_comments: bool indicating whether
         self.objs[...].head may contain comments.
@@ -7772,7 +7772,7 @@ def main(argv):
                          '--do-generate-xref-stream=yes')
     sys.exit(1)
   if not use_multivalent:
-    multivalent_java = False
+    multivalent_java = None
   elif GetCompressExe() is not None:
     multivalent_java = '#multivalent_compress'  # Any true string value will do.
   elif avian_pathname is not None:
