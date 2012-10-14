@@ -3589,6 +3589,9 @@ class PdfData(object):
     obj_streams = {}
     trailer_obj = None
     xref_obj_nums = set()
+    keep_obj_starts = set()
+    # Contains (compressed_obj_num, stream_obj_num) pairs.
+    compressed_objects_to_ignore = set()
 
     while True:
       if xref_generation:
@@ -3617,10 +3620,17 @@ class PdfData(object):
       ii_remaining = 0
       for i in xrange(0, len(xref_data), w012):
         if not ii_remaining:
-          # PdfObj.GetXrefStream() guarantees that we get a positive
+          # PdfObj.GetAndClearXrefStream() guarantees that we get a positive
           # ii_remaining and we don't exhaust the index array below.
+          if obj_num is not None and index[ii] <= obj_num:
+            # TODO(pts): Check this in xref_obj.GetAndClearXrefStream() instead.
+            raise PdfXrefStreamError(
+                'Sections within an xref stream not increasing: '
+                'old_obj_num=%d new_obj_num=%d' %
+                (obj_num, index[ii]))
           obj_num = index[ii]
-          ii_remaining = index[ii + 1]
+          ii_remaining = index[ii + 1] - 1
+          assert ii_remaining >= 0
           ii += 2
         else:
           obj_num += 1
@@ -3637,6 +3647,10 @@ class PdfData(object):
         if not f0:  # A free object, ignore it.
           continue
         if obj_num in obj_starts:
+          if obj_num in keep_obj_starts:
+            if f0 == 2:
+              compressed_objects_to_ignore.add((obj_num, f1))
+            continue  # Ignore this entry, object defined in higher xref stream.
           raise PdfXrefStreamError('duplicate obj %d' % obj_num)
         if f0 == 1:  # f1 is the object offset in the file.
           if f2:
@@ -3651,7 +3665,7 @@ class PdfData(object):
             # `/W [0 x 0]', and some offsets are 0.
             if f1:
               raise PdfXrefStreamError('offset of obj %d too small: %d' %
-                                 (obj_num, f1))
+                                       (obj_num, f1))
           else:
             obj_starts[obj_num] = f1
         elif f0 == 2:
@@ -3664,30 +3678,14 @@ class PdfData(object):
       else:
         dict_obj = xref_obj._cache
         assert dict_obj is not None, '/Type/ObjStm obj not parsed yet.'
-        duplicate_names = set()
-        # TODO(pts): Is this the correct way to merge the trailer part of
-        # xref objects?
-        for name in sorted(dict_obj):
-          if name in ('Prev', 'Size'):
-            continue
-          old_value = trailer_obj.Get(name)
-          new_value = dict_obj[name]
-          if old_value is not None:
-            # /ID, /Info and /Root are usually duplicates. Accept them if
-            # their string representation is the same. Example:
-            #
-            #   /ID [<03A5...><C90F...>]
-            #   /Info 36 0 R
-            #   /Root 38 0 R
-            if (old_value != new_value and
-                trailer_obj.CompressValue(old_value) !=
-                trailer_obj.CompressValue(new_value)):
-              duplicate_names.add(name)
-          else:
-            trailer_obj.Set(name, new_value)
-        if duplicate_names:
-          raise PdfXrefStreamError(
-              'duplicate names in xref streams: %r' % sorted(duplicate_names))
+        # The code below merges entries from xref_obj (the current /Prev
+        # xref stream trailer) to trailer_obj (the final PDF trailer,
+        # initially the trailer of the main xref obj).
+        #
+        # As documented by section 3.4.5 Incremental updates in
+        # pdf_reference_1-7.pdf, we don't have to merge anything, and the
+        # main trailer has to be used. This behavior is consistent with
+        # self.ParseUsingXref.
 
       prev = xref_obj.Get('Prev')
       if prev is None:
@@ -3703,6 +3701,10 @@ class PdfData(object):
       xref_ofs = prev
       xref_obj_num = int(match.group(1))
       xref_generation = int(match.group(2))
+      # Subsequent /Prev xref objects are not allowed to modify objects
+      # we've already created. For an example, see
+      # https://code.google.com/p/pdfsizeopt/issues/detail?id=71
+      keep_obj_starts.update(obj_starts)
 
     del xref_obj  # Save complexity (and a little bit of memory).
     assert trailer_obj
@@ -3721,11 +3723,11 @@ class PdfData(object):
               'warning: in-object-stream xref stream obj %d' % xref_obj_num)
         del obj_starts[xref_obj_num]
 
-    # Load the object streams.
+    # Parse the object streams.
     for obj_num in sorted(obj_streams):
       obj_start = obj_starts.get(obj_num)
       if obj_start is None:
-        raise PdfXrefStreamError('missing obj stream %d' % obj_num)
+        raise PdfXrefStreamError('missing xref obj stream %d' % obj_num)
       if not isinstance(obj_start, int):
         raise PdfXrefStreamError('in-object-stream obj stream %d' % obj_num)
       try:
@@ -3734,18 +3736,18 @@ class PdfData(object):
         raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
       compressed_obj_nums, compressed_obj_headbufs = objstm_obj.ParseObjStm(
           obj_num)
+      obj_streams[obj_num] = compressed_obj_headbufs
       for i in xrange(len(compressed_obj_nums)):
         compressed_obj_num = compressed_obj_nums[i]
         compressed_obj_start = obj_starts.get(compressed_obj_num)
         if (compressed_obj_start is not None and
-            compressed_obj_start != (obj_num, i)):
+            compressed_obj_start != (obj_num, i) and
+            (compressed_obj_num, obj_num) not in compressed_objects_to_ignore):
           raise PdfXrefStreamError(
               'location mismatch for compressed obj %d: '
               'objstm obj %d has index %d, xref stream has %r' %
               (compressed_obj_num, obj_num, i,
-               obj_starts.get(compressed_obj_num)))
-        obj_streams[obj_num] = compressed_obj_headbufs
-
+               compressed_obj_start))
 
     # Parse used compressed objects, and add them to obj_starts with the
     # PdfObj (instead of the offset) as a value.
