@@ -6938,7 +6938,7 @@ cvx bind /LoadCff exch def
     elif len(s) == 2:
       return struct.unpack('>H', s)[0]
     elif len(s) == 4:
-      return struct.unpack('>L', s)[0]
+      return int(struct.unpack('>L', s)[0])
     else:
       ret = 0
       for c in s:
@@ -7829,4 +7829,3 @@ if __name__ == '__main__':
   # Windows to detect double quotes around file names, and thus accept a PDF
   # with double quotes in the file name.
   main(sys.argv)
-
