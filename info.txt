@@ -436,6 +436,8 @@ additional compression may be possible with:
 ** http://lyncd.com/2009/03/imgopt-lossless-optimize-png-jpeg/
    shell script using jpegtran, optipng, advpng and pngout
    http://lyncd.com/files/imgopt-0.1.2.tar.gz
+** https://github.com/tzarskyz/bin/blob/b8a14e7f7fa66b666d98bba83847598421f4f721/jpgcrush
+   also calls jpegtran
 ** doc: packJPG: http://www.elektronik.htw-aalen.de/packjpg/
    does not create JPEG files, has its own output format
    TODO: \cite 2007
@@ -443,6 +445,9 @@ additional compression may be possible with:
    -21% on 3072x2304 JPEG photos
    ZIP gives -0.03% on JPEG
    version 2.5 of packJPG is open source
+** TODO doc: http://jpegmini.com/ makes JPEG files much smaller
+   free web service
+   commercial software with hardware key or license server
 ** TODO doc: investigate JPEG without (or trivial Huffman) + /FlateDecode
    with predictor
    http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
