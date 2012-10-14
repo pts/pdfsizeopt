@@ -5426,6 +5426,8 @@ cvx bind /LoadCff exch def
         try:
           self.MergeTwoType1CFontDescriptors(new_fontdesc_obj, obj)
         except FontsNotMergeable, exc:
+          # TODO(pts): Allow approximate match on /FontMatrix
+          # info: could not merge fonts from mismatch in key FontMatrix: target=['0.000999999', 0, 0, '0.000999999', 0, 0] source=['0.001', 0, 0, '0.001', 0, 0] to /HFFJCI+Syntax-Roman: /DEOKBN+Syntax-Roman
           print >>sys.stderr, (
               'info: could not merge descs from %s to %s: %s' %
               (exc, parsed_font['FontName'], merged_font['FontName']))
