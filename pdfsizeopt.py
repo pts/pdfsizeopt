@@ -1,13 +1,16 @@
-#! /usr/bin/python2.4
-#
-# pdfsizeopt.py: do various PDF size optimizations
-# by pts@fazekas.hu at Sun Mar 29 13:42:05 CEST 2009
-#
-# !! rename this file to get image conversion
-# TODO(pts): Proper whitespace parsing (as in PDF)
-# TODO(pts): re.compile anywhere
+#! /bin/sh
 
-"""pdfsizeopt.py: Convert PDF to PDF to optimize its size.
+""":" # pdfsizeopt: PDF file size optimizer
+
+type -p python2.7 >/dev/null 2>&1 && exec python2.7 -- "$0" ${1+"$@"}
+type -p python2.6 >/dev/null 2>&1 && exec python2.6 -- "$0" ${1+"$@"}
+type -p python2.5 >/dev/null 2>&1 && exec python2.5 -- "$0" ${1+"$@"}
+type -p python2.4 >/dev/null 2>&1 && exec python2.4 -- "$0" ${1+"$@"}
+exec python -- "$0" ${1+"$@"}
+
+This is a Python 2.x script, it works with Python 2.4, 2.5, 2.6 and 2.7. It
+doesn't work with Python 3.x. Feel free to replace the #! line with
+`#! /usr/bin/python', `#! /usr/bin/env python' or whatever suits you best.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -35,6 +38,9 @@ tool.pdf.Compress in Multivaent.jar from http://multivalent.sf.net/ for that.
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
+
+# TODO(pts): Proper whitespace parsing (as in PDF)
+# TODO(pts): re.compile anywhere
 
 # We don't want to have a '$' + 'Id' in this file, because downloading the
 # script from http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
