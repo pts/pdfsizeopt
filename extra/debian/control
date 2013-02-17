@@ -1,0 +1,29 @@
+Source: pdfsizeopt
+Priority: optional
+Section: text
+Maintainer: Rogério Brito <rbrito@ime.usp.br>
+Homepage: https://code.google.com/p/pdfsizeopt/
+Build-Depends:
+ debhelper (>= 9),
+ python (<< 3),
+ python (>= 2.6)
+Standards-Version: 3.9.3
+
+Package: pdfsizeopt
+Architecture: all
+Depends:
+ ghostscript,
+ png22pnm | netpbm,
+ python (>= 2.6),
+ sam2p (>= 0.49),
+ ${misc:Depends}
+Recommends:
+ jbig2enc
+Suggests:
+ multivalent,
+ pngout
+Description: size optimizer for PDF files
+ pdfsizeopt is a program for converting large PDF files to small ones. More
+ specifically, pdfsizeopt is a command-line application and a collection of
+ best practices to optimize the size of PDF files, with focus on PDFs
+ created from TeX and LaTeX documents.

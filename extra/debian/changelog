@@ -1,0 +1,5 @@
+pdfsizeopt (0.0+svn2013.02.15-1~pre0) UNRELEASED; urgency=low
+
+  * Initial packaging. (Closes: #nnn)
+
+ -- Rogério Brito <rbrito@ime.usp.br>  Fri, 15 Feb 2013 22:27:05 -0200

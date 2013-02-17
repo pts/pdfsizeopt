@@ -1,0 +1,6 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_install:
+	cp pdfsizeopt.py debian/pdfsizeopt/usr/bin/pdfsizeopt
