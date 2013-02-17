@@ -93,6 +93,7 @@ class PdfSizeOptTest(unittest.TestCase):
     # PDF doesn't have \x
     self.assertEqual(' <786661786243784445f8>', e('(\\xfa\\xbC\\xDE\xF8)'))
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '42')
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '.')
     self.assertEqual(' 42', e('42 '))
     self.assertEqual(' 0', e('00000 '))
     self.assertEqual(' 0', e('+00000 '))
@@ -110,6 +111,17 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' 12.34', e('00012.340 '))
     self.assertEqual(' 12.34', e('+00012.34 '))
     self.assertEqual(' -12.34', e('-12.340 '))
+    self.assertEqual(' [ .34 -.34 .34 ]', e('[.34 -.34 +.34]'))
+    self.assertEqual(' [ .34 -.34 .34 ]', e('[00.34 -00.34 +00.34]'))
+    self.assertEqual(' [ 34 -34 34 ]', e('[34. -34. +34.]'))
+    self.assertEqual(' [ 34 -34 34 ]', e('[0034. -0034. +0034.]'))
+    self.assertEqual(' [ 34 -34 34 ]', e('[34.00 -34.00 +34.00]'))
+    self.assertEqual(' [ 34 -34 34 ]', e('[0034.00 -0034.00 +0034.00]'))
+    self.assertEqual(' [ 0 0 0 ]', e('[0. -0. +0.]'))
+    self.assertEqual(' [ 0 0 0 ]', e('[000. -000. +000.]'))
+    self.assertEqual(' [ 0 0 0 ]', e('[.0 -.0 +.0]'))
+    self.assertEqual(' [ 0 0 0 ]', e('[.000 -.000 +.000]'))
+    self.assertEqual(' [ 0 0 0 ]', e('[00.000 -00.000 +00.000]'))
 
     end_ofs_out = []
     self.assertEqual(' 5', e(' 5 endobj\t', end_ofs_out=end_ofs_out))

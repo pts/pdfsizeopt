@@ -385,6 +385,12 @@ class PdfObj(object):
   NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
   """Matches and captures a nonnegative integer."""
 
+  PDF_NUMBER_RE = re.compile(r'(?:([-])|[+]?)0*(\d*(?:[.]\d*)?)\Z')
+  """Matches a single PDF numeric token (real or integer).
+
+  '42.' and '.5' are a valid floats in Python, PostScript and PDF.
+  """
+
   PDF_STARTXREF_EOF_RE = re.compile(
       r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z')
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
@@ -2046,8 +2052,7 @@ class PdfObj(object):
         if token[0] == '/' and data[j] != '/':
           raise PdfTokenParseError('bad slash-name token')
 
-        # `42.' is a valid float in both Python and PDF.
-        number_match = re.match(r'(?:([-])|[+]?)0*(\d+(?:[.]\d*)?)\Z', token)
+        number_match = cls.PDF_NUMBER_RE.match(token)
         if number_match:
           # From the PDF reference: Note: PDF does not support the PostScript
           # syntax for numbers with nondecimal radices (such as 16#FFFE) or in
@@ -2058,8 +2063,8 @@ class PdfObj(object):
           if '.' in token:
             token = token.rstrip('0')
             if token.endswith('.'):
-              token = token[:-1]  # Convert real to integer.
-          if token == '-0':
+              token = token[:-1]  # Convert real to integer: '42.' -> '42'
+          if token in ('', '-'):
             token = '0'
 
         # Append token with special characters escaped.
@@ -2097,10 +2102,10 @@ class PdfObj(object):
                 i = match.end()
             stack.pop()
         else:
-          # TODO(pts): Support parsing PDF content streams.
+          # TODO(pts): Support parsing PDF content stream operators.
           if stack[-1] != '.':
             raise PdfTokenParseError(
-                'invalid name %r with stack %r' % (token, stack))
+                'invalid operator %r with stack %r' % (token, stack))
           stack.pop()
           if data[i] == '\r':
             i += 1
