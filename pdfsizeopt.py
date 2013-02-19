@@ -1421,9 +1421,14 @@ class PdfObj(object):
       raise PdfTokenParseError('bad /W array: %r' % widths)
     return tuple(widths)
 
-  def GetXrefStream(self):
+  def GetXrefStream(self, xref_ofs=None, xref_obj_num=None):
     """Parse and return the xref stream data and its parameters.
 
+    Args:
+      xref_ofs: File offset of this xref object, or None. It's safe to pass
+        None, the offset is used to prevent a warning.
+      xref_obj_num: Object number of this xref object, or None. It's safe to pass
+        None, the offset is used to prevent a warning.
     Returns:
       Tuple (w0, w1, w2, index0, index1, xref_data), where w0, w1 and w2 are
       the field lengths; index is a tuple of an even number of values:
@@ -1452,18 +1457,43 @@ class PdfObj(object):
     xref_data = self.GetUncompressedStream()
     if len(xref_data) % sum(widths) != 0:
       raise PdfXrefStreamError('data length does not match /W: %r' % widths)
-    if len(xref_data) / sum(widths) != sum(
-        index[i] for i in xrange(1, len(index), 2)):
-      raise PdfXrefStreamError('data length does not match /Index: '
-                               'xref_data_size=%d widths=%r index=%r' %
-                               (len(xref_data), widths, index))
+    index_item_count = sum(index[i] for i in xrange(1, len(index), 2))
+    xref_item_count = len(xref_data) / sum(widths)
+    if index_item_count != xref_item_count:
+      msg = ('data length does not match /Index: '
+             'xref_data_size=%d widths=%r index=%r' %
+             (len(xref_data), widths, index))
+      if xref_item_count < index_item_count:
+        raise PdfXrefStreamError(msg)
+      if xref_item_count == index_item_count + 1:
+        # All this parsing is about hiding a warning, e.g. for pgfmanual.pdf in
+        # https://code.google.com/p/pdfsizeopt/issues/detail?id=75
+        w0, w1, w2 = widths
+        i = len(xref_data) - sum(widths)
+        if w0:
+          f0 = PdfData.MSBFirstToInteger(xref_data[i : i + w0])
+        else:
+          f0 = 1
+        f1 = PdfData.MSBFirstToInteger(xref_data[i + w0 : i + w0 + w1])
+        if w2:
+          f2 = PdfData.MSBFirstToInteger(xref_data[
+              i + w0 + w1 : i + w0 + w1 + w2])
+        else:
+          f2 = 0
+        if (index and index[-2] + index[-1] == xref_obj_num and
+            f0 == 1 and f1 == xref_ofs and f2 == 0):
+          msg = None
+      if msg:
+        print >>sys.stderr, 'warning: ' + msg
+      xref_data = xref_data[:index_item_count * sum(widths)]
     widths.append(index)
     widths.append(xref_data)
     return tuple(widths)
 
-  def GetAndClearXrefStream(self):
+  def GetAndClearXrefStream(self, xref_ofs, xref_obj_num):
     """Like GetXrefStream, and removes xref stream entries from self.head."""
-    xref_tuple = self.GetXrefStream()
+    xref_tuple = self.GetXrefStream(
+        xref_ofs=xref_ofs, xref_obj_num=xref_obj_num)
     self.stream = None
     self.Set('Type', None)
     self.Set('W', None)
@@ -3575,7 +3605,7 @@ class PdfData(object):
   @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
                            xref_ofs, xref_obj_num, xref_generation):
-    """Determine obj offsets in a  PDF file using the cross-reference stream.
+    """Determine obj offsets in a PDF file using the cross-reference stream.
 
     Args:
       data: String containing the PDF file.
@@ -3623,7 +3653,8 @@ class PdfData(object):
       #
       # TODO(pts): Handle the various exceptions raised by
       #            xref_obj.GetUncompressedStream().
-      w0, w1, w2, index, xref_data = xref_obj.GetAndClearXrefStream()
+      w0, w1, w2, index, xref_data = xref_obj.GetAndClearXrefStream(
+          xref_ofs=xref_ofs, xref_obj_num=xref_obj_num)
       w01 = w0 + w1
       w012 = w01 + w2
       ii = 0
@@ -3633,6 +3664,9 @@ class PdfData(object):
         if not ii_remaining:
           # PdfObj.GetAndClearXrefStream() guarantees that we get a positive
           # ii_remaining and we don't exhaust the index array below.
+          if ii >= len(index):
+            raise PdfXrefStreamError(
+                'Index too large: ii=%d index_size=%d' % (ii, len(index)))
           if obj_num is not None and index[ii] <= obj_num:
             # TODO(pts): Check this in xref_obj.GetAndClearXrefStream() instead.
             raise PdfXrefStreamError(
@@ -3723,11 +3757,18 @@ class PdfData(object):
         'info: found %d obj offsets and %d obj streams in xref stream' %
         (len(obj_starts) - 1,  # `- 1' for the key 'xref' itself.
          len(obj_streams)))
+    max_obj_num = None
     for xref_obj_num in sorted(xref_obj_nums):
       obj_start = obj_starts.get(xref_obj_num)
       if obj_start is None:
-        print >>sys.stderr, (
-            'warning: missing offset for xref stream obj %d' % xref_obj_num)
+        if max_obj_num is None:
+          max_obj_num = max(
+              (obj_num != 'xref' and obj_num or 0) for obj_num in obj_starts)
+        if xref_obj_num != max_obj_num + 1:
+          # pgfmanual.pdf in
+          # https://code.google.com/p/pdfsizeopt/issues/detail?id=75
+          print >>sys.stderr, (
+              'warning: missing offset for xref stream obj %d' % xref_obj_num)
       else:
         if not isinstance(obj_start, int):
           print >>sys.stderr, (
