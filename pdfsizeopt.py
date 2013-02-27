@@ -308,6 +308,10 @@ class FilterNotImplementedError(Error):
   """Raised if a stream filter is not implemented."""
 
 
+class PdfFileEncryptedError(Error):
+  """Raised when an encrypted PDF file is encountered."""
+
+
 class PdfObj(object):
   """Contents of a PDF object (head and stream data).
 
@@ -3640,40 +3644,52 @@ class PdfData(object):
     self.trailer = None
 
     try:
-      obj_starts, self.has_generational_objs = self.ParseUsingXref(
-          data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-    except PdfXrefStreamError, exc:
-      raise
-    except PdfXrefError, exc:
-      print >>sys.stderr, 'warning: problem with xref table: %s' % exc
-      print >>sys.stderr, (
-          'warning: trying to load objs without the xref table')
-      obj_starts, self.has_generational_objs = self.ParseWithoutXref(
-          data, do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+      try:
+        obj_starts, self.has_generational_objs = self.ParseUsingXref(
+            data,
+            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
+      except PdfXrefStreamError, exc:
+        raise
+      except PdfXrefError, exc:
+        print >>sys.stderr, 'warning: problem with xref table: %s' % exc
+        print >>sys.stderr, (
+            'warning: trying to load objs without the xref table')
+        obj_starts, self.has_generational_objs = self.ParseWithoutXref(
+            data,
+            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
 
-    assert 'trailer' in obj_starts, 'no PDF trailer'
-    assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
-    obj_count = len(obj_starts)
-    obj_count_extra = ''
-    if 'xref' in obj_starts:
-      obj_count_extra += ' + xref'
-      obj_count -= 1
-    if 'trailer' in obj_starts:
-      obj_count_extra += ' + trailer'
-      obj_count -= 1
-    print >>sys.stderr, 'info: separated to %s objs%s' % (
-        obj_count, obj_count_extra)
-    last_ofs = trailer_ofs = obj_starts.pop('trailer')
-    if isinstance(trailer_ofs, PdfObj):
-      self.trailer = trailer_ofs
-      trailer_ofs = None
-      last_ofs = len(data)
-      obj_starts.pop('xref', None)
-    else:
-      self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
-      self.trailer.Set('Prev', None)
+      assert 'trailer' in obj_starts, 'no PDF trailer'
+      assert len(obj_starts) > 1, 'no objects found in PDF (file corrupt?)'
+      obj_count = len(obj_starts)
+      obj_count_extra = ''
       if 'xref' in obj_starts:
-        last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
+        obj_count_extra += ' + xref'
+        obj_count -= 1
+      if 'trailer' in obj_starts:
+        obj_count_extra += ' + trailer'
+        obj_count -= 1
+      print >>sys.stderr, 'info: separated to %s objs%s' % (
+          obj_count, obj_count_extra)
+      last_ofs = trailer_ofs = obj_starts.pop('trailer')
+      if isinstance(trailer_ofs, PdfObj):
+        self.trailer = trailer_ofs
+        trailer_ofs = None
+        last_ofs = len(data)
+        obj_starts.pop('xref', None)
+      else:
+        self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
+        self.trailer.Set('Prev', None)
+        if 'xref' in obj_starts:
+          last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
+      self.CheckNotEncrypted(self.trailer)  # Also raised earlier.
+    except PdfFileEncryptedError:
+      # TODO(pts): Add decrypted input support.
+      raise NotImplementedError(
+          'encrypted PDF input not supported, use this command to '
+          'decrypt first: qpdf --decrypt %s %s' %
+          (ShellQuoteFileName(self.file_name),
+           ShellQuoteFileName(os.path.splitext(self.file_name)[0] +
+           '.decrypted.pdf')))
 
     def ComparePair(a, b):
       return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
@@ -3730,17 +3746,13 @@ class PdfData(object):
             obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
     self.objs.update(preparsed_objs)
-
-    # TODO(pts): Add decrypted input support.
-    if self.trailer.Get('Encrypt') is not None:
-      raise NotImplementedError(
-          'encrypted PDF input not supported, use this command to '
-          'decrypt first: qpdf --decrypt %s %s' %
-          (ShellQuoteFileName(self.file_name),
-           ShellQuoteFileName(os.path.splitext(self.file_name)[0] +
-           '.decrypted.pdf')))
-
     return self
+
+  @classmethod
+  def CheckNotEncrypted(cls, trailer_obj, file_name):
+    """Raises an exception if the PDF file is encrypted."""
+    if trailer_obj.Get('Encrypt') is not None:
+      raise PdfFileEncryptedError
 
   @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
@@ -3788,6 +3800,7 @@ class PdfData(object):
         xref_obj = PdfObj(data, start=xref_ofs, file_ofs=xref_ofs)
       except PdfTokenParseError, e:
         raise PdfXrefStreamError('parse xref obj %d: %s' % (xref_obj_num, e))
+      cls.CheckNotEncrypted(trailer_obj=xref_obj, file_name=None)
 
       # Parse the xref stream data.
       #
