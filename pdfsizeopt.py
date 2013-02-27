@@ -83,7 +83,7 @@ def VerifyGs(gs_cmd):
 
 
 gs_cmd_ary = []
-  
+
 
 def GetCompressExe():
   """Return pathname to `multivalent_compress' or None if not found."""
@@ -196,7 +196,8 @@ def FindOnPath(file_name):
     path = '/bin:/usr/bin'
   # TODO(pts): On Win32, do we want to append .exe to file_name?
   for item in path.split(os.pathsep):
-    if is_win and item.startswith('"') and item.endswith('"') and len(item) >= 2:
+    if (is_win and item.startswith('"') and item.endswith('"') and
+        len(item) >= 2):
       # TODO(pts): Do proper unquoting (inverse of ShellQuote), e.g. "" --> "?
       item = item[1 : -1].replace('""', '')
     if not item:
@@ -247,12 +248,14 @@ class PdfOptimizeError(Error):
 class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
+
 class UnexpectedStreamError(Error):
   """Raised when ResolveReferences gets a ref to an obj with stream."""
 
 
 class PdfReferenceTargetMissing(Error):
   """Raised if the target obj for an <x> <y> R is missing."""
+
 
 class PdfReferenceRecursiveError(Error):
   """Raised if a PDF object reference is recursive."""
@@ -264,6 +267,7 @@ class PdfIndirectLengthError(PdfTokenParseError):
   The attribute length_obj_num might be set to the object number holding the
   length.
   """
+
 
 class PdfTokenTruncated(Error):
   """Raised if a string is only a prefix of a PDF token sequence."""
@@ -284,8 +288,10 @@ class FormatUnsupported(Error):
 class PdfXrefError(Error):
   """Raised if the PDF file doesn't contain a valid cross-reference table."""
 
+
 class PdfXrefStreamError(PdfXrefError):
   """Raised if the PDF file doesn't contain a valid cross-reference stream."""
+
 
 class PdfXrefStreamWidthsError(PdfXrefStreamError):
   """Raised if the xref stream trailer does not contain a valid /W value."""
@@ -296,6 +302,7 @@ class FontsNotMergeable(Error):
 
   Please not the `Parsable' and `Mergeable' are correct spellings.
   """
+
 
 class FilterNotImplementedError(Error):
   """Raised if a stream filter is not implemented."""
@@ -439,7 +446,6 @@ class PdfObj(object):
   From table 4.43, 4.44, ++ on page 353 of pdf_reference_1-7.pdf .
   """
 
-
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
                do_ignore_generation_numbers=False):
     """Initialize from other.
@@ -509,9 +515,9 @@ class PdfObj(object):
         # Our simple parsing approach may have failed, maybe because we've
         # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
         #
-        # Now we do the little bit slower parsing approach, which can parse any valid PDF
-        # obj. Please note that we still don't have to call RewriteParsable
-        # on `other'.
+        # Now we do the little bit slower parsing approach, which can parse
+        # any valid PDF obj. Please note that we still don't have to call
+        # RewriteParsable on `other'.
         i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
         j = max(i - 16, 0)
         head_suffix = other[j : i]
@@ -594,8 +600,8 @@ class PdfObj(object):
             endstream_str)
         if not match:
           raise PdfTokenParseError(
-            'expected endstream+endobj in %r at %s' %
-            (endstream_str, file_ofs + stream_end_idx))
+              'expected endstream+endobj in %r at %s' %
+              (endstream_str, file_ofs + stream_end_idx))
         end_ofs = stream_end_idx + match.end()
         self.stream = other[stream_start_idx : stream_end_idx]
       if end_ofs_out is not None:
@@ -832,6 +838,7 @@ class PdfObj(object):
 
     def CompareStr(a, b):
       return (a < b and -1) or (a > b and 1) or 0
+
     def CompareSize(a, b):
       # Compare first by byte size, then by command name.
       return a[0].__cmp__(b[0]) or CompareStr(a[1], b[1])
@@ -1098,7 +1105,8 @@ class PdfObj(object):
     scanner = cls.PDF_SIMPLEST_KEY_VALUE_RE.scanner(data, start, end)
     while True:
       match = scanner.match()
-      if not match: break
+      if not match:
+        break
       start = match.end()
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
     if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
@@ -1144,7 +1152,8 @@ class PdfObj(object):
     scanner = cls.PDF_SIMPLEST_KEY_VALUE_RE.scanner(data, start, end)
     while True:
       match = scanner.match()
-      if not match: break # Match the rest with PDF_SIMPLE_VALUE_RE.
+      if not match:
+        break  # Match the rest with PDF_SIMPLE_VALUE_RE.
       start = match.end()
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
 
@@ -1427,8 +1436,8 @@ class PdfObj(object):
     Args:
       xref_ofs: File offset of this xref object, or None. It's safe to pass
         None, the offset is used to prevent a warning.
-      xref_obj_num: Object number of this xref object, or None. It's safe to pass
-        None, the offset is used to prevent a warning.
+      xref_obj_num: Object number of this xref object, or None. It's safe to
+        pass None, the offset is used to prevent a warning.
     Returns:
       Tuple (w0, w1, w2, index0, index1, xref_data), where w0, w1 and w2 are
       the field lengths; index is a tuple of an even number of values:
@@ -1690,7 +1699,8 @@ class PdfObj(object):
   @classmethod
   def EscapeString(cls, data):
     """Escape a string to the shortest possible PDF string literal."""
-    if not isinstance(data, str): raise TypeError
+    if not isinstance(data, str):
+      raise TypeError
     # We never emit hex strings (e.g. <face>), because they cannot ever be
     # shorter than the literal binary string.
     no_open = '(' not in data
@@ -1702,9 +1712,7 @@ class PdfObj(object):
       else:
         return '(%s)' % cls.PDF_STRING_SPECIAL_CHAR_RE.sub(r'\\\1', data)
     else:
-      close_remaining = 0
-      for c in data:
-        if c == ')': close_remaining += 1
+      close_remaining = data.count(')')
       depth = 0
       output = ['(']
       i = j = 0
@@ -1802,7 +1810,7 @@ class PdfObj(object):
 
     if last_end != len(data):
       raise PdfTokenParseError(
-         'syntax error at %r...' % data[last_end : last_end + 32])
+          'syntax error at %r...' % data[last_end : last_end + 32])
     if len(stack) != 1:
       raise PdfTokenParseError('data structures not closed')
     token = stack.pop()
@@ -1827,7 +1835,8 @@ class PdfObj(object):
 
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
-    if not isinstance(colorspace, str): raise TypeError
+    if not isinstance(colorspace, str):
+      raise TypeError
     colorspace = colorspace.strip(cls.PDF_WHITESPACE_CHARS)
     if colorspace == '/DeviceGray':
       return True
@@ -1854,7 +1863,7 @@ class PdfObj(object):
     # Some buggy PDF generators create a palette which is 1 byte longer.
     # For testing palette_mod == 1: /mnt/mandel/warez/tmp/vrabimintest2.pdf
     assert palette_mod == 0 or (palette_mod == 1 and palette[-1] == '\n'), (
-         'invalid palette size: %s' % palette_size)
+        'invalid palette size: %s' % palette_size)
     return palette_size - palette_mod
 
   @classmethod
@@ -1898,7 +1907,8 @@ class PdfObj(object):
         # !! get rid of these checks once we can decompress anything
         self.Get('Filter') not in (None, '/FlateDecode') or
         self.Get('DecodeParms') is not None or
-        not str(self.Get('BBox')).startswith('[')): return None
+        not str(self.Get('BBox')).startswith('[')):
+      return None
 
     bbox = map(PdfObj.GetNumber, PdfObj.ParseArray(self.Get('BBox')))
     if (len(bbox) != 4 or bbox[0] != 0 or bbox[1] != 0 or
@@ -1914,7 +1924,8 @@ class PdfObj(object):
         r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
         r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+cm[\0\t\n\r\f ]+'
         r'BI[\0\t\n\r\f ]*(/(?s).*?)ID(?:\r\n|[\0\t\n\r\f ])', stream)
-    if not match: return None
+    if not match:
+      return None
     if int(match.group(1)) != width or int(match.group(2)) != height:
       return None
     # Run CompressValue so we get it normalized, and we can do easier
@@ -1927,7 +1938,8 @@ class PdfObj(object):
     # TODO(pts): What if \r\n in front of EI? We don't support that.
     match = re.search(
         r'[\0\t\n\r\f ]EI[\0\t\n\r\f ]+Q[\0\t\n\r\f ]*\Z', stream_tail)
-    if not match: return None
+    if not match:
+      return None
     stream_end = len(stream) - len(stream_tail) + match.start()
     stream = stream[stream_start : stream_end]
 
@@ -1985,7 +1997,8 @@ class PdfObj(object):
   PDF_CLASSIFY[ord('%')] = 19
 
   @classmethod
-  def RewriteToParsable(cls, data, start=0,
+  def RewriteToParsable(
+      cls, data, start=0,
       end_ofs_out=None, do_terminate_obj=False):
     """Rewrite PDF token sequence so it will be easier to parse by regexps.
 
@@ -2102,12 +2115,12 @@ class PdfObj(object):
           # TODO(pts): test this
           output.append(
               ' /' + re.sub(r'[^-+A-Za-z0-9_.]',
-                  lambda match: '#%02X' % ord(match.group(0)), token[1:]))
+              lambda match: '#%02X' % ord(match.group(0)), token[1:]))
         else:
           # TODO(pts): test this
           output.append(
               ' ' + re.sub(r'[^-+A-Za-z0-9_.]',
-                  lambda match: '#%02X' % ord(match.group(0)), token))
+              lambda match: '#%02X' % ord(match.group(0)), token))
 
         if (number_match or token[0] == '/' or
             token in ('true', 'false', 'null', 'R')):
@@ -2141,7 +2154,7 @@ class PdfObj(object):
             i += 1
             if i == data_size:
               if output[-1] == ' stream':
-                raise PdfTokenTruncated, 'missing \\n after \\r'
+                raise PdfTokenTruncated('missing \\n after \\r')
             elif data[i] == '\n':  # Skip over \r\n.
               i += 1
           elif cls.PDF_CLASSIFY[ord(data[i])] == 0:
@@ -2314,7 +2327,8 @@ class PdfObj(object):
     """
     assert self.stream is not None
     filter = self.Get('Filter')
-    if filter is None: return self.stream
+    if filter is None:
+      return self.stream
     decodeparms = self.Get('DecodeParms') or ''
     if objs is None:
       objs = {}
@@ -2414,7 +2428,7 @@ class PdfObj(object):
       return data, False
     if not isinstance(data, str):
       raise TypeError
-    if not ('R' in data and #cls.PDF_END_OF_REF_RE.search(data) and
+    if not ('R' in data and  # cls.PDF_END_OF_REF_RE.search(data) and
             cls.PDF_REF_RE.search(data)):
       # Shortcut if there are no references in data.
       return data, False
@@ -2609,11 +2623,13 @@ class PdfObj(object):
             output.append(chr(operand + 139))
             assert 32 <= ord(output[-1][0]) <= 246
           elif 108 <= operand <= 1131:
-            output.append('%c%c' %
+            output.append(
+                '%c%c' %
                 (((operand - 108) >> 8) + 247, (operand - 108) & 255))
             assert 247 <= ord(output[-1][0]) <= 250
           elif -1131 <= operand <= -108:
-            output.append('%c%c' %
+            output.append(
+                '%c%c' %
                 (((-operand - 108) >> 8) + 251, (-operand - 108) & 255))
             assert 251 <= ord(output[-1][0]) <= 254
           elif -32768 <= operand <= 32767:
@@ -2730,10 +2746,124 @@ class PdfObj(object):
         # This branch is tested using
         # http://code.google.com/p/pdfsizeopt/issues/detail?id=51 .
 
-        # !! test multiple iterations with: REN Obj000009 01000402000101010a4f626a3030303030390001010128f81b02f81c038bfb61f9d5f961051d004e31850df7190ff610f74a11961c0e10128b0c038b0c04000201011625436f6d7075746572204d6f6465726e20526f6d616e436f6d7075746572204d6f6465726e0000001801170f18100506081309140a150b0c0d020e041112070316000022005a004f005b005000450046004700530048005400490055004a004c004d0042004e000d00d8000f00cf00c800e0001902000100070093012d01ae021a02910314038803fc04620567061d06a9070a075e0814084e08ee09ad09fa0aa60ad40b870c680d24ff015682000eff03027d008caaf75aaaf85c7701adab156c07c98e05f72ca7066e6098b098909890971f9cba99ca9e8b08f782069d8b9753957094709f648b78086d548b701e6cf7a6aa6f07758b738d7f977e98879e859b43f75548f75844f75583a018879687947b8b768b8773857b4efb3e4efb404dfb3d795818764c6277548b08f75ff77915f70af7dbf70afbdb050eff021e4e00fb60a472f711f873aa1213a0a0f843156c9907b08b9d819969a05818a748a84ba748ac3d188e8393808b828b7d7e77857e7f6f18785e6c515389798b7b907d96a390979a8ba0081360a37b9e6d707f73775abb6bb8f2b5f71dd5a91eb6f2b6f0b8f19db6a1b7c88b08aafb376c07a28aa07d8d728b7074647f6e72517152745164e069e365e1899286928b9308a5ac8ca01eaa070eff023ad9008fa78176f834a412f704cf47d5f766d51713b4aef843156c9b07a9aa885c1ffba80762718a581e13746c0713acd28e05f731a774066e728fb01ff74807d8b8e2eac19b594d1efb7f07676e896a1e7c0613746c0713b4d28e05f731a778066e6e8eaf1ff776078ba98aa87ca672ba57975a8b4d8b4c6275518aee180eff01c8ad008ca7f80da401c1f8431580fb3805a7068dae8db4a1a7a4abb98eb48b08f703066c6670646e654a374a374c36868485838b8208809588931ef7f1069cf752056f068862875a736b6e6659885f8b08fb0306e9f70de8f70de6f70f909192938b940895848f811e0eff0201c30081a7f829a58a7712a9e1f7ade21713b8f786f85415fb087f2b2d8bfb140824d8fb0df72af709f702e8f7161e13d8f70b2ef709fb1b1e13b886878a861bfb12fb9515b60713d8daa4f702f708dbbc4c3c941e8d768b768b768b5688516761726c647b658b428b58c27edb8a988b978998080eff023ad90081a4f825a5f7917701ade2f7a3d203f7cff940156c9607b3a589501ffb65076ab25c9f598b08fb102323fb0ffb06e8fb03f711bacba2b4a41f8c4bf72b9605aa7c076a6e8eba1ff8f907fbeafc8a159907dc9ff714f712bed3654d7e8a7f8b7e1efb38078b7e8682848170645e6f5c8b648b679f73aa6eb087b886b8080eff01c9100081a7f768a3f73da401a7e3f787d003f707f77a15f7bc0697909196f7113ed721fb0e2c21fb0efb0fec20f71dd2d3bdd09f1f8c8e8c8f8b8f0892869183798a6d7d811e73615a6e5a8b088406578d5dae75ba78b389b88bb6088ca3158ccda7d8d3a2938d938c938b08e1ab323b1f0eff0139f7008fa78176f823aaf733f70872a412f705d21713b4f705f843153b6cdbfbde06676e896a1e7c0613746c0713acd28e05f741a76a0667708fb61ff7d5f708aafb0be607cc9be9d795968987941e7b83817c8b790813b4729e78a4a99a9fa4ba58a361454d5e49751e86788a798b78080eff0191e8008fa78176f834a412f6cc4ad21713b0a9f843156c9b07a9aa885c1ffba80762718a581e13706c0713a8d18e05f742a76906696f8fb11ff73c0792d09ef5f08b088a077d84857c8b7c0870a07aa3a49da0a3b462a0684e5a58537d1e13b08af6050eff0201c300fb61a6f74dc9dba7f781a7967712a8c373d9f747d8acc31713ed80f700f756158a07777780698b6f8b6a9966a8795d785e6f8b560826f73170d3e0f721a9f0f70cfb10a2261e3006698f75a98bab089891a7941e8d069988988099879e859f889f8b08dae2c3e3ae7eb36fa21f8c07aca2a698b18b838585838b80087a997d9ba0959c99ac6e9c711e83066c876c81727688888786868b088a06848b759a7c910813f3809378768e761b39335330669c62a9741f13f58074fba8159207c0bfa8ba95968a8b951ebe06c68be886954308840734fb267e704b2ba5d1811e13f380c1f7fc159607c298d1d7c9a757445271524b727295a07a1e7b9f88a488a4080eff01954d0081a4f82fa112adbef77ba76fc11713e8e6ad15ab6bb47fb68b08dddcb5ec1f960787c35fb6599e72946f8f7190619349978bc508c5d499b6cab96644911e838c81971e13f0928b928f8c9208f70d07928894827c80728b7f1e8906848d8491858e7695718f738b08442b742526f7097ad37d1fb783bb718f5a08434f76561e8106428f63c27ad088968b9b7c8b08808883821ffb15078b878a868b8608818d819694939791911e9091919291919092190eff023ad9008fa78176f834a4f7917712f704d2f769d51713bcaef940156c9c07aaa8875b1ffc8c078b848c848b8308616e8a601e8506137c6c0713bcd28e05f731a774066e728fb01ff74807d8b8e2eac19b594d1efb7f07676e896a1e7c06137c6c0713bcd28e05f731a778066e6e8eaf1ff776078ba98aa97ca673b758995c8b538b466b744e8af7ee180eff018f97009676f82ea472aaf74d7712f5d56fa7f71ba61713d6f72cf8fc154269fb0a281e720713bae2fb9c068b6c8d6d9b70a361bd7bb98b089406d79898de8bc608b06f078b7d8c7c8b7c085f813f50557fcabc1ef7a2f725aafb25f74d070eff011d6c008caaf9127712daf444d21713d0b3f843156c9b07aba4865e1ffba90763708a591e6cf76daa7b0770718eab1ff80b0751f7781513e0718776766f1a6ea373a91e9206a58fa0a08ba708a873a36d1e0eff021e4e008fa78176f823aaf79c7712f6d21713b8a9f940156c9c07aaa8875b1ffc8c078b848c848b8308616e8a601e850613786c0713b8d18e05f72ca772066d758fb61fd4078b908a908b908b9a979094939a97999a9b95a85ab55dad5a9182947d8b7f087b78867c1e13786cf75a0713b8aa076a8b749273a67c9c7e9e7d9e66bf64bd66bf928f90909190a6a118bab3c1bccd8b08aafb4b6c0796889a878b7b8b6e6674757a4752187e807d817f7f08f871070eff011d6c008caaf92b7701f705d203aff940156c9707afa889591ffc8c078b848c848b8308616e8a601e856cf775aa720670728fae1ff904070eff0201c30081a472b3f79df72d72a412b4def765d5d3a717135ef70ef81815a6a4b495af8baf8baa789f6d9e6f8c6c8b6b0879073982398b46576a7271648b62083aed6fcdc9b9aabfa81e9362a366b98b08c7a6bec21fb86f59076f85656c6a89b7a11ef75707f431bf324d2e713c1e13ae709b76af1ea48c9ba28ba28ba67699749008f767fb27152807475a50461e83065c9067ae8bb808eaf706b9ea1e0eff035845008fa78176f834a412f704cf47d5f767d5f767d51713b6aef843156c9b07a9aa885c1ffba80762718a581e13766c0713aed28e05f731a774066e728fb01ff75d0791d2bbd3e18b08cb924a5c1ffb7f07676e896a1e7c0613766c0713b6d28e05f731a774066e728fb01ff75d0791d2bbd3e18b08cb924a5c1ffb7f07676e896a1e7c0613766cf7780713b6aa78076e6e8eaf1ff776078ba98aa97ca671ba57965a8b4f8b4b637654088a0682d04aa54f8b4a8b4c67734c8aee180eff011d6c00fb3f76f7c17712e3f70b72a41713e0f74a9c158b48784b5959878784858b8508849286909ca3af9e971ea5b499bc8bbc08b681cb506d776e726da273a91e13d09b8b99909696080eff0201c30081a7f829a5f75877a07712a9e1f7ade21713ecf786f85415fb087f2b2d8bfb140824d8fb0df72af709f702e8f716f70b2ef709fb1b86878a8b861efb12fb9515b607daa4f702f708dbbc4c3c941e8d768b768b768b5688516761726c647b658b428b58c27edb8a988b97899808f756f85a157a897a767f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac8bae1913dc9f7b9f761e13ec89898a891b0eff011d6c00a176f7007701e3f70003f71af70015728876758b6f08719f6faba4aa9dafa676a66a88898b8a881e0eff01c9100081a7f768a3f73da4f75977a07712a7e3f787d01713f6f707f77a15f7bc0697909196f7113ed721fb0e2c21fb0efb0fec20f71dd2d3bdd09f1f8c8e8c8f8b8f0892869183798a6d7d811e73615a6e5a8b088406578d5dae75ba78b389b88bb6088ca3158ccda7d8d3a2938d938c938b08e1ab323b1f3ef81b157a897a767f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac8bae1913ee9f7b9f761e13f689898a891b0eff0201c30081a472b3f79df72d72a4f75977a07712b4def765d5d3a717135780f70ef81815a6a4b495af8baf8baa789f6d9e6f8c6c8b6b0879073982398b46576a7271648b62083aed6fcdc9b9aabfa81e9362a366b98b08c7a6bec21fb86f59076f85656c6a89b7a11ef75707f431bf324d2e713c1e13ab80709b76af1ea48c9ba28ba28ba67699749008f767fb27152807475a50461e83065c9067ae8bb808eaf706b9ea1e74f828157a897a767f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac8bae1913a7809f7b9f761e13ab8089898a891b0eff023ad90081a4f815aff70af7008a7712f704d5f766d51713dcaef843156c9407a6b2896e1f8d808b818b8008fb5c078b6d8c6e9a70a759c880c08bc38bc0ac9ebf8c3618f7289605aa7a076d6d8eb81ff7fe07fb2b80056c9907aaab885d1ffb5a07854a64423d8b638b679582bf899e8b9d8b9e08f7c907f759f76f15708778758b710813ec729f6daaaea0a6a6a279aa6a1e13dc88878a881bfb5b166e877a718b740813ec749d6caca8a6a1aaa577a86b1e13dc88888a881b0eef0abd0b1e0a03963f0c090000
+        # !! test multiple iterations with: REN Obj000009
+        #    01000402000101010a4f626a3030303030390001010128f81b02f81c038bfb61
+        #    f9d5f961051d004e31850df7190ff610f74a11961c0e10128b0c038b0c040002
+        #    01011625436f6d7075746572204d6f6465726e20526f6d616e436f6d70757465
+        #    72204d6f6465726e0000001801170f18100506081309140a150b0c0d020e0411
+        #    12070316000022005a004f005b00500045004600470053004800540049005500
+        #    4a004c004d0042004e000d00d8000f00cf00c800e0001902000100070093012d
+        #    01ae021a02910314038803fc04620567061d06a9070a075e0814084e08ee09ad
+        #    09fa0aa60ad40b870c680d24ff015682000eff03027d008caaf75aaaf85c7701
+        #    adab156c07c98e05f72ca7066e6098b098909890971f9cba99ca9e8b08f78206
+        #    9d8b9753957094709f648b78086d548b701e6cf7a6aa6f07758b738d7f977e98
+        #    879e859b43f75548f75844f75583a018879687947b8b768b8773857b4efb3e4e
+        #    fb404dfb3d795818764c6277548b08f75ff77915f70af7dbf70afbdb050eff02
+        #    1e4e00fb60a472f711f873aa1213a0a0f843156c9907b08b9d819969a05818a7
+        #    48a84ba748ac3d188e8393808b828b7d7e77857e7f6f18785e6c515389798b7b
+        #    907d96a390979a8ba0081360a37b9e6d707f73775abb6bb8f2b5f71dd5a91eb6
+        #    f2b6f0b8f19db6a1b7c88b08aafb376c07a28aa07d8d728b7074647f6e725171
+        #    52745164e069e365e1899286928b9308a5ac8ca01eaa070eff023ad9008fa781
+        #    76f834a412f704cf47d5f766d51713b4aef843156c9b07a9aa885c1ffba80762
+        #    718a581e13746c0713acd28e05f731a774066e728fb01ff74807d8b8e2eac19b
+        #    594d1efb7f07676e896a1e7c0613746c0713b4d28e05f731a778066e6e8eaf1f
+        #    f776078ba98aa87ca672ba57975a8b4d8b4c6275518aee180eff01c8ad008ca7
+        #    f80da401c1f8431580fb3805a7068dae8db4a1a7a4abb98eb48b08f703066c66
+        #    70646e654a374a374c36868485838b8208809588931ef7f1069cf752056f0688
+        #    62875a736b6e6659885f8b08fb0306e9f70de8f70de6f70f909192938b940895
+        #    848f811e0eff0201c30081a7f829a58a7712a9e1f7ade21713b8f786f85415fb
+        #    087f2b2d8bfb140824d8fb0df72af709f702e8f7161e13d8f70b2ef709fb1b1e
+        #    13b886878a861bfb12fb9515b60713d8daa4f702f708dbbc4c3c941e8d768b76
+        #    8b768b5688516761726c647b658b428b58c27edb8a988b978998080eff023ad9
+        #    0081a4f825a5f7917701ade2f7a3d203f7cff940156c9607b3a589501ffb6507
+        #    6ab25c9f598b08fb102323fb0ffb06e8fb03f711bacba2b4a41f8c4bf72b9605
+        #    aa7c076a6e8eba1ff8f907fbeafc8a159907dc9ff714f712bed3654d7e8a7f8b
+        #    7e1efb38078b7e8682848170645e6f5c8b648b679f73aa6eb087b886b8080eff
+        #    01c9100081a7f768a3f73da401a7e3f787d003f707f77a15f7bc0697909196f7
+        #    113ed721fb0e2c21fb0efb0fec20f71dd2d3bdd09f1f8c8e8c8f8b8f08928691
+        #    83798a6d7d811e73615a6e5a8b088406578d5dae75ba78b389b88bb6088ca315
+        #    8ccda7d8d3a2938d938c938b08e1ab323b1f0eff0139f7008fa78176f823aaf7
+        #    33f70872a412f705d21713b4f705f843153b6cdbfbde06676e896a1e7c061374
+        #    6c0713acd28e05f741a76a0667708fb61ff7d5f708aafb0be607cc9be9d79596
+        #    8987941e7b83817c8b790813b4729e78a4a99a9fa4ba58a361454d5e49751e86
+        #    788a798b78080eff0191e8008fa78176f834a412f6cc4ad21713b0a9f843156c
+        #    9b07a9aa885c1ffba80762718a581e13706c0713a8d18e05f742a76906696f8f
+        #    b11ff73c0792d09ef5f08b088a077d84857c8b7c0870a07aa3a49da0a3b462a0
+        #    684e5a58537d1e13b08af6050eff0201c300fb61a6f74dc9dba7f781a7967712
+        #    a8c373d9f747d8acc31713ed80f700f756158a07777780698b6f8b6a9966a879
+        #    5d785e6f8b560826f73170d3e0f721a9f0f70cfb10a2261e3006698f75a98bab
+        #    089891a7941e8d069988988099879e859f889f8b08dae2c3e3ae7eb36fa21f8c
+        #    07aca2a698b18b838585838b80087a997d9ba0959c99ac6e9c711e83066c876c
+        #    81727688888786868b088a06848b759a7c910813f3809378768e761b39335330
+        #    669c62a9741f13f58074fba8159207c0bfa8ba95968a8b951ebe06c68be88695
+        #    4308840734fb267e704b2ba5d1811e13f380c1f7fc159607c298d1d7c9a75744
+        #    5271524b727295a07a1e7b9f88a488a4080eff01954d0081a4f82fa112adbef7
+        #    7ba76fc11713e8e6ad15ab6bb47fb68b08dddcb5ec1f960787c35fb6599e7294
+        #    6f8f7190619349978bc508c5d499b6cab96644911e838c81971e13f0928b928f
+        #    8c9208f70d07928894827c80728b7f1e8906848d8491858e7695718f738b0844
+        #    2b742526f7097ad37d1fb783bb718f5a08434f76561e8106428f63c27ad08896
+        #    8b9b7c8b08808883821ffb15078b878a868b8608818d819694939791911e9091
+        #    919291919092190eff023ad9008fa78176f834a4f7917712f704d2f769d51713
+        #    bcaef940156c9c07aaa8875b1ffc8c078b848c848b8308616e8a601e8506137c
+        #    6c0713bcd28e05f731a774066e728fb01ff74807d8b8e2eac19b594d1efb7f07
+        #    676e896a1e7c06137c6c0713bcd28e05f731a778066e6e8eaf1ff776078ba98a
+        #    a97ca673b758995c8b538b466b744e8af7ee180eff018f97009676f82ea472aa
+        #    f74d7712f5d56fa7f71ba61713d6f72cf8fc154269fb0a281e720713bae2fb9c
+        #    068b6c8d6d9b70a361bd7bb98b089406d79898de8bc608b06f078b7d8c7c8b7c
+        #    085f813f50557fcabc1ef7a2f725aafb25f74d070eff011d6c008caaf9127712
+        #    daf444d21713d0b3f843156c9b07aba4865e1ffba90763708a591e6cf76daa7b
+        #    0770718eab1ff80b0751f7781513e0718776766f1a6ea373a91e9206a58fa0a0
+        #    8ba708a873a36d1e0eff021e4e008fa78176f823aaf79c7712f6d21713b8a9f9
+        #    40156c9c07aaa8875b1ffc8c078b848c848b8308616e8a601e850613786c0713
+        #    b8d18e05f72ca772066d758fb61fd4078b908a908b908b9a979094939a97999a
+        #    9b95a85ab55dad5a9182947d8b7f087b78867c1e13786cf75a0713b8aa076a8b
+        #    749273a67c9c7e9e7d9e66bf64bd66bf928f90909190a6a118bab3c1bccd8b08
+        #    aafb4b6c0796889a878b7b8b6e6674757a4752187e807d817f7f08f871070eff
+        #    011d6c008caaf92b7701f705d203aff940156c9707afa889591ffc8c078b848c
+        #    848b8308616e8a601e856cf775aa720670728fae1ff904070eff0201c30081a4
+        #    72b3f79df72d72a412b4def765d5d3a717135ef70ef81815a6a4b495af8baf8b
+        #    aa789f6d9e6f8c6c8b6b0879073982398b46576a7271648b62083aed6fcdc9b9
+        #    aabfa81e9362a366b98b08c7a6bec21fb86f59076f85656c6a89b7a11ef75707
+        #    f431bf324d2e713c1e13ae709b76af1ea48c9ba28ba28ba67699749008f767fb
+        #    27152807475a50461e83065c9067ae8bb808eaf706b9ea1e0eff035845008fa7
+        #    8176f834a412f704cf47d5f767d5f767d51713b6aef843156c9b07a9aa885c1f
+        #    fba80762718a581e13766c0713aed28e05f731a774066e728fb01ff75d0791d2
+        #    bbd3e18b08cb924a5c1ffb7f07676e896a1e7c0613766c0713b6d28e05f731a7
+        #    74066e728fb01ff75d0791d2bbd3e18b08cb924a5c1ffb7f07676e896a1e7c06
+        #    13766cf7780713b6aa78076e6e8eaf1ff776078ba98aa97ca671ba57965a8b4f
+        #    8b4b637654088a0682d04aa54f8b4a8b4c67734c8aee180eff011d6c00fb3f76
+        #    f7c17712e3f70b72a41713e0f74a9c158b48784b5959878784858b8508849286
+        #    909ca3af9e971ea5b499bc8bbc08b681cb506d776e726da273a91e13d09b8b99
+        #    909696080eff0201c30081a7f829a5f75877a07712a9e1f7ade21713ecf786f8
+        #    5415fb087f2b2d8bfb140824d8fb0df72af709f702e8f716f70b2ef709fb1b86
+        #    878a8b861efb12fb9515b607daa4f702f708dbbc4c3c941e8d768b768b768b56
+        #    88516761726c647b658b428b58c27edb8a988b97899808f756f85a157a897a76
+        #    7f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac8b
+        #    ae1913dc9f7b9f761e13ec89898a891b0eff011d6c00a176f7007701e3f70003
+        #    f71af70015728876758b6f08719f6faba4aa9dafa676a66a88898b8a881e0eff
+        #    01c9100081a7f768a3f73da4f75977a07712a7e3f787d01713f6f707f77a15f7
+        #    bc0697909196f7113ed721fb0e2c21fb0efb0fec20f71dd2d3bdd09f1f8c8e8c
+        #    8f8b8f0892869183798a6d7d811e73615a6e5a8b088406578d5dae75ba78b389
+        #    b88bb6088ca3158ccda7d8d3a2938d938c938b08e1ab323b1f3ef81b157a897a
+        #    767f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac
+        #    8bae1913ee9f7b9f761e13f689898a891b0eff0201c30081a472b3f79df72d72
+        #    a4f75977a07712b4def765d5d3a717135780f70ef81815a6a4b495af8baf8baa
+        #    789f6d9e6f8c6c8b6b0879073982398b46576a7271648b62083aed6fcdc9b9aa
+        #    bfa81e9362a366b98b08c7a6bec21fb86f59076f85656c6a89b7a11ef75707f4
+        #    31bf324d2e713c1e13ab80709b76af1ea48c9ba28ba28ba67699749008f767fb
+        #    27152807475a50461e83065c9067ae8bb808eaf706b9ea1e74f828157a897a76
+        #    7f7f6b6b6a6e6b6b8a898a8a8b890885957d9190908f8d8f1ea79bb7a3e1ac8b
+        #    ae1913a7809f7b9f761e13ab8089898a891b0eff023ad90081a4f815aff70af7
+        #    008a7712f704d5f766d51713dcaef843156c9407a6b2896e1f8d808b818b8008
+        #    fb5c078b6d8c6e9a70a759c880c08bc38bc0ac9ebf8c3618f7289605aa7a076d
+        #    6d8eb81ff7fe07fb2b80056c9907aaab885d1ffb5a07854a64423d8b638b6795
+        #    82bf899e8b9d8b9e08f7c907f759f76f15708778758b710813ec729f6daaaea0
+        #    a6a6a279aa6a1e13dc88878a881bfb5b166e877a718b740813ec749d6caca8a6
+        #    a1aaa577a86b1e13dc88888a881b0eef0abd0b1e0a03963f0c090000
         output = [data[:i0]]
-        # CFF INDEX header
-        output.append(self.SerializeCffIndexHeader(off_size, 1, len(new_font_name) + 1))
+        # CFF INDEX header.
+        output.append(self.SerializeCffIndexHeader(
+            off_size, 1, len(new_font_name) + 1))
         output.append(new_font_name)
         i = j
         count, off_size = struct.unpack('>HB', data[i : i + 3])
@@ -2757,7 +2887,9 @@ class PdfObj(object):
           # Add len_data to the appropriate fields.
           for cff_operator in sorted(cff_dict):
             if cff_operator in self.CFF_OFFSET0_OPERATORS:
-              # assert len(cff_dict[cff_operator]) == 1, (cff_operator, len(cff_dict[cff_operator]))  # Except for cff_operator == 18.
+              # Except for cff_operator == 18.
+              # assert len(cff_dict[cff_operator]) == 1,
+              #     (cff_operator, len(cff_dict[cff_operator]))
               assert isinstance(cff_dict[cff_operator][-1], int)
               cff_dict[cff_operator][-1] += len_delta
 
@@ -2778,7 +2910,8 @@ class PdfObj(object):
                 (1 << (off_size << 3)) > len(cff_dict_data) + 1), (
             'new CFF dict too large, length=%d off_size=%d' % (
                 len(cff_dict_data, off_size)))
-        output.append(self.SerializeCffIndexHeader(off_size, 1, len(cff_dict_data) + 1))
+        output.append(self.SerializeCffIndexHeader(
+            off_size, 1, len(cff_dict_data) + 1))
         output.append(cff_dict_data)
         output.append(data[j:])
 
@@ -2928,11 +3061,11 @@ class ImageData(object):
   """Map a .compression value with preditor to the PDF predictor number."""
 
   COLOR_TYPE_PARSE_DICT = {
-     0: 'gray',
-     2: 'rgb',
-     3: 'indexed-rgb',
-     4: 'gray-alpha',
-     6: 'rgb-alpha',
+      0: 'gray',
+      2: 'rgb',
+      3: 'indexed-rgb',
+      4: 'gray-alpha',
+      6: 'rgb-alpha',
   }
   """Map a PNG color type byte value to a color_type string."""
 
@@ -2943,7 +3076,8 @@ class ImageData(object):
       other: A ImageData object or none.
     """
     if other is not None:
-      if not isinstance(other, ImageData): raise TypeError
+      if not isinstance(other, ImageData):
+        raise TypeError
       self.width = other.width
       self.height = other.height
       self.bpc = other.bpc
@@ -3064,7 +3198,8 @@ class ImageData(object):
 
   def CanUpdateImageMask(self):
     """Return bool saying whether self.UpdatePdfObj works on an /ImageMask."""
-    if self.bpc != 1: return False
+    if self.bpc != 1:
+      return False
     if (self.color_type == 'indexed-rgb' and
         self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0',
                       '\xff\xff\xff\0\0\0', '\xff\xff\xff')):
@@ -3073,7 +3208,8 @@ class ImageData(object):
 
   def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
-    if not isinstance(pdf_obj, PdfObj): raise TypeError
+    if not isinstance(pdf_obj, PdfObj):
+      raise TypeError
     pdf_image_data = self.GetPdfImageData()
     if do_check_dimensions:
       assert pdf_obj.Get('Width') == pdf_image_data['Width'], (
@@ -3117,7 +3253,8 @@ class ImageData(object):
     """Compress self.idat to self.compression == 'zip-png'."""
     assert self
     if self.compression == 'zip-png':
-      # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf
+      # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false \
+      #   pts2ep.pdf
       return self
     elif self.compression == 'zip':
       idat = PermissiveZlibDecompress(self.idat)  # raises zlib.error
@@ -3133,7 +3270,8 @@ class ImageData(object):
     useful_idat_size = bytes_per_row * self.height
     assert len(idat) >= useful_idat_size, 'PNG IDAT too short (truncated?)'
 
-    # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts2ep.pdf
+    # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false \
+    #   pts2ep.pdf
     # For testing: http://code.google.com/p/pdfsizeopt/issues/detail?id=26
     # For testing: idat_size_mod == 1 in vrabimintest.pdf
     output = []
@@ -3286,7 +3424,8 @@ class ImageData(object):
       color2 = (chr(int(float(match.group(4)) * 255 + 0.5)) +
                 chr(int(float(match.group(5)) * 255 + 0.5)) +
                 chr(int(float(match.group(6)) * 255 + 0.5)))
-      # For testing:  ./pdfsizeopt.py --use-jbig2=false --use-pngout=false pts3.pdf
+      # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false \
+      #   pts3.pdf
       if (obj.Get('Decode') or '[0 1]').startswith('[0'):
         palette = color2 + color1
       else:
@@ -3392,7 +3531,8 @@ class ImageData(object):
     need_plte = False
     while True:
       data = f.read(8)
-      if not data: break  # EOF
+      if not data:  # EOF
+        break
       assert len(data) == 8
       chunk_data_size, chunk_type = struct.unpack('>L4s', data)
       if not (chunk_type in ('IHDR', 'IDAT', 'IEND') or
@@ -3425,7 +3565,7 @@ class ImageData(object):
           # struct.unpack checks for len(chunk_data) == 5
           (self.width, self.height, self.bpc, color_type, compression_method,
            filter_method, interlace_method) = struct.unpack(
-              '>LL5B', chunk_data)
+               '>LL5B', chunk_data)
           self.width = int(self.width)
           self.height = int(self.height)
           # Raise KeyError.
@@ -3521,7 +3661,7 @@ class PdfData(object):
     if 'trailer' in obj_starts:
       obj_count_extra += ' + trailer'
       obj_count -= 1
-    print >>sys.stderr, 'info: separated to %s objs%s' %  (
+    print >>sys.stderr, 'info: separated to %s objs%s' % (
         obj_count, obj_count_extra)
     last_ofs = trailer_ofs = obj_starts.pop('trailer')
     if isinstance(trailer_ofs, PdfObj):
@@ -3668,7 +3808,7 @@ class PdfData(object):
             raise PdfXrefStreamError(
                 'Index too large: ii=%d index_size=%d' % (ii, len(index)))
           if obj_num is not None and index[ii] <= obj_num:
-            # TODO(pts): Check this in xref_obj.GetAndClearXrefStream() instead.
+            # TODO(pts): Check in xref_obj.GetAndClearXrefStream() instead.
             raise PdfXrefStreamError(
                 'Sections within an xref stream not increasing: '
                 'old_obj_num=%d new_obj_num=%d' %
@@ -3695,7 +3835,7 @@ class PdfData(object):
           if obj_num in keep_obj_starts:
             if f0 == 2:
               compressed_objects_to_ignore.add((obj_num, f1))
-            continue  # Ignore this entry, object defined in higher xref stream.
+            continue  # Ignore this entry, obj defined in higher xref stream.
           raise PdfXrefStreamError('duplicate obj %d' % obj_num)
         if f0 == 1:  # f1 is the object offset in the file.
           if f2:
@@ -3913,8 +4053,9 @@ class PdfData(object):
               # for testing: obj 10 in pdfsizeopt_charts.pdf has offset 0:
               # "0000000000 00000 n \n"
               if obj_ofs in obj_starts_rev:
-                raise PdfXrefError('duplicate use of obj offset %s: %s and %s' %
-                                   (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
+                raise PdfXrefError(
+                    'duplicate use of obj offset %s: %s and %s' %
+                    (obj_ofs, obj_starts_rev[obj_ofs], obj_num))
               obj_starts_rev[obj_ofs] = obj_num
               # TODO(pts): Check that we match PdfObj.OBJ_DEF_RE at obj_ofs.
               obj_starts[obj_num] = obj_ofs
@@ -3980,7 +4121,8 @@ class PdfData(object):
                 'generational objects (in %s %s n) not supported at %d' %
                 (match.group(1), match.group(2), xref_ofs))
           has_generational_objs = True
-        assert prev_obj_num not in obj_starts, 'duplicate obj %d' % prev_obj_num
+        assert prev_obj_num not in obj_starts, (
+            'duplicate obj %d' % prev_obj_num)
         # Skip over '\n'
         obj_starts[prev_obj_num] = match.start(0) + 1
       else:
@@ -4229,6 +4371,7 @@ class PdfData(object):
 
     output_size = [0]
     output_size_idx = [0]
+
     def GetOutputSize():
       if output_size_idx[0] < len(output):
         for i in xrange(output_size_idx[0], len(output)):
@@ -4519,9 +4662,9 @@ class PdfData(object):
 } bind def
 
 % Sort an array, from Ghostscript's prfont.ps.
-/Sort {			% <array> <lt-proc> Sort <array>
-	% Heapsort (algorithm 5.2.3H, Knuth vol. 2, p. 146),
-	% modified for 0-origin indexing. */
+/Sort { % <array> <lt-proc> Sort <array>
+        % Heapsort (algorithm 5.2.3H, Knuth vol. 2, p. 146),
+        % modified for 0-origin indexing. */
   10 dict begin
   /LT exch def
   /recs exch def
@@ -4530,23 +4673,23 @@ class PdfData(object):
     /l N 2 idiv def
     /r N 1 sub def {
       l 0 gt {
-	/l l 1 sub def
-	/R recs l get def
+        /l l 1 sub def
+        /R recs l get def
       } {
-	/R recs r get def
-	recs r recs 0 get put
-	/r r 1 sub def
-	r 0 eq { recs 0 R put exit } if
+        /R recs r get def
+        recs r recs 0 get put
+        /r r 1 sub def
+        r 0 eq { recs 0 R put exit } if
       } ifelse
       /j l def {
-	/i j def
-	/j j dup add 1 add def
-	j r lt {
-	  recs j get recs j 1 add get LT { /j j 1 add def } if
-	} if
-	j r gt { recs i R put exit } if
-	R recs j get LT not { recs i R put exit } if
-	recs i recs j get put
+        /i j def
+        /j j dup add 1 add def
+        j r lt {
+          recs j get recs j 1 add get LT { /j j 1 add def } if
+        } if
+        j r gt { recs i R put exit } if
+        R recs j get LT not { recs i R put exit } if
+        recs i recs j get put
       } loop
     } loop
   } if recs end
@@ -4781,9 +4924,12 @@ class PdfData(object):
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       # !! TODO(pts): proper PDF token sequence parsing
-      if (#re.search(r'/Type\s*/FontDescriptor\b', obj.head) and  # !! (nonstandard) eurotex2006.final.pdf has /Type/FontDescriptor missing
+      if (
+          # re.search(r'/Type\s*/FontDescriptor\b', obj.head) and
+          # (nonstandard behavior) eurotex2006.final.pdf has
+          # /Type/FontDescriptor missing
           re.search(r'/FontName\s*/', obj.head) and
-          '/FontFile' in obj.head and # /FontFile, /FontFile2 or /FontFile3
+          '/FontFile' in obj.head and  # /FontFile, /FontFile2 or /FontFile3
           '/Flags' in obj.head):
         # Type1C fonts have /FontFile3 instead of /FontFile.
         # TODO(pts): Do only Type1 fonts have /FontFile ?
@@ -4801,7 +4947,7 @@ class PdfData(object):
           elif font_file_tag == 'FontFile':
             subtype = '/Type1'
           elif font_file_tag == 'FontFile2':
-            subtype = '/TrueType'  # TODO(pts): Find PDF standard name for this.
+            subtype = '/TrueType'  # TODO(pts): Find its pdf standard name.
           assert str(subtype).startswith('/'), (
               'expected font /Subtype, got %r in obj %s' %
               (subtype, font_obj_num))
@@ -4814,9 +4960,10 @@ class PdfData(object):
             assert match, 'GS generated non-Obj FontName: %s' % font_name
             name_obj_num = int(match.group(1))
             if name_obj_num in objs:
+              # TODO(pts): old=37 instead of 11
               print >>sys.stderr, (
                   'error: duplicate font %s obj old=%d new=%d' %
-                  (font_name, name_obj_num, font_obj_num))  # TODO(pts): old=37 instead of 11
+                  (font_name, name_obj_num, font_obj_num))
               duplicate_count += 1
             objs[name_obj_num] = font_obj
           else:
@@ -4834,7 +4981,8 @@ class PdfData(object):
   @classmethod
   def GenerateType1CFontsFromType1(cls, objs, ref_objs, ps_tmp_file_name,
                                    pdf_tmp_file_name):
-    if not objs: return {}
+    if not objs:
+      return {}
     output = ['%!PS-Adobe-3.0\n',
               '% Ghostscript helper for converting Type1 fonts to Type1C\n',
               '%% autogenerated by %s at %s\n' % (__file__, time.time())]
@@ -4868,8 +5016,9 @@ class PdfData(object):
       obj.AppendTo(output, obj_num)
     output.append('(Type1CConverter: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
-    print >>sys.stderr, ('info: writing Type1CConverter (%s font bytes) to: %s'
-        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    print >>sys.stderr, (
+        'info: writing Type1CConverter (%s font bytes) to: %s' %
+        (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
       f.write(output_str)
@@ -4883,8 +5032,8 @@ class PdfData(object):
         '-sOutputFile=%s -f %s'
         % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
-    print >>sys.stderr, ('info: executing Type1CConverter with Ghostscript'
-        ': %s' % gs_cmd)
+    print >>sys.stderr, (
+        'info: executing Type1CConverter with Ghostscript: %s' % gs_cmd)
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
@@ -4967,7 +5116,12 @@ class PdfData(object):
 % but some autodetection of `//false'' above based on the Ghostscript version:
 % Since gs 8.64:
 %   pdfdict /readType1C get -->
-%   {1 --index-- --exch-- PDFfile --fileposition-- 3 1 --roll-- --dup-- true resolvestream --dup-- readfontfilter 3 --index-- /FontDescriptor oget /FontName oget 1 --index-- /FontSetInit /ProcSet --findresource-- --begin-- true false ReadData {--exch-- --pop-- --exit--} --forall-- 7 1 --roll-- --closefile-- --closefile-- --pop-- PDFfile 3 -1 --roll-- --setfileposition-- --pop-- --pop--}
+%   {1 --index-- --exch-- PDFfile --fileposition-- 3 1 --roll-- --dup-- true
+%   resolvestream --dup-- readfontfilter 3 --index-- /FontDescriptor oget
+%   /FontName oget 1 --index-- /FontSetInit /ProcSet --findresource-- --begin--
+%   true false ReadData {--exch-- --pop-- --exit--} --forall-- 7 1 --roll--
+%   --closefile-- --closefile-- --pop-- PDFfile 3 -1 --roll--
+%   --setfileposition-- --pop-- --pop--}
 % Till gs 8.61:
 %   GS_PDF_ProcSet /FRD get -->
 %   {/FontSetInit /ProcSet findresource begin //true ReadData}
@@ -4979,8 +5133,10 @@ dup /FontSetInit FindItem
 1 index sub 1 add getinterval
 cvx bind /LoadCff exch def
 % Now we have one of these:
-% /LoadCff { /FontSetInit /ProcSet findresource begin //true         ReadData pop } bind def  % gs 8.62 or earlier
-% /LoadCff { /FontSetInit /ProcSet findresource begin //true //false ReadData pop } bind def  % gs 8.63 or later
+% /LoadCff { /FontSetInit /ProcSet findresource begin //true         ReadData
+%   pop } bind def  % gs 8.62 or earlier
+% /LoadCff { /FontSetInit /ProcSet findresource begin //true //false ReadData
+%   pop } bind def  % gs 8.63 or later
 
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
@@ -5091,10 +5247,12 @@ cvx bind /LoadCff exch def
 % </ProcSet>
 
 '''
+
   @classmethod
   def ParseType1CFonts(cls, objs, ps_tmp_file_name, data_tmp_file_name):
     """Converts /Subtype/Type1C objs to data structure representation."""
-    if not objs: return {}
+    if not objs:
+      return {}
     output = ['%!PS-Adobe-3.0\n',
               '% Ghostscript helper parsing Type1C fonts\n',
               '%% autogenerated by %s at %s\n' % (__file__, time.time())]
@@ -5107,8 +5265,9 @@ cvx bind /LoadCff exch def
       objs[obj_num].AppendTo(output, obj_num)
     output.append('(Type1CParser: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
-    print >>sys.stderr, ('info: writing Type1CParser (%s font bytes) to: %s'
-        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    print >>sys.stderr, (
+        'info: writing Type1CParser (%s font bytes) to: %s'
+        (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
       f.write(output_str)
@@ -5121,8 +5280,8 @@ cvx bind /LoadCff exch def
         '-sDataFile=%s -f %s'
         % (GetGsCommand(), ShellQuoteFileName(data_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
-    print >>sys.stderr, ('info: executing Type1CParser with Ghostscript'
-        ': %s' % gs_cmd)
+    print >>sys.stderr, (
+        'info: executing Type1CParser with Ghostscript: %s' % gs_cmd)
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
@@ -5243,11 +5402,13 @@ cvx bind /LoadCff exch def
     #  target={'StemSnapH': [33, 36, 39, 40, 41, 43, 47, 48, 55, 62, 96, 156],
     #          'StdVW': [114],
     #          'StdHW': [47],
-    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142, 153, 156]}
+    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142,
+    #                        153, 156]}
     #  source={'StemSnapH': [33, 36, 39, 40, 43, 47, 48, 53, 55, 96, 117, 156],
     #          'StdVW': [47],
     #          'StdHW': [47],
-    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142, 153, 156]}
+    #          'StemSnapV': [47, 53, 95, 108, 114, 117, 125, 128, 136, 142,
+    #                        153, 156]}
     for key in ('StemSnapH', 'StdVW', 'StdHW', 'StemSnapV'):
       if key in private_dict:
         del private_dict[key]
@@ -5261,7 +5422,8 @@ cvx bind /LoadCff exch def
 
       {'FontName': '/LNJXBX+GaramondNo8-Reg',
        'FontMatrix': ['0.001', 0, 0, '0.001', 0, 0],
-       'Private': {'StemSnapH': [33, 39], 'StdHW': [33], 'BlueValues': [-20, 0, 420, 440, 689, 709], 'StemSnapV': [75, 89], 'StdVW': [75]},
+       'Private': {'StemSnapH': [33, 39], 'StdHW': [33], 'BlueValues':
+           [-20, 0, 420, 440, 689, 709], 'StemSnapV': [75, 89], 'StdVW': [75]},
        'FontType': 2,
        'PaintType': 0,
        'FontInfo': {
@@ -5301,13 +5463,15 @@ cvx bind /LoadCff exch def
       target_value = target_font[key]
       source_value = source_font[key]
       if target_value != source_value:
-        raise FontsNotMergeable('mismatch in key %s: target=%r source=%r' %
+        raise FontsNotMergeable(
+            'mismatch in key %s: target=%r source=%r' %
             (key, target_value, source_value))
     # This works even if target_font or source_font doesn't contain 'Private'.
     target_value = cls.GetStrippedPrivate(target_font.get('Private'))
     source_value = cls.GetStrippedPrivate(source_font.get('Private'))
     if target_value != source_value:
-      raise FontsNotMergeable('mismatch in Private: target=%r source=%r' %
+      raise FontsNotMergeable(
+          'mismatch in Private: target=%r source=%r' %
           (target_value, source_value))
     target_cs = target_font['CharStrings']
     source_cs = source_font['CharStrings']
@@ -5436,11 +5600,13 @@ cvx bind /LoadCff exch def
 
       if ('Subrs' in parsed_font or
           'Subrs' in parsed_font.get('Private', ())):
-        # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex strings:
-        # ['<abc42>', ...]).
-        # See also self.MergeTwoType1CFonts why we can't merge fonts with /Subrs.
+        # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex
+        # strings: # ['<abc42>', ...]).
+        # See also self.MergeTwoType1CFonts why we can't merge fonts with
+        # /Subrs.
         print >>sys.stderr, (
-            'info: not merging Type1C font obj %d because it has /Subrs' % obj_num)
+            'info: not merging Type1C font obj %d because it has /Subrs' %
+            obj_num)
         continue
 
       # Extra, not checked: 'UniqueID'
@@ -5481,7 +5647,10 @@ cvx bind /LoadCff exch def
           self.MergeTwoType1CFontDescriptors(new_fontdesc_obj, obj)
         except FontsNotMergeable, exc:
           # TODO(pts): Allow approximate match on /FontMatrix
-          # info: could not merge fonts from mismatch in key FontMatrix: target=['0.000999999', 0, 0, '0.000999999', 0, 0] source=['0.001', 0, 0, '0.001', 0, 0] to /HFFJCI+Syntax-Roman: /DEOKBN+Syntax-Roman
+          # info: could not merge fonts from mismatch in key FontMatrix:
+          # target=['0.000999999', 0, 0, '0.000999999', 0, 0]
+          # source=['0.001', 0, 0, '0.001', 0, 0] to
+          # /HFFJCI+Syntax-Roman: /DEOKBN+Syntax-Roman
           print >>sys.stderr, (
               'info: could not merge descs from %s to %s: %s' %
               (exc, parsed_font['FontName'], merged_font['FontName']))
@@ -5600,8 +5769,9 @@ cvx bind /LoadCff exch def
     ps_tmp_file_name = 'pso.conv.gen.tmp.ps'
     pdf_tmp_file_name = 'pso.conv.gen.tmp.pdf'
     output_str = ''.join(output)
-    print >>sys.stderr, ('info: writing Type1CGenerator (%s font bytes) to: %s'
-        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    print >>sys.stderr, (
+        'info: writing Type1CGenerator (%s font bytes) to: %s' %
+        (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
       f.write(output_str)
@@ -5615,8 +5785,8 @@ cvx bind /LoadCff exch def
         '-sOutputFile=%s -f %s'
         % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
-    print >>sys.stderr, ('info: executing Type1CGenerator with Ghostscript'
-        ': %s' % gs_cmd)
+    print >>sys.stderr, (
+        'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
@@ -5680,18 +5850,22 @@ cvx bind /LoadCff exch def
   def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
                    do_just_read=False, return_none_if_status=None):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
-    if not isinstance(sourcefn, str): raise TypeError
-    if not isinstance(targetfn, str): raise TypeError
-    if not isinstance(cmd_pattern, str): raise TypeError
-    if not isinstance(cmd_name, str): raise TypeError
+    if not isinstance(sourcefn, str):
+      raise TypeError
+    if not isinstance(targetfn, str):
+      raise TypeError
+    if not isinstance(cmd_pattern, str):
+      raise TypeError
+    if not isinstance(cmd_name, str):
+      raise TypeError
     sourcefnq = ShellQuoteFileName(sourcefn)
     targetfnq = ShellQuoteFileName(targetfn)
     cmd = cmd_pattern % locals()
     EnsureRemoved(targetfn)
     assert os.path.isfile(sourcefn)
 
-    print >>sys.stderr, ('info: executing image optimizer %s: %s' %
-        (cmd_name, cmd))
+    print >>sys.stderr, (
+        'info: executing image optimizer %s: %s' % (cmd_name, cmd))
     status = os.system(cmd)
     if (return_none_if_status is not None and
         status == return_none_if_status):
@@ -5775,7 +5949,7 @@ cvx bind /LoadCff exch def
       resources_obj = PdfObj(
           '0 0 obj %s endobj' % obj.Get('Resources', '<<>>'))
       assert resources_obj.Get('XObject') is None
-      resources_obj.Set('XObject', '<</S %s 0 R>>'% image_obj_num)
+      resources_obj.Set('XObject', '<</S %s 0 R>>' % image_obj_num)
       form_obj = PdfObj('0 0 obj<</Subtype/Form>>endobj')
       form_obj.stream = 'q %s 0 0 %s 0 0 cm/S Do Q' % (width, height)
       form_obj.Set('BBox', '[0 0 %s %s]' % (width, height))
@@ -5862,7 +6036,8 @@ cvx bind /LoadCff exch def
   def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern,
                    gs_device):
     """Returns: dictionary mapping obj_num to PNG filename."""
-    if not objs: return {}
+    if not objs:
+      return {}
     output = ['%!PS-Adobe-3.0\n',
               '% Ghostscript helper rendering PDF images as PNG\n',
               '%% autogenerated by %s at %s\n' % (__file__, time.time())]
@@ -5876,8 +6051,9 @@ cvx bind /LoadCff exch def
       objs[obj_num].AppendTo(output, obj_num)
     output.append('(ImageRenderer: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
-    print >>sys.stderr, ('info: writing ImageRenderer (%s image bytes) to: %s'
-        % (len(output_str) - output_prefix_len, ps_tmp_file_name))
+    print >>sys.stderr, (
+        'info: writing ImageRenderer (%s image bytes) to: %s' %
+        (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
       f.write(output_str)
@@ -5889,7 +6065,8 @@ cvx bind /LoadCff exch def
     while True:
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
-      if not os.path.exists(png_tmp_file_name): break
+      if not os.path.exists(png_tmp_file_name):
+        break
       EnsureRemoved(png_tmp_file_name)
       assert not os.path.exists(png_tmp_file_name)
 
@@ -5899,8 +6076,8 @@ cvx bind /LoadCff exch def
         % (GetGsCommand(), ShellQuote(gs_device),
            ShellQuoteFileName(png_tmp_file_pattern),
            ShellQuoteFileName(ps_tmp_file_name)))
-    print >>sys.stderr, ('info: executing ImageRenderer with Ghostscript'
-        ': %s' % gs_cmd)
+    print >>sys.stderr, (
+        'info: executing ImageRenderer with Ghostscript: %s' % gs_cmd)
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
@@ -5948,7 +6125,8 @@ cvx bind /LoadCff exch def
       if (not re.search(r'/Subtype[\0\t\n\r\f ]*/Image\b', obj.head) or
           not obj.head.startswith('<<') or
           not obj.stream is not None or
-          obj.Get('Subtype') != '/Image'): continue
+          obj.Get('Subtype') != '/Image'):
+        continue
       filter, filter_has_changed = PdfObj.ResolveReferences(
           obj.Get('Filter'), objs=self.objs)
       filter2 = (filter or '').replace(']', ' ]') + ' '
@@ -6032,8 +6210,9 @@ cvx bind /LoadCff exch def
           colorspace = '/DeviceGray'
           colorspace_has_changed = True
       assert not re.match(PdfObj.PDF_REF_RE, colorspace)
-      colorspace_short = re.sub(r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
-                         '/Indexed/\\1', colorspace)
+      colorspace_short = re.sub(
+          r'\A\[\s*/Indexed\s*/([^\s/<(]+)(?s).*',
+          '/Indexed/\\1', colorspace)
       if re.search(r'[^/\w]', colorspace_short):
         colorspace_short = '?'
 
@@ -6052,7 +6231,7 @@ cvx bind /LoadCff exch def
       for name in ('Width', 'Height', 'Decode', 'DecodeParms'):
         value = obj.Get(name)
         value, value_has_changed = PdfObj.ResolveReferences(
-          value, objs=self.objs)
+            value, objs=self.objs)
         if value_has_changed:
           if obj is obj0:
             obj = PdfObj(obj)
@@ -6157,7 +6336,8 @@ cvx bind /LoadCff exch def
           images[obj_num][-1] = ('parse', image1)
           image1.file_name = image2.file_name
 
-    if not images: return self # No images => no conversion.
+    if not images:  # No images => no conversion.
+      return self
     print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
         image_count, image_total_size)
 
@@ -6204,21 +6384,30 @@ cvx bind /LoadCff exch def
         rendered_image_file_name = obj_images[-1][1].file_name
         # TODO(pts): use KZIP or something to further optimize the ZIP stream
         # !! shortcut for sam2p (don't need pngtopnm)
-        #    (add basic support for reading PNG to sam2p? -- just what GS produces)
+        #    (add basic support for reading PNG to sam2p? -- just what GS
+        #    produces)
         #    (or just add .gz support?)
         if obj_num in force_grayscale_obj_nums:
           sam2p_mode = self.SAM2P_GRAYSCALE_MODE
         else:
-          sam2p_mode = 'Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop'
+          sam2p_mode = ('Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
+                        'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
             targetfn='pso.conv-%d.sam2p-np.pdf' % obj_num,
-            # We specify -s here to explicitly exclude SF_Opaque for single-color
-            # images.
-            # !! do we need /ImageMask parsing if we exclude SF_Mask here as well?
-            # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:Transparent2:Transparent4:Transparent8
-            # !! reintroduce Opaque by hand (combine /FlateEncode and /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in empty_page.pdf from !)
-            cmd_pattern='sam2p -pdf:2 -c zip:1:9 -s ' + ShellQuote(sam2p_mode) + ' -- %(sourcefnq)s %(targetfnq)s',
+            # We specify -s here to explicitly exclude SF_Opaque for
+            # single-color images.
+            # !! do we need /ImageMask parsing if we exclude SF_Mask here as
+            #    well?
+            # Original sam2p order: Opaque:Transparent:Gray1:Indexed1:Mask:
+            #   Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:
+            #   Rgb8:Transparent2:Transparent4:Transparent8
+            # !! reintroduce Opaque by hand (combine /FlateEncode and
+            #    /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in
+            #    empty_page.pdf from !)
+            cmd_pattern=('sam2p -pdf:2 -c zip:1:9 -s ' +
+                          ShellQuote(sam2p_mode) +
+                          ' -- %(sourcefnq)s %(targetfnq)s'),
             cmd_name='sam2p_np'))
 
         image_tuple = obj_images[-1][1].ToDataTuple()
@@ -6241,7 +6430,8 @@ cvx bind /LoadCff exch def
           obj_images.append(self.ConvertImage(
               sourcefn=rendered_image_file_name,
               targetfn='pso.conv-%d.sam2p-pr.png' % obj_num,
-              cmd_pattern='sam2p ' + sam2p_s_flags+ '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s',
+              cmd_pattern=('sam2p ' + sam2p_s_flags +
+                           '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
               cmd_name='sam2p_pr'))
           if (use_jbig2 and obj_images[-1][1].bpc == 1 and
               obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
@@ -6250,7 +6440,8 @@ cvx bind /LoadCff exch def
             if obj_images[-1][1].color_type != 'gray':
               # This changes obj_images[-1].file_name as well.
               obj_images[-1][1].SavePng(
-                  file_name='pso.conv-%d.gray.png' % obj_num, do_force_gray=True)
+                  file_name='pso.conv-%d.gray.png' % obj_num,
+                  do_force_gray=True)
             obj_images[-1][1].idat = self.ConvertImage(
                 sourcefn=obj_images[-1][1].file_name,
                 targetfn='pso.conv-%d.jbig2' % obj_num,
@@ -6288,14 +6479,16 @@ cvx bind /LoadCff exch def
       for cmd_name, image_data in obj_images:
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
           # We can't use this optimized image, so we skip it.
-          if cmd_name != 'gs':  # no warning for what was rendered by Ghostscript
+          # Mo warning for what was rendered by Ghostscript.
+          if cmd_name != 'gs':
             print >>sys.stderr, (
                 'warning: skipping bpc=%s color_type=%s file_name=%r '
                 'for image XObject %s because of source /ImageMask' %
                 (image_data.bpc, image_data.color_type, image_data.file_name,
                  obj_num))
           continue
-        if obj_num in force_grayscale_obj_nums and image_data.color_type != 'gray':
+        if (obj_num in force_grayscale_obj_nums and
+            image_data.color_type != 'gray'):
           if cmd_name != 'gs':
             print >>sys.stderr, (
                 'warning: skipping bpc=%s color_type=%s file_name=%r '
@@ -6322,6 +6515,7 @@ cvx bind /LoadCff exch def
       # our own comparator.
       def CompareStr(a, b):
         return (a < b and -1) or (a > b and 1) or 0
+
       def CompareObjInfo(a, b):
         # Compare first by byte size, then by command name.
         return a[0].__cmp__(b[0]) or CompareStr(a[1], b[1])
@@ -6557,7 +6751,7 @@ cvx bind /LoadCff exch def
           return 'null'
         else:
           new_obj_num = new_class[0][0]
-          return '%s 0 R'  % obj_num_map.get(new_obj_num, new_obj_num)
+          return '%s 0 R' % obj_num_map.get(new_obj_num, new_obj_num)
 
       head = PdfObj.PDF_SIMPLE_REF_RE.sub(ReplacementRef, head_minus)
       assert not refs_to_rev
@@ -6577,7 +6771,7 @@ cvx bind /LoadCff exch def
 
   def DecompressFlate(self):
     """Decompress all stream data containing /FlateDecode filter.
-    
+
     This usually greatly increases the size of the PDF file, but it's a useful
     debug tool.
     """
@@ -6634,9 +6828,9 @@ cvx bind /LoadCff exch def
     This method overrides the old contents of self from data.
 
     This method is a bit smarter (and more relaxed) than Load, because it
-    can parse a PDF with a cross reference stream (/Type/XRef; instead of a cross
-    reference table). It doesn't understand the cross reference stream,
-    however. It also doesn't decode object streams (/Type/ObjStm).
+    can parse a PDF with a cross reference stream (/Type/XRef; instead of a
+    cross reference table). It doesn't understand the cross reference
+    stream, however. It also doesn't decode object streams (/Type/ObjStm).
 
     Args:
       data: String containing PDF file data.
@@ -6790,8 +6984,9 @@ cvx bind /LoadCff exch def
       i = end_ofs_out[0]
       setitem_callback(obj_num, pdf_obj, i)  # self.objs[obj_num] = pdf_obj
 
-    # !! add support for `/Length X 0 R' by parsing the xref table first (for testing: lme_v6.pdf).
-    # !! test this
+    # !! TODO(pts): Add support for `/Length X 0 R' by parsing the xref table
+    #    first (for testing: lme_v6.pdf).
+    # !! TODO(pts): Test this.
     return self
 
   @classmethod
@@ -7037,9 +7232,9 @@ cvx bind /LoadCff exch def
         obj_num_by_ofs_out=obj_num_by_in_ofs)
     if not is_flate_ok:
       pdf.DecompressFlate()
-    # in_offsets[-1] is the offset of `startxref', in_offsets[-2] is usually the
-    # offset of the /Type/XRef trailer_obj.
-    # Since both pdf and pdf_objs are local, it's OK to modify objects in place.
+    # in_offsets[-1] is the offset of `startxref', in_offsets[-2] is usually
+    # the offset of the /Type/XRef trailer_obj. Since both pdf and pdf_objs
+    # are local, it's OK to modify objects in place.
     pdf_objs = pdf.objs
     trailer_obj = pdf.trailer  # An object.
     if do_generate_xref_stream:
@@ -7122,7 +7317,8 @@ cvx bind /LoadCff exch def
             has_objstm_obj = True
             if not do_generate_object_stream:
               objstm_objs[obj_num] = pdf_obj
-              continue  # Don't emit the object, don't add it to out_ofs_by_num.
+              # Don't emit the object, don't add it to out_ofs_by_num.
+              continue
 
       while output_size_idx < len(output):
         output_size += len(output[output_size_idx])
@@ -7155,8 +7351,8 @@ cvx bind /LoadCff exch def
 
     # Parse the xref stream and modify offsets in it.
     #
-    # Doing the parsing (i.e. the read-only part) earlier wouldn't help us much,
-    # because its only benefit would be that we could forget /Type/ObjStm
+    # Doing the parsing (i.e. the read-only part) earlier wouldn't help us
+    # much, because its only benefit would be that we could forget /Type/ObjStm
     # objects unreferenced from the xref stream earlier -- but Multivalent
     # doesn't emit such unreferenced objects.
     w0, w1, w2, unused_index, xref_data = trailer_obj.GetXrefStream()
@@ -7196,10 +7392,10 @@ cvx bind /LoadCff exch def
         #
         fx = in_ofs_by_num[ref_obj_num]
         # TODO(pts): Make the error work for w1 > 8 ('Q' is max 8)
-        assert  fx == f1, (
-             'expected %d (%r), read %d (%r) in xref stream at %d' %
-             (fx, struct.pack('>Q', fx)[-w1:],
-              f1, struct.pack('>Q', f1)[-w1:], i - w2 - w1))
+        assert fx == f1, (
+            'expected %d (%r), read %d (%r) in xref stream at %d' %
+            (fx, struct.pack('>Q', fx)[-w1:],
+             f1, struct.pack('>Q', f1)[-w1:], i - w2 - w1))
         fo = out_ofs_by_num.get(ref_obj_num, 0)
         if xref_out:
           if f1 != fo:  # Update the object offset in the xref stream.
@@ -7229,7 +7425,7 @@ cvx bind /LoadCff exch def
       # inputs. We generate an object stream anyway, because it will make the
       # output file smaller.
       #
-      # TODO(pts): Don't do this if the output file becomes larger (hello.pdf?).
+      # TODO(pts): Don't do this if the output file becomes larger (hello.pdf).
       #
       # No need to log anything, the `generated object stream' will be logged
       # anyway.
@@ -7289,8 +7485,8 @@ cvx bind /LoadCff exch def
             objstm_items = objstm_cache[f1] = compressed_obj_headbufs
           obj_head = str(objstm_items[f2])
           assert obj_head == obj_head.strip(), (
-               'Unexpected whitespace around compressed object '
-               'from Multivalent: %r' % obj_head)
+              'Unexpected whitespace around compressed object '
+              'from Multivalent: %r' % obj_head)
           compressed_pdf_obj = PdfObj(None)
           compressed_pdf_obj.head = obj_head
           while output_size_idx < len(output):
@@ -7309,8 +7505,8 @@ cvx bind /LoadCff exch def
       if do_generate_xref_stream:
         out_trailer_obj_num = max(out_ofs_by_num) + 1
         if not do_generate_object_stream and has_objstm_obj:
-          # We generate a completely new xref stream, because we have to include
-          # objects formerly in object streams.
+          # We generate a completely new xref stream, because we have to
+          # include objects formerly in object streams.
           xref_out = None  # Save memory.
           trailer_obj.stream = None  # For GenerateXrefStream.
           # GenerateXrefStream() also sets or clears /Type, /W, /Filter,
@@ -7419,7 +7615,7 @@ cvx bind /LoadCff exch def
     if not isinstance(multivalent_java, str):
       raise TypeError
     assert multivalent_java
-    
+
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
     in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
@@ -7512,7 +7708,6 @@ cvx bind /LoadCff exch def
     assert out_data_size, (
         'Multivalent generated empty output (see its error above)')
     return data, (in_pdf_tmp_file_name, out_pdf_tmp_file_name)
-
 
   def Save(self, file_name, multivalent_java,
            do_update_file_meta,
@@ -7674,7 +7869,7 @@ def main(argv):
     match = re.search(
         r'\npdfsizeopt[.]py\r?\nfile\r?\n(?:(?:[^\r\n]*\r?\n){7})??(\d+)\r?\n',
         open(os.path.join(GetDir(__file__), '.svn', 'entries'), 'rb'
-            ).read())
+        ).read())
     if match:
       rev = int(match.group(1))
     else:
@@ -7830,7 +8025,7 @@ def main(argv):
   if not use_multivalent:
     multivalent_java = None
   elif GetCompressExe() is not None:
-    multivalent_java = '#multivalent_compress'  # Any true string value will do.
+    multivalent_java = '#multivalent_compress'  # Any true str value will do.
   elif avian_pathname is not None:
     multivalent_java = avian_pathname
   else:
@@ -7838,7 +8033,9 @@ def main(argv):
     if multivalent_java is None:
       multivalent_java = FindOnPath('avian')
       if multivalent_java is None:
-        print >>sys.stderr, 'error: Java needed by Multivalent not found. Specify --use-multivalent=no or install Java (JRE) or Avian'
+        print >>sys.stderr, (
+            'error: Java needed by Multivalent not found. '
+            'Specify --use-multivalent=no or install Java (JRE) or Avian')
         sys.exit(2)
   if multivalent_java is not None:
     print >>sys.stderr, 'info: using Java for Multivalent: ' + multivalent_java
@@ -7866,8 +8063,8 @@ def main(argv):
     pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
     may_obj_heads_contain_comments = False  # OptimizeObj removes comments.
   if do_decompress_flate:
-    # This usually greatly increases the size of the PDF file, but it's a useful
-    # debug tool.
+    # This usually greatly increases the size of the PDF file, but it's a
+    # useful debug tool.
     pdf.DecompressFlate()
   pdf.Save(
       output_file_name,
