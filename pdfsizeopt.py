@@ -5279,7 +5279,7 @@ cvx bind /LoadCff exch def
     output.append('(Type1CParser: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     print >>sys.stderr, (
-        'info: writing Type1CParser (%s font bytes) to: %s'
+        'info: writing Type1CParser (%s font bytes) to: %s' %
         (len(output_str) - output_prefix_len, ps_tmp_file_name))
     f = open(ps_tmp_file_name, 'wb')
     try:
