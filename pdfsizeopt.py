@@ -3681,7 +3681,7 @@ class PdfData(object):
         self.trailer.Set('Prev', None)
         if 'xref' in obj_starts:
           last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
-      self.CheckNotEncrypted(self.trailer)  # Also raised earlier.
+      self.CheckNotEncrypted(trailer_obj=self.trailer)  # Also raised earlier.
     except PdfFileEncryptedError:
       # TODO(pts): Add decrypted input support.
       raise NotImplementedError(
@@ -3749,7 +3749,7 @@ class PdfData(object):
     return self
 
   @classmethod
-  def CheckNotEncrypted(cls, trailer_obj, file_name):
+  def CheckNotEncrypted(cls, trailer_obj):
     """Raises an exception if the PDF file is encrypted."""
     if trailer_obj.Get('Encrypt') is not None:
       raise PdfFileEncryptedError
@@ -3800,7 +3800,7 @@ class PdfData(object):
         xref_obj = PdfObj(data, start=xref_ofs, file_ofs=xref_ofs)
       except PdfTokenParseError, e:
         raise PdfXrefStreamError('parse xref obj %d: %s' % (xref_obj_num, e))
-      cls.CheckNotEncrypted(trailer_obj=xref_obj, file_name=None)
+      cls.CheckNotEncrypted(trailer_obj=xref_obj)
 
       # Parse the xref stream data.
       #
