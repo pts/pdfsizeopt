@@ -203,11 +203,8 @@ def FindOnPath(file_name):
     if not item:
       item = '.'
     path_name = os.path.join(item, file_name)
-    try:
-      os.stat(path_name)
+    if os.path.exists(path_name):
       return path_name
-    except OSError:
-      pass
   return None
 
 
@@ -595,8 +592,8 @@ class PdfObj(object):
           stream_end_idx = stream_start_idx + stream_length
           # Inline the reference to /Length
           self._head = '%s/Length %d%s' % (
-              self._head[:match.start(0)], stream_length,
-              self._head[match.end(0):])
+              self._head[:match.start()], stream_length,
+              self._head[match.end():])
         endstream_str = other[stream_end_idx : stream_end_idx + 30]
         match = re.match(  # TODO(pts): Create objs for regexps.
             r'[\0\t\n\r\f ]*endstream[\0\t\n\r\f ]+'
@@ -2653,10 +2650,10 @@ class PdfObj(object):
   @classmethod
   def ParseCffHeader(cls, data):
     """Parse the (single) font name and the top DICT of a CFF font."""
-    # TODO(pts): Test this.
+    # TODO(pts): Test this. It has never been used.
     # !! unify this with FixFontNameInType1C.
     assert ord(data[2]) >= 4
-    i0 = i = ord(data[2])  # skip header
+    i = ord(data[2])  # skip header
     count, off_size = struct.unpack('>HB', data[i : i + 3])
     assert count == 1, 'Type1C name index count should be 1, got ' % count
     if off_size == 1:
@@ -2687,7 +2684,8 @@ class PdfObj(object):
     assert offset2 > offset1
     i += offset1 - 1
     j = i + offset2 - offset1
-    cff_dict = self.ParseCffDict(data=data, start=i, end=j)
+    # TODO(pts): Test this call.
+    cff_dict = cls.ParseCffDict(data=data, start=i, end=j)
     return (data[:ord(data[2])], font_name, cff_dict, data[j:])
 
   @classmethod
@@ -3530,7 +3528,6 @@ class ImageData(object):
     signature = f.read(8)
     assert signature == '\x89PNG\r\n\x1A\n', 'bad PNG/PDF signature in file'
     self.Clear()
-    ihdr = None
     idats = []
     need_plte = False
     while True:
@@ -4039,7 +4036,7 @@ class PdfData(object):
           break
         obj_num = int(match.group(1))
         obj_count = int(match.group(2))
-        xref_ofs += match.end(0)
+        xref_ofs += match.end()
         while obj_count > 0:
           match = re.match(
               r'(\d{10})\s(\d{5})\s([nf])\s\s', data[xref_ofs : xref_ofs + 20])
@@ -4132,19 +4129,19 @@ class PdfData(object):
           if not do_ignore_generation_numbers:
             raise NotImplementedError(
                 'generational objects (in %s %s n) not supported at %d' %
-                (match.group(1), match.group(2), xref_ofs))
+                (match.group(1), match.group(2), match.start() + 1))
           has_generational_objs = True
         assert prev_obj_num not in obj_starts, (
             'duplicate obj %d' % prev_obj_num)
         # Skip over '\n'
-        obj_starts[prev_obj_num] = match.start(0) + 1
+        obj_starts[prev_obj_num] = match.start() + 1
       else:
         prev_obj_num = 'trailer'
         # Allow multiple trailers. Keep the last one. This heuristic works
         # for http://code.google.com/p/pdfsizeopt/issues/detail?id=25 .
         # TODO(pts): Test multiple trailers with: pdf.a9p4/5176.CFF.a9p4.pdf
         # Skip over '\n'
-        obj_starts[prev_obj_num] = match.start(0) + 1
+        obj_starts[prev_obj_num] = match.start() + 1
 
     # TODO(pts): Learn to parse no trailer in PDF-1.5
     # (e.g. pdf_reference_1-7-o.pdf)
@@ -5051,9 +5048,7 @@ class PdfData(object):
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
       assert 0, 'Type1CConverter failed (status)'
-    try:
-      stat = os.stat(pdf_tmp_file_name)
-    except OSError:
+    if not os.path.isfile(pdf_tmp_file_name):
       print >>sys.stderr, 'info: Type1CConverter has not created output: ' % (
           pdf_tmp_file_name)
       assert 0, 'Type1CConverter failed (no output)'
@@ -5299,9 +5294,7 @@ cvx bind /LoadCff exch def
     if status:
       print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
       assert 0, 'Type1CParser failed (status)'
-    try:
-      stat = os.stat(data_tmp_file_name)
-    except OSError:
+    if not os.path.isfile(data_tmp_file_name):
       print >>sys.stderr, 'info: Type1CParser has not created output: ' % (
           data_tmp_file_name)
       assert 0, 'Type1CParser failed (no output)'
@@ -5340,9 +5333,9 @@ cvx bind /LoadCff exch def
       assert match
       font_file_obj_num = int(match.group(1))
       new_obj_head = (
-          obj.head[:match.start(0)] +
+          obj.head[:match.start()] +
           '/FontFile3 %d 0 R' % font_file_obj_num +
-          obj.head[match.end(0):])
+          obj.head[match.end():])
       old_size = self.objs[font_file_obj_num].size + obj.size
       new_size = type1c_obj.size + (
           obj.size + len(new_obj_head) - len(obj.head))
@@ -5804,9 +5797,7 @@ cvx bind /LoadCff exch def
     if status:
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
       assert 0, 'Type1CGenerator failed (status)'
-    try:
-      stat = os.stat(pdf_tmp_file_name)
-    except OSError:
+    if not os.path.isfile(pdf_tmp_file_name):
       print >>sys.stderr, 'info: Type1CGenerator has not created output: ' % (
           pdf_tmp_file_name)
       assert 0, 'Type1CGenerator failed (no output)'
@@ -6103,11 +6094,9 @@ cvx bind /LoadCff exch def
     for obj_num in sorted_objs:
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
-      try:
-        stat = os.stat(png_tmp_file_name)
-      except OSError:
+      if not os.path.isfile(png_tmp_file_name):
         print >>sys.stderr, 'info: ImageRenderer has not created output: ' % (
-            pdf_tmp_file_name)
+            png_tmp_file_name)
         assert 0, 'ImageRenderer failed (missing output PNG)'
       png_files[obj_num] = png_tmp_file_name
 
@@ -6679,7 +6668,6 @@ cvx bind /LoadCff exch def
           for i in xrange(1, len(eqclass)):
             descb = eqclass[i]
             refs_tob = descb[3]
-            has_ne = False
             j = 0
             while (j < len(refs_to) and
                    eqclass_of.get(refs_to[j]) is eqclass_of.get(refs_tob[j])):
@@ -7017,7 +7005,6 @@ cvx bind /LoadCff exch def
     offsets_idx = [0]
     obj_num_by_ofs_out = {}
     trailer_obj_num = [None]
-    trailer_size = [None]
     # All values are in bytes.
     stats = {
         'image_objs': 0,
@@ -7285,7 +7272,6 @@ cvx bind /LoadCff exch def
     output.extend(('%PDF-', version, '\n%\xD0\xD4\xC5\xD0\n',))
     output_size = 0
     output_size_idx = 0
-    total_padding_size = 0
     out_ofs_by_num = {}
 
     in_ofs_by_num = {}
@@ -7456,7 +7442,10 @@ cvx bind /LoadCff exch def
       pdf.version = version
       pdf.objs = pdf_objs
       pdf.trailer = trailer_obj
-      del trailer_obj, pdf_objs  # Save memory and prevent further use.
+      # Save memory. `del trailer_obj' would confuse pyflakes.
+      trailer_obj = None
+      # Save memory. `del pdf_objs' would confuse pyflakes.
+      pdf_objs = None
       # Discard everything written so far, because some objects must be moved
       # to object streams. Too bad we can't discard the time and memory wasted.
       del output[:]
@@ -7701,9 +7690,7 @@ cvx bind /LoadCff exch def
     if status:
       print >>sys.stderr, 'info: Multivalent failed, status=0x%x' % status
       assert 0, 'Multivalent failed (status)'
-    try:
-      stat = os.stat(out_pdf_tmp_file_name)
-    except OSError:
+    if not os.path.isfile(out_pdf_tmp_file_name):
       print >>sys.stderr, 'info: Multivalent has not created output: ' % (
           out_pdf_tmp_file_name)
       assert 0, 'Multivalent failed (no output)'
