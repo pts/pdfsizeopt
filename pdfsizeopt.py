@@ -32,9 +32,9 @@ about the same.
 This scripts needs a Unix system, with Ghostscript and pdftops (from xpdf),
 sam2p and pngout. Future versions may relax the system requirements.
 
-This script doesn't optimize the cross reference table (using cross reference
-streams in PDF1.5) or the serialization of objects it doesn't modify. Use
-tool.pdf.Compress in Multivaent.jar from http://multivalent.sf.net/ for that.
+This script doesn't optimize the serialization of objects it doesn't modify.
+Use tool.pdf.Compress in Multivalent.jar from http://multivalent.sf.net/ for
+that. This script runs Multivalent unless --use-multivalent=no is specified.
 """
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
@@ -45,6 +45,10 @@ __author__ = 'pts@fazekas.hu (Peter Szabo)'
 # We don't want to have a '$' + 'Id' in this file, because downloading the
 # script from http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
 # won't expand that to a useful version number.
+
+__pychecker__ = (
+    'maxlines=999 maxlocals=99 unusednames=self,cls maxreturns=99 '
+    'maxbranches=9999')
 
 import array
 import getopt
@@ -138,7 +142,7 @@ def GetGsCommand():
               if gs_cmd is not None:
                 break
       if not data or gs_cmd is None:
-        assert 0, 'Could not find a working Ghostscript.'
+        assert False, 'Could not find a working Ghostscript.'
     else:
       gs_cmd = 'gs'
   if data is None:
@@ -1831,8 +1835,8 @@ class PdfObj(object):
         return False
     if self.Get('Subtype') != '/Image':
       return False
-    filter = self.Get('Filter')
-    return isinstance(filter, str) and filter[0] in '[/'
+    filter_value = self.Get('Filter')
+    return isinstance(filter_value, str) and filter_value[0] in '[/'
 
   @classmethod
   def IsGrayColorSpace(cls, colorspace):
@@ -2327,22 +2331,23 @@ class PdfObj(object):
       A string containing the stream data in this obj uncompressed.
     """
     assert self.stream is not None
-    filter = self.Get('Filter')
-    if filter is None:
+    filter_value = self.Get('Filter')
+    if filter_value is None:
       return self.stream
     decodeparms = self.Get('DecodeParms') or ''
     if objs is None:
       objs = {}
-    filter, _ = self.ResolveReferences(filter, objs)
+    filter_value, _ = self.ResolveReferences(filter_value, objs)
     decodeparms, _ = self.ResolveReferences(decodeparms, objs)
-    if ((filter == '/FlateDecode' or
-        ('/FlateDecode' in filter and
-         self.FLATEDECODE_ARY1_RE.match(filter))) and
+    if ((filter_value == '/FlateDecode' or
+        ('/FlateDecode' in filter_value and
+         self.FLATEDECODE_ARY1_RE.match(filter_value))) and
         '/Predictor' not in decodeparms):
       return PermissiveZlibDecompress(self.stream)
     is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
     if not is_gs_ok:
-      raise FilterNotImplementedError('filter not implemented: ' + filter)
+      raise FilterNotImplementedError(
+          'filter not implemented: ' + filter_value)
     ps_file_name = None
     tmp_file_name = 'pso.filter.tmp.bin'
     f = open(tmp_file_name, 'wb')
@@ -2577,7 +2582,7 @@ class PdfObj(object):
         operands = []
       else:
         # TODO(pts): Raise proper exception here and above.
-        assert 0, 'invalid CFF DICT operand/operator: %s' % b0
+        assert False, 'invalid CFF DICT operand/operator: %s' % b0
 
     # !!
     #if operands and isinstance(operands[-1], int):
@@ -2638,9 +2643,9 @@ class PdfObj(object):
           elif ~0x7fffffff <= operand <= 0x7fffffff:
             output.append(chr(29) + struct.pack('>L', operand & 0xffffffff))
           else:
-            assert 0, 'CFF DICT integer operand %r out of range' % operand
+            assert False, 'CFF DICT integer operand %r out of range' % operand
         else:
-          assert 0, 'invalid CFF DICT operand %r' % (operand,)
+          assert False, 'invalid CFF DICT operand %r' % (operand,)
       if operator >= 12000:
         output.append('\014%c' % (operator - 12000))
       else:
@@ -2730,7 +2735,7 @@ class PdfObj(object):
       i += 7
       offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
     else:
-      assert 0, 'unsupported off_size=%d' % off_size
+      assert False, 'unsupported off_size=%d' % off_size
     assert offset1 == 1  # TODO(pts): Shrink this to 1 if it was not 1.
     assert offset2 > offset1
     i += offset1 - 1
@@ -2911,7 +2916,7 @@ class PdfObj(object):
         assert (off_size >= 4 or
                 (1 << (off_size << 3)) > len(cff_dict_data) + 1), (
             'new CFF dict too large, length=%d off_size=%d' % (
-                len(cff_dict_data, off_size)))
+                len(cff_dict_data), off_size))
         output.append(self.SerializeCffIndexHeader(
             off_size, 1, len(cff_dict_data) + 1))
         output.append(cff_dict_data)
@@ -3155,7 +3160,7 @@ class ImageData(object):
       return '[/Indexed/DeviceRGB %d%s]' % (
           len(self.plte) / 3 - 1, PdfObj.EscapeString(self.plte))
     else:
-      assert 0, 'cannot convert to PDF color space'
+      assert False, 'cannot convert to PDF color space'
 
   def GetPdfImageData(self):
     """Return a dictionary useful as a PDF image."""
@@ -3238,9 +3243,9 @@ class ImageData(object):
         elif decode == '[1 0]':
           pdf_obj.Set('Decode', None)
         else:
-          assert 0, 'unknown decode value in PDF: %r' % decode
+          assert False, 'unknown decode value in PDF: %r' % decode
       else:
-        assert 0, 'unknown decode value: %r' % image_decode
+        assert False, 'unknown decode value: %r' % image_decode
     else:
       pdf_obj.Set('BitsPerComponent', pdf_image_data['BitsPerComponent'])
       pdf_obj.Set('ColorSpace', pdf_image_data['ColorSpace'])
@@ -3361,7 +3366,7 @@ class ImageData(object):
       elif signature.startswith('\x89PNG\r\n\x1A\n'):
         self.LoadPng(f)
       else:
-        assert 0, 'bad PNG/PDF signature in file'
+        assert False, 'bad PNG/PDF signature in file'
     finally:
       f.close()
     self.file_name = file_name
@@ -3444,8 +3449,8 @@ class ImageData(object):
     assert obj.Get('Subtype') == '/Image'
     assert isinstance(obj.stream, str)
     idat = obj.stream
-    filter = obj.Get('Filter')
-    if filter not in ('/FlateDecode', None):
+    filter_value = obj.Get('Filter')
+    if filter_value not in ('/FlateDecode', None):
       raise FormatUnsupported('image in PDF is not ZIP-compressed')
     width = int(obj.Get('Width'))
     height = int(obj.Get('Height'))
@@ -3471,7 +3476,7 @@ class ImageData(object):
     predictor = decodeparms.Get('Predictor')
     assert predictor is None or isinstance(predictor, int), (
         'expected integer predictor, got %r' % predictor)
-    if filter is None:
+    if filter_value is None:
       compression = 'none'
       # We ignore the predictor setting here.
       if do_zip:
@@ -3486,7 +3491,7 @@ class ImageData(object):
       # TODO(pts): Test this.
       compression = 'zip-png'
     else:
-      assert 0, 'expected valid predictor, got %r' % predictor
+      assert False, 'expected valid predictor, got %r' % predictor
     if compression in ('zip-tiff', 'zip-png'):
       pr_bpc_ok = [obj.Get('BitsPerComponent')]
       if pr_bpc_ok[-1] == 8:
@@ -3588,7 +3593,7 @@ class ImageData(object):
         elif chunk_type == 'IEND':
           break  # Don't read till EOF.
         else:
-          assert 0, 'not ignored chunk of type %r' % chunk_type
+          assert False, 'not ignored chunk of type %r' % chunk_type
     self.idat = ''.join(idats)
     assert not need_plte, 'missing PLTE chunk'
     self.compression = 'zip-png'
@@ -4339,7 +4344,7 @@ class PdfData(object):
         i = 8 - max_ofs_size
         data += ''.join(struct.pack('>Q', ofs)[i:] for ofs in ofs_list)
       extra_width = 0
-      #assert 0, (len(data), max_ofs_size, extra_width)
+      #assert False, (len(data), max_ofs_size, extra_width)
     trailer_obj.SetStreamAndCompress(
         data, predictor_width=(max_ofs_size + extra_width),
         is_flate_ok=is_flate_ok)
@@ -4496,9 +4501,9 @@ class PdfData(object):
         assert pdf_obj.Get('FilteR') is None
         assert pdf_obj.Get('DecodeParmS') is None
         pdf_obj.Set('Subtype', 'ImagE')
-        filter = pdf_obj.Get('Filter')
-        if filter is not None:
-          pdf_obj.Set('FilteR', filter)
+        filter_value = pdf_obj.Get('Filter')
+        if filter_value is not None:
+          pdf_obj.Set('FilteR', filter_value)
           pdf_obj.Set('Filter', None)
         decodeparms = pdf_obj.Get('DecodeParms')
         if decodeparms is not None:
@@ -5047,11 +5052,11 @@ class PdfData(object):
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
-      assert 0, 'Type1CConverter failed (status)'
+      assert False, 'Type1CConverter failed (status)'
     if not os.path.isfile(pdf_tmp_file_name):
-      print >>sys.stderr, 'info: Type1CConverter has not created output: ' % (
+      print >>sys.stderr, 'info: Type1CConverter has not created output: %s' % (
           pdf_tmp_file_name)
-      assert 0, 'Type1CConverter failed (no output)'
+      assert False, 'Type1CConverter failed (no output)'
     pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
     type1c_objs = pdf.GetFonts(
@@ -5293,11 +5298,11 @@ cvx bind /LoadCff exch def
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
-      assert 0, 'Type1CParser failed (status)'
+      assert False, 'Type1CParser failed (status)'
     if not os.path.isfile(data_tmp_file_name):
-      print >>sys.stderr, 'info: Type1CParser has not created output: ' % (
+      print >>sys.stderr, 'info: Type1CParser has not created output: %s' % (
           data_tmp_file_name)
-      assert 0, 'Type1CParser failed (no output)'
+      assert False, 'Type1CParser failed (no output)'
     # ps_tmp_file_name is usually about 5 times as large as the input of
     # Type1CParse (pdf_tmp_file_name)
     os.remove(ps_tmp_file_name)
@@ -5796,11 +5801,11 @@ cvx bind /LoadCff exch def
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
-      assert 0, 'Type1CGenerator failed (status)'
+      assert False, 'Type1CGenerator failed (status)'
     if not os.path.isfile(pdf_tmp_file_name):
-      print >>sys.stderr, 'info: Type1CGenerator has not created output: ' % (
+      print >>sys.stderr, 'info: Type1CGenerator has not created output: %s' % (
           pdf_tmp_file_name)
-      assert 0, 'Type1CGenerator failed (no output)'
+      assert False, 'Type1CGenerator failed (no output)'
     pdf = PdfData().Load(pdf_tmp_file_name)
     # TODO(pts): Better error reporting if the font name is wrong.
     loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
@@ -5876,7 +5881,7 @@ cvx bind /LoadCff exch def
       return None
     if status:
       print >>sys.stderr, 'info: %s failed, status=0x%x' % (cmd_name, status)
-      assert 0, '%s failed (status)' % cmd_name
+      assert False, '%s failed (status)' % cmd_name
     assert os.path.exists(targetfn), (
         '%s has not created the output image %r' % (cmd_name, targetfn))
     if do_just_read:
@@ -6085,7 +6090,7 @@ cvx bind /LoadCff exch def
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
-      assert 0, 'ImageRenderer failed (status)'
+      assert False, 'ImageRenderer failed (status)'
     assert not os.path.exists(png_tmp_file_pattern % (len(objs) + 1)), (
         'ImageRenderer created too many PNGs')
 
@@ -6095,9 +6100,9 @@ cvx bind /LoadCff exch def
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
       if not os.path.isfile(png_tmp_file_name):
-        print >>sys.stderr, 'info: ImageRenderer has not created output: ' % (
+        print >>sys.stderr, 'info: ImageRenderer has not created output: %s' % (
             png_tmp_file_name)
-        assert 0, 'ImageRenderer failed (missing output PNG)'
+        assert False, 'ImageRenderer failed (missing output PNG)'
       png_files[obj_num] = png_tmp_file_name
 
     return png_files
@@ -6129,9 +6134,9 @@ cvx bind /LoadCff exch def
           not obj.stream is not None or
           obj.Get('Subtype') != '/Image'):
         continue
-      filter, filter_has_changed = PdfObj.ResolveReferences(
+      filter_value, filter_has_changed = PdfObj.ResolveReferences(
           obj.Get('Filter'), objs=self.objs)
-      filter2 = (filter or '').replace(']', ' ]') + ' '
+      filter2 = (filter_value or '').replace(']', ' ]') + ' '
 
       smask = obj.Get('SMask')
       if isinstance(smask, str):
@@ -6221,7 +6226,7 @@ cvx bind /LoadCff exch def
       if filter_has_changed:
         if obj is obj0:
           obj = PdfObj(obj)
-        obj.Set('Filter', filter)
+        obj.Set('Filter', filter_value)
       if bpc_has_changed:
         if obj is obj0:
           obj = PdfObj(obj)
@@ -6781,8 +6786,8 @@ cvx bind /LoadCff exch def
     uncompress_count = 0
     for pdf_obj in self.objs.itervalues():
       if '/FlateDecode' in pdf_obj.head:
-        filter = pdf_obj.Get('Filter')
-        if isinstance(filter, str) and '/FlateDecode' in filter:
+        filter_value = pdf_obj.Get('Filter')
+        if isinstance(filter_value, str) and '/FlateDecode' in filter_value:
           pdf_obj.stream = pdf_obj.GetUncompressedStream(self.objs)
           pdf_obj.Set('Filter', None)
           pdf_obj.Set('DecodeParms', None)
@@ -7283,7 +7288,7 @@ cvx bind /LoadCff exch def
       if obj_num < 1:
         raise PdfTokenParseError
       in_ofs_by_num[obj_num] = obj_ofs
-    #assert 0, in_ofs_by_num
+    #assert False, in_ofs_by_num
 
     # Process individual objects emitted by Multivalent.
     objstm_objs = {}  # Map object numbers to PdfObj of /Type/ObjStm.
@@ -7658,7 +7663,7 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, (
           'error: Multivalent.jar not found. Make sure it is on the $PATH, '
           'or it is one of the files on the $CLASSPATH.')
-      assert 0, 'Multivalent.jar not found, see above'
+      assert False, 'Multivalent.jar not found, see above'
     if multivalent_jar is not None:
       assert os.pathsep not in multivalent_jar  # $CLASSPATH separator
 
@@ -7689,11 +7694,11 @@ cvx bind /LoadCff exch def
 
     if status:
       print >>sys.stderr, 'info: Multivalent failed, status=0x%x' % status
-      assert 0, 'Multivalent failed (status)'
+      assert False, 'Multivalent failed (status)'
     if not os.path.isfile(out_pdf_tmp_file_name):
-      print >>sys.stderr, 'info: Multivalent has not created output: ' % (
+      print >>sys.stderr, 'info: Multivalent has not created output: %s' % (
           out_pdf_tmp_file_name)
-      assert 0, 'Multivalent failed (no output)'
+      assert False, 'Multivalent failed (no output)'
 
     f = open(out_pdf_tmp_file_name, 'rb')
     try:
@@ -7988,7 +7993,7 @@ def main(argv):
       elif key == '--version':
         sys.exit(0)  # printed above
       else:
-        assert 0, 'unknown option %s' % key
+        assert False, 'unknown option %s' % key
 
     if mode == 'stats':
       if not args:
