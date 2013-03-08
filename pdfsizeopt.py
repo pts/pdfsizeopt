@@ -2371,7 +2371,7 @@ class PdfObj(object):
         '/o(%%stdout)(w)file def/s 4096 string def '
         '{i s readstring exch o exch writestring not{exit}if}loop '
         'o closefile quit' %
-        (filter, decodeparms_pair))
+        (filter_value, decodeparms_pair))
     if sys.platform.startswith('win'):
       # TODO(pts): If tmp_file_name contains funny characters, Ghostscript
       # will fails with data == ''. Fix it (possibly not use -s...="..." on
@@ -2393,7 +2393,7 @@ class PdfObj(object):
            ShellQuote(gs_code)))
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
-        '/Filter%s%s' % (len(self.stream), filter, decodeparms_pair))
+        '/Filter%s%s' % (len(self.stream), filter_value, decodeparms_pair))
     f = os.popen(gs_defilter_cmd, 'rb')
     # On Windows, data would start with 'Error: ' on a Ghostscript error, and
     # data will be '' if gswin32c is not found.
