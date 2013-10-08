@@ -192,7 +192,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '< <')
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '> >')
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[ >>')
-    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '[ (hel\\)lo\\n\\bw(or)ld) <');
+    self.assertRaises(pdfsizeopt.PdfTokenTruncated, e,
+                      '[ (hel\\)lo\\n\\bw(or)ld) <')
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, "<\n3\t1\r4f5C5")
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, "<\n3\t1\r4f5C5]>")
     self.assertRaises(pdfsizeopt.PdfTokenTruncated, e, '')
@@ -290,7 +291,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'S': '<3c3c5d3e3e5b>'}, e('<</S  (<<]>>[)\n>>'))
     self.assertEqual({'S': '<deadface50>'}, e('<</S<dEA Dfa CE5>>>'))
     self.assertEqual({'A': '[42 \t?Foo>><<]'}, e('<</A[42 \t?Foo>><<]>>'))
-    self.assertEqual({'D': '<<]42[\f\t?Foo>>'}, e('<<\n/D\n<<]42[\f\t?Foo>>>>'))
+    self.assertEqual(
+        {'D': '<<]42[\f\t?Foo>>'}, e('<<\n/D\n<<]42[\f\t?Foo>>>>'))
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</S<%\n>>>')
 
   def testParseSimplestDict(self):
@@ -304,7 +306,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</D<<()>>>>')
     self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</D<<%\n>>>>')
     self.assertRaises(pdfsizeopt.PdfTokenNotSimplest, e, '<</?Answer! 42>>')
-  
+
   def testParseDict(self):
     e = pdfsizeopt.PdfObj.ParseDict
     self.DoTestParseSimplestDict(e=e)
@@ -321,7 +323,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'S': '<0a>'}, e('<</S\r(\\n)>>'))
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<</S\r(foo\\)>>')
     self.assertEqual({'S': '<666f6f29626172>'}, e('<</S(foo\\)bar)>>'))
-    self.assertEqual({'S': '<2829>', 'T': '<42cab0>'}, e('<</S(())/T<42c Ab>>>'))
+    self.assertEqual(
+        {'S': '<2829>', 'T': '<42cab0>'}, e('<</S(())/T<42c Ab>>>'))
     self.assertEqual({'S': '<282929285c>', 'T': 8},
                      e('<</S(()\\)\\(\\\\)/T 8>>'))
     self.assertEqual({'A': '[\f()]'}, e('<</A[\f()]>>'))
@@ -347,7 +350,7 @@ class PdfSizeOptTest(unittest.TestCase):
     e = pdfsizeopt.PdfObj.ParseArray
     self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '[%]')
     self.assertEqual(['/Indexed', '/DeviceRGB', 42, '43 44 R'],
-                     e('[\t/Indexed/DeviceRGB\f\r42\00043%42\n44\0R\n]')) 
+                     e('[\t/Indexed/DeviceRGB\f\r42\00043%42\n44\0R\n]'))
     self.assertEqual(['[ ]', '[\t[\f]]', '<<\t [\f[ >>', True, False, None],
                      e('[[ ] [\t[\f]] <<\t [\f[ >> true%\nfalse\fnull]'))
 
@@ -471,7 +474,7 @@ class PdfSizeOptTest(unittest.TestCase):
     end_ofs_out = []
     obj = pdfsizeopt.PdfObj(s + t, end_ofs_out=end_ofs_out)
     self.assertEqual('<</Producer(A)/CreationDate(B)/Creator(C)>>', obj.head)
-    self.assertEqual([len(s)], end_ofs_out) 
+    self.assertEqual([len(s)], end_ofs_out)
     obj = pdfsizeopt.PdfObj(
         '42 0 obj[/Foo%]endobj\n42  43\t]\nendobj')
     # Parses the comment properly, but doesn't replace it with the non-comment
@@ -482,9 +485,6 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('/Foo%bello', obj.head)
 
     # TODO(pts): Add more tests.
-
-  #def testPdfObjGetInt(self):
-  #  
 
   def testPdfObjGetSet(self):
     obj = pdfsizeopt.PdfObj('42 0 obj<</Foo(hi)>>\t\f\rendobj junk stream\r\n')
@@ -643,10 +643,10 @@ class PdfSizeOptTest(unittest.TestCase):
     pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
     pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R>>endobj')
     pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 1 0 R >>endobj')
-    pdf.objs[2].stream = 'foo';
+    pdf.objs[2].stream = 'foo'
     pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
     pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R   >>endobj')
-    pdf.objs[4].stream = 'foo';
+    pdf.objs[4].stream = 'foo'
     new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
     for obj_num in new_objs:
       new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
@@ -659,10 +659,10 @@ class PdfSizeOptTest(unittest.TestCase):
     pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<>>endobj')
     pdf.objs[1] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 2 0 R>>endobj')
     pdf.objs[2] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 1 0 R >>endobj')
-    pdf.objs[2].stream = 'foo';
+    pdf.objs[2].stream = 'foo'
     pdf.objs[3] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 4 0 R  >>endobj')
     pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</S(q)/P 3 0 R   >>endobj')
-    pdf.objs[4].stream = 'fox';
+    pdf.objs[4].stream = 'fox'
     new_objs = pdfsizeopt.PdfData.FindEqclasses(pdf.objs)
     for obj_num in new_objs:
       new_objs[obj_num] = (new_objs[obj_num].head, new_objs[obj_num].stream)
@@ -744,11 +744,20 @@ class PdfSizeOptTest(unittest.TestCase):
   def testFindEqclassesCircularReferences(self):
     pdf = pdfsizeopt.PdfData()
     # The Rs are needed in the trailer, otherwise objects would be discarded.
-    pdf.trailer = pdfsizeopt.PdfObj('0 0 obj<<4 0 R 5 0 R 9 0 R 10 0 R>>endobj')
-    pdf.objs[4] = pdfsizeopt.PdfObj('0 0 obj<</Parent  1 0 R/Type/Pages/Kids[9 0 R]/Count 1>>endobj')
-    pdf.objs[5] = pdfsizeopt.PdfObj('0 0 obj<</Parent 1  0 R/Type/Pages/Kids[10 0 R]/Count 1>>endobj')
-    pdf.objs[9] = pdfsizeopt.PdfObj('0 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 4 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj')
-    pdf.objs[10] = pdfsizeopt.PdfObj('10 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]/Parent 5 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>/Contents 3 0 R>>endobj')
+    pdf.trailer = pdfsizeopt.PdfObj(
+        '0 0 obj<<4 0 R 5 0 R 9 0 R 10 0 R>>endobj')
+    pdf.objs[4] = pdfsizeopt.PdfObj(
+        '0 0 obj<</Parent  1 0 R/Type/Pages/Kids[9 0 R]/Count 1>>endobj')
+    pdf.objs[5] = pdfsizeopt.PdfObj(
+        '0 0 obj<</Parent 1  0 R/Type/Pages/Kids[10 0 R]/Count 1>>endobj')
+    pdf.objs[9] = pdfsizeopt.PdfObj(
+        '0 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]'
+        '/Parent 4 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>'
+        '/Contents 3 0 R>>endobj')
+    pdf.objs[10] = pdfsizeopt.PdfObj(
+        '10 0 obj<</Type/Page/MediaBox[0 0 419 534]/CropBox[0 0 419 534]'
+        '/Parent 5 0 R/Resources<</XObject<</S 2 0 R>>/ProcSet[/PDF/ImageB]>>'
+        '/Contents 3 0 R>>endobj')
     pdf.objs['trailer'] = pdf.trailer
     new_objs = pdfsizeopt.PdfData.FindEqclasses(
         pdf.objs, do_remove_unused=True, do_renumber=True)
@@ -785,13 +794,13 @@ class PdfSizeOptTest(unittest.TestCase):
         12007: ['0.001', 0, '0.000287', '0.001', 0, 0], 15: [281], 16: [245],
         17: [350], 18: [21, 6489], 12003: [0]
     }
-    cff_str =  ('f81b01f81c02f81d038bfba2f9c0f99505f81e0c008b0c038b0c'
+    cff_str1 = ('f81b01f81c02f81d038bfba2f9c0f99505f81e0c008b0c038b0c'
                 '041e0a001f8b1e0a000287ff1e0a001f8b8b0c07a01c195912f7'
                 'f211f7ad0ff78910'.decode('hex'))
     cff_str2 = ('f81b01f81c02f81d038bfba2f9c0f99505f7ad0ff78910f7f211'
                 'a01c195912f81e0c008b0c038b0c041e0a001f8b1e0a000287ff'
                 '1e0a001f8b8b0c07'.decode('hex'))
-    self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str))
+    self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str1))
     self.assertEqual(cff_dict, pdfsizeopt.PdfObj.ParseCffDict(cff_str2))
     self.assertEqual(cff_str2, pdfsizeopt.PdfObj.SerializeCffDict(cff_dict))
 
@@ -803,7 +812,7 @@ class PdfSizeOptTest(unittest.TestCase):
         '\xf8.\x11'))
     self.assertEqual('\xf8.\x11', pdfsizeopt.PdfObj.SerializeCffDict(
         {17: [410]}))
-  
+
     # The same, but longer.
     data = 'XY%sZT' % (
         #'\xf8!\x00\xf8"\x01\xf8#\x02\xf8#\x03\xf8\x18\x04<\xfbl\xfa\x85\xfa)'
@@ -818,7 +827,7 @@ class PdfSizeOptTest(unittest.TestCase):
         5: [-79, -216, 1009, 917], 12007: ['0.001', 0, 0, '0.001', 0, 0],
         15: [243], 16: [239], 17: [410], 18: [6, 9419]}
     i = 2
-    j = len(data) - 2 
+    j = len(data) - 2
     cff_dict = pdfsizeopt.PdfObj.ParseCffDict(data=data, start=i, end=j)
     cff_ser = pdfsizeopt.PdfObj.SerializeCffDict(cff_dict=cff_dict)
     cff_dict2 = pdfsizeopt.PdfObj.ParseCffDict(cff_ser)
@@ -895,7 +904,8 @@ class PdfSizeOptTest(unittest.TestCase):
     output = []
     e(s, output=output, do_generate_object_stream=False)
     self.assertEqual(t, ''.join(output))
-    # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
+    # !! test with xref ... trailer <</Size 6/Root 2 0 R/Compress<</LengthO
+    # 7677/SpecO/1.2>>/ID[(...)(...)]>> ... startxref
 
   def testPermissiveZlibDecompress(self):
     e = pdfsizeopt.PermissiveZlibDecompress
@@ -923,7 +933,7 @@ class PdfSizeOptTest(unittest.TestCase):
           obj.Set('Length', len(stream))
           obj.stream = stream
       return obj
-  
+
     objs = {
         12: NewObj('foo  bar'),
         13: NewObj(' 12  0  R\t'),
