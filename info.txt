@@ -517,3 +517,5 @@ additional compression may be possible with:
 * TODO: correctly skip CID fonts (latex-kr.pdf)
 * It fails to validate as PDF/A-1b (using acrobat 7.1.0 for the validation).
   (need /ID)
+* WinArchiver can compress PDFs from 3451 MB to 2658 MB.
+

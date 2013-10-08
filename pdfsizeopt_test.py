@@ -1,4 +1,18 @@
-#! /usr/bin/python2.4
+#! /bin/sh
+
+""":" # pdfsizeopt_test: Tests for pdfsizeopt.
+
+type -p python2.7 >/dev/null 2>&1 && exec python2.7 -- "$0" ${1+"$@"}
+type -p python2.6 >/dev/null 2>&1 && exec python2.6 -- "$0" ${1+"$@"}
+type -p python2.5 >/dev/null 2>&1 && exec python2.5 -- "$0" ${1+"$@"}
+type -p python2.4 >/dev/null 2>&1 && exec python2.4 -- "$0" ${1+"$@"}
+exec python -- "$0" ${1+"$@"}
+
+This is a Python 2.x script, it works with Python 2.4, 2.5, 2.6 and 2.7. It
+doesn't work with Python 3.x. Feel free to replace the #! line with
+`#! /usr/bin/python', `#! /usr/bin/env python' or whatever suits you best.
+"""
+
 #
 # pdfsizeopt_test.py: unit tests for pdfsizeopt.py
 # by pts@fazekas.hu at Sun Apr 19 10:21:07 CEST 2009
@@ -6,11 +20,28 @@
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
 
+# --- Setting up the import path.
+
+import os
+import os.path
+import sys
+
+if not ((2, 4) <= sys.version_info[:2] < (3, 0)):
+  sys.stderr.write(
+      'fatal: Python version 2.4, 2.5, 2.6 or 2.7 needed for: %s\n' % __file__)
+  sys.exit(1)
+
+if os.path.isfile(os.path.join(
+    os.path.dirname(__file__), 'lib', 'pdfsizeopt', 'main.py')):
+  sys.path[:0] = [os.path.join(os.path.dirname(__file__), 'lib')]
+
+# ---
+
 import sys
 import zlib
 import unittest
 
-import pdfsizeopt
+from pdfsizeopt import main as pdfsizeopt
 
 
 class PdfSizeOptTest(unittest.TestCase):
