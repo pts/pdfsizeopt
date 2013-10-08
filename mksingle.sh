@@ -13,7 +13,7 @@ echo "import sys
 
 if not ((2, 4) <= sys.version_info[:2] < (3, 0)):
   sys.stderr.write(
-      'fatal: Python version 2.4, 2.5, 2.6 or 2.7 needed for: %s%c' % (__file__, 10))
+      'fatal: Python version 2.4, 2.5, 2.6 or 2.7 needed for: %s%c' % (sys.path[0], 10))
   sys.exit(1)
 
 from pdfsizeopt import main
