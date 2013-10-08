@@ -5045,7 +5045,8 @@ class PdfData(object):
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
       assert False, 'Type1CConverter failed (status)'
     if not os.path.isfile(pdf_tmp_file_name):
-      print >>sys.stderr, 'info: Type1CConverter has not created output: %s' % (
+      print >>sys.stderr, (
+          'info: Type1CConverter has not created output: %s' %
           pdf_tmp_file_name)
       assert False, 'Type1CConverter failed (no output)'
     pdf = PdfData().Load(pdf_tmp_file_name)
@@ -5794,7 +5795,8 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
       assert False, 'Type1CGenerator failed (status)'
     if not os.path.isfile(pdf_tmp_file_name):
-      print >>sys.stderr, 'info: Type1CGenerator has not created output: %s' % (
+      print >>sys.stderr, (
+          'info: Type1CGenerator has not created output: %s' %
           pdf_tmp_file_name)
       assert False, 'Type1CGenerator failed (no output)'
     pdf = PdfData().Load(pdf_tmp_file_name)
@@ -6091,7 +6093,8 @@ cvx bind /LoadCff exch def
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
       if not os.path.isfile(png_tmp_file_name):
-        print >>sys.stderr, 'info: ImageRenderer has not created output: %s' % (
+        print >>sys.stderr, (
+            'info: ImageRenderer has not created output: %s' %
             png_tmp_file_name)
         assert False, 'ImageRenderer failed (missing output PNG)'
       png_files[obj_num] = png_tmp_file_name
