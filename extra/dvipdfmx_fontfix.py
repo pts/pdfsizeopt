@@ -36,7 +36,7 @@ def main(argv):
     map_kname = (os.popen('kpsewhich "%s"' % map_name)
                 .read().rstrip('\n'))
     assert map_kname, 'font map not found: %s' % map_name
-
+ 
     for map_line in open(map_kname).xreadlines():
       # A to-be-reencoded base font. Example:
       # ptmr8r Times-Roman "TeXBase1Encoding ReEncodeFont" <8r.enc
