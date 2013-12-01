@@ -6,7 +6,7 @@ type -p python2.7 >/dev/null 2>&1 && exec python2.7 -- "$0" ${1+"$@"}
 type -p python2.6 >/dev/null 2>&1 && exec python2.6 -- "$0" ${1+"$@"}
 type -p python2.5 >/dev/null 2>&1 && exec python2.5 -- "$0" ${1+"$@"}
 type -p python2.4 >/dev/null 2>&1 && exec python2.4 -- "$0" ${1+"$@"}
-exec python -- "$0" ${1+"$@"}
+exec python -- "$0" ${1+"$@"}; exit 1
 
 This is a Python 2.x script, it works with Python 2.4, 2.5, 2.6 and 2.7. It
 doesn't work with Python 3.x. Feel free to replace the #! line with
