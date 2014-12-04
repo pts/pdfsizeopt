@@ -80,12 +80,12 @@ def VerifyGs(gs_cmd):
 gs_cmd_ary = []
 
 
-def GetCompressExe():
+def FindExeOnPath(prog):
   """Return pathname to `multivalent_compress' or None if not found."""
   exe_ext = ''
   if sys.platform.startswith('win'):
     exe_ext = '.exe'
-  return FindOnPath('multivalent_compress' + exe_ext)
+  return FindOnPath(prog + exe_ext)
 
 
 def GetGsCommand():
@@ -7645,7 +7645,7 @@ cvx bind /LoadCff exch def
         (in_data_size, in_pdf_tmp_file_name))
 
     EnsureRemoved(out_pdf_tmp_file_name)
-    compress_exe = GetCompressExe()
+    compress_exe = FindExeOnPath('multivalent_compress')
     multivalent_jar = None
     if multivalent_jar is None and compress_exe is None:
       multivalent_jar = self.FindMultivalentJar('MultivalentCompress.jar')
@@ -8028,14 +8028,14 @@ def main(argv):
     sys.exit(1)
   if not use_multivalent:
     multivalent_java = None
-  elif GetCompressExe() is not None:
+  elif FindExeOnPath('multivalent_compress') is not None:
     multivalent_java = '#multivalent_compress'  # Any true str value will do.
   elif avian_pathname is not None:
     multivalent_java = avian_pathname
   else:
-    multivalent_java = FindOnPath('java')
+    multivalent_java = FindExeOnPath('java')
     if multivalent_java is None:
-      multivalent_java = FindOnPath('avian')
+      multivalent_java = FindExeOnPath('avian')
       if multivalent_java is None:
         print >>sys.stderr, (
             'error: Java needed by Multivalent not found. '
