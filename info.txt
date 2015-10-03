@@ -544,6 +544,8 @@ Lossless JPEG optimization:
   C program using libjpeg
   sudo apt-get install jpegoptim
   https://github.com/tjko/jpegoptim
+  Does lossless optimization by default, can also do lossless.
+  jpegoptim --strip-all file.jpg
 * http://blog.jsdelivr.com/2013/02/jpeg-optimization-tools-benchmark.html
   comparison of tools:
   * jpegrescan
@@ -551,8 +553,9 @@ Lossless JPEG optimization:
   * imgopt
   * jpegtran
   * jpegoptim
-  Result: jpegoptim is the best for lossless, saves 5% and 13.271%.
-* For some input, these produce bytewise identical, but smaller files:
+  Incorrect: jpegoptim is the best for lossless, saves 5% and 13.271%.
+  Correct: jpegrescan is the best
+* For some input, these produce bytewise identical (?), but smaller files:
   * jpegoptim -t --strip-all *.jpg
   * imgopt *.jpg
   * for F in *.jpg; do jpegtran -copy none -optimize -outfile jo.bin "$F" &&
@@ -560,12 +563,14 @@ Lossless JPEG optimization:
   ... but make sure to run jfifremove (part of imgopt, simple code, unused)
   etc. first for removing JFIF, EXIF etc. metadata; `-copy none' also
   removes some stuff
+  jfifremove: https://github.com/kormoc/imgopt/blob/master/jfifremove.c
 
 Removing JPEG comments, JFIF, EXIF etc. markers:
 
 * jpegtran -copy none
   part of libjpeg
-  Doesn't remove everything.
+  Doesn't remove everything. (What doesn't it remove?)
+  Removes the APP0 JFIF thumbnail (if any), even with `jpegtran -copy all'.
 * jfifremove
   https://github.com/kormoc/imgopt/blob/master/jfifremove.c
 * jpegrescan -s
@@ -574,6 +579,7 @@ Removing JPEG comments, JFIF, EXIF etc. markers:
   https://raw.githubusercontent.com/kud/jpegrescan/master/jpegrescan
 * jpegoptim --strip-all
   supports many different markers
+* jhead -purejpg *.jpg
 
 ** TODO doc: http://jpegmini.com/ makes JPEG files much smaller
    free web service
