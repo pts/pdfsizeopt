@@ -402,9 +402,12 @@ class PdfObj(object):
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
-      r'(?s)trailer[\0\t\n\r\f ]*(<<.*?>>'
-      r'[\0\t\n\r\f ]*)(?:startxref|xref)[\0\t\n\r\f ]')
+      r'(?s)trailer[\0\t\n\r\f ]*(<<.*?>>)'
+      r'[\0\t\n\r\f ]*(?:%[^\r\n]*(?:[\r\n]|\Z)[\0\t\n\r\f ]*)*'
+      r'(?:startxref|xref)[\0\t\n\r\f ]')
   """Matches from 'trailer' to 'startxref' or 'xref'.
+
+  Comment regexp is from PDF_COMMENTS_OR_WHITESPACE_RE.
 
   TODO(pts): Match more generally, see multiple trailers for testing in:
   pdf.a9p4/5176.CFF.a9p4.pdf
