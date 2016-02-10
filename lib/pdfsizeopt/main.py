@@ -7025,7 +7025,6 @@ cvx bind /LoadCff exch def
     # Postcondition of the code above.
     assert self.trailer.Get('Type') in ('/XRef', None)
     return self
-    # !!! TODO(pts): count inline images
 
   @classmethod
   def ComputePdfStatistics(cls, file_name):
@@ -7062,6 +7061,10 @@ cvx bind /LoadCff exch def
         'drawing_objs': 0,
         'font_data_objs': 0,
         'linearized_xref': 0,
+        # TODO(pts): Add computing the size of inline images. Discovery of
+        # drawing_objs (and parsing them again) makes it hard, and then it's
+        # hard to detect the end of the image (r'EI[\s/%\[]' may end too
+        # early).
     }
     obj_size_by_num = {}
     drawing_obj_nums = set()
