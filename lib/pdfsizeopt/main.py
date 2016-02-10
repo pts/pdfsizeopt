@@ -6830,10 +6830,11 @@ cvx bind /LoadCff exch def
 
     This method overrides the old contents of self from data.
 
-    This method is a bit smarter (and more relaxed) than Load, because it
-    can parse a PDF with a cross reference stream (/Type/XRef; instead of a
-    cross reference table). It doesn't understand the cross reference
-    stream, however. It also doesn't decode object streams (/Type/ObjStm).
+    This method is more relaxed and more lazy than Load, because it can
+    parse a PDF with an xref stream (/Type/XRef; instead of an xref table). It
+    doesn't parse the xref stream, however. It also doesn't decode
+    object streams (/Type/ObjStm), so it's oblivious about the contents of
+    non-stream objects.
 
     Args:
       data: String containing PDF file data.
@@ -6851,6 +6852,8 @@ cvx bind /LoadCff exch def
         partially filled.
       TypeError:
     """
+    # TODO(pts): Add unit tests for this method.
+
     if obj_num_by_ofs_out is None:
       obj_num_by_ofs_out = {}
     elif not isinstance(obj_num_by_ofs_out, dict):
@@ -6870,16 +6873,18 @@ cvx bind /LoadCff exch def
       raise PdfTokenParseError('unrecognized PDF signature %r' % data[0: 16])
     version = match.group(1)
 
-    # We set startxref ofs if available. It is not an error not to have it
+    # We set xref_ofs if available. It is not an error not to have it
     # (e.g. with a broken PDF with xref + trailer).
-    trailer_ofs = None
+    xref_ofs = None
     i = data.rfind('startxref')
     if i >= 0:
       scanner = PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1)
       match = scanner.match()
       if match:
-        trailer_ofs = int(match.group(1))
+        xref_ofs = int(match.group(1))
 
+    # TODO(pts): Fill this properly. We'd have to parse the xref table and
+    # xref stream though.
     self.has_generational_objs = False
     self.version = version
     self.objs.clear()
@@ -6928,9 +6933,13 @@ cvx bind /LoadCff exch def
         else:
           i = match.start(1)
         del end_ofs_out[:]
+        # TODO(pts): What if there are multiple trailers (linearized)?
         self.trailer = PdfObj.ParseTrailer(
             data, start=i, end_ofs_out=end_ofs_out)
-        self.trailer.Set('Prev', None)
+        if self.trailer.Get('Type') is not None:
+          raise PdfTokenParseError(
+              'unexpected trailer obj type: %s' % self.trailer.Get('Type'))
+        self.trailer.Set('Prev', None)  # Why?
         i = end_ofs_out[0]
         # Usually there is a single space only.
         match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i).match()
@@ -6969,31 +6978,33 @@ cvx bind /LoadCff exch def
       match = scanner.match()
       assert match
       obj_num = int(match.group(1))
-      # !! set self.has_generational_objs
       obj_num_by_ofs_out[i] = obj_num
-      if trailer_ofs == i:
+      if xref_ofs == i:
         self.trailer = pdf_obj
+        if self.trailer.Get('Type') != '/XRef':
+          raise PdfTokenParseError(
+              'unexpected trailer obj type: %s' % self.trailer.Get('Type'))
       assert end_ofs_out[0] > i
       i = end_ofs_out[0]
       setitem_callback(obj_num, pdf_obj, i)  # self.objs[obj_num] = pdf_obj
 
-    prefix = data[i : i + 16]
-    assert prefix.startswith('startxref')  # Postcondition of the loop above.
+    # Parse and check the startxref number.
+    #
+    # Postcondition of the loop above.
+    assert data[i : i + 9].startswith('startxref')
     offsets_out.append(i)  # startxref
     scanner = PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1)
     match = scanner.match()
     if not match:
       raise PdfTokenParseError('startxref syntax error at ofs=%d' % i)
-    assert trailer_ofs == int(match.group(1))
+    assert xref_ofs == int(match.group(1))
+
     if self.trailer is None:
       raise PdfTokenParseError('trailer/xref obj not found')
-    if self.trailer.Get('Type') not in ('/XRef', None):
-      raise PdfTokenParseError('no cross reference stream or table')
-
-    # !! TODO(pts): Add support for `/Length X 0 R' by parsing the xref table
-    #    first (for testing: lme_v6.pdf).
-    # !! TODO(pts): Test this.
+    # Postcondition of the code above.
+    assert self.trailer.Get('Type') in ('/XRef', None)
     return self
+    # !!! other objs: other_stream_objs, other_nonstream_objs
 
   @classmethod
   def ComputePdfStatistics(cls, file_name):
@@ -7013,8 +7024,9 @@ cvx bind /LoadCff exch def
     # All values are in bytes.
     stats = {
         'image_objs': 0,
-        # This includes the PDF header, `startxref' and what follows, plus
-        # space wasted in comments between objs.
+        # In the beginning this includes the entire file. In the end, this
+        # will include `startxref' and what follows, plus space wasted (e.g.
+        # in comments and whitespace) between objs.
         'separator_data': len(data),
         'xref': 0,
         'trailer': 0,
@@ -7160,6 +7172,7 @@ cvx bind /LoadCff exch def
     assert stats['other_objs'] > 0  # We must have a page catalog etc.
 
     if trailer_obj_num[0] is None:  # Without xref stream.
+      assert pdf.trailer.stream is None
       assert stats['trailer'] == 0
       assert stats['xref'] == 0
       # This breaks if there is a 'linerized' trailer in the middle.
@@ -7176,6 +7189,7 @@ cvx bind /LoadCff exch def
     else:
       # With xref stream.
       # For testing: any Multivalent output
+      assert pdf.trailer.stream is not None
       assert len(offsets_out) == offsets_idx[0] + 1
       assert stats['trailer'] > 0
       assert stats['xref'] > 0
@@ -7184,7 +7198,9 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: stat %s = %s bytes (%s)' % (
           key, stats[key], FormatPercent(stats[key], len(data)))
     print >>sys.stderr, 'info: end of stats'
-    sum_stats = sum(stats.values())
+    assert not [1 for value in stats.itervalues() if value < 0], (
+        'stats has negative values')
+    sum_stats = sum(stats.itervalues())
     assert sum_stats == len(data), (
         'stats size mismatch: total_stats_size=%r, file_size=%r' %
         (sum_stats, len(data)))
@@ -7242,11 +7258,12 @@ cvx bind /LoadCff exch def
     pdf = cls().ParseSequentially(  # PdfData().
         data=data, offsets_out=in_offsets,
         obj_num_by_ofs_out=obj_num_by_in_ofs)
+    assert pdf.trailer.stream is not None
     if not is_flate_ok:
       pdf.DecompressFlate()
-    # in_offsets[-1] is the offset of `startxref', in_offsets[-2] is usually
-    # the offset of the /Type/XRef trailer_obj. Since both pdf and pdf_objs
-    # are local, it's OK to modify objects in place.
+    # in_offsets[-1] is the offset of `startxref', in_offsets[-2] is (for
+    # Multivalent) the offset of the /Type/XRef trailer_obj. Since both pdf
+    # and pdf_objs are local, it's OK to modify objects in place.
     pdf_objs = pdf.objs
     trailer_obj = pdf.trailer  # An object.
     if do_generate_xref_stream:
