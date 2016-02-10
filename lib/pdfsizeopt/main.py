@@ -176,6 +176,13 @@ def FormatPercent(num, den):
   return '%d%%' % int((num * 100 + (den / 2)) // den)
 
 
+def FormatPercentTwoDigits(num, den):
+  if den == 0:
+    return '?%'
+  v = (num * 10000 + (den / 2)) // den
+  return '%d.%02d%%' % divmod(v, 100)
+
+
 def EnsureRemoved(file_name):
   try:
     os.remove(file_name)
@@ -7209,7 +7216,7 @@ cvx bind /LoadCff exch def
 
     for key in sorted(stats):
       print >>sys.stderr, 'info: stat %s = %s bytes (%s)' % (
-          key, stats[key], FormatPercent(stats[key], len(data)))
+          key, stats[key], FormatPercentTwoDigits(stats[key], len(data)))
     print >>sys.stderr, 'info: end of stats'
     assert not [1 for value in stats.itervalues() if value < 0], (
         'stats has negative values')
