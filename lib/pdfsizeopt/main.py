@@ -398,7 +398,8 @@ class PdfObj(object):
       r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z')
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
 
-  PDF_VERSION_HEADER_RE = re.compile(r'\A%PDF-(1[.]\d)\s')
+  PDF_VERSION_HEADER_RE = re.compile(
+      r'\A%PDF-(1[.]\d)(\r?\n%[\x80-\xff]{1,4}\r?\n|\s)')
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
@@ -3634,7 +3635,7 @@ class PdfData(object):
     self.file_size = len(data)
     match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
     if not match:
-      raise PdfTokenParseError('unrecognized PDF signature %r' % data[0: 16])
+      raise PdfTokenParseError('unrecognized PDF signature %r' % data[: 16])
     self.version = match.group(1)
     self.objs = {}
     self.trailer = None
@@ -6870,8 +6871,10 @@ cvx bind /LoadCff exch def
 
     match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
     if not match:
-      raise PdfTokenParseError('unrecognized PDF signature %r' % data[0: 16])
+      raise PdfTokenParseError('unrecognized PDF signature %r' % data[: 16])
     version = match.group(1)
+    header_end_ofs = match.end()
+    setitem_callback(None, match.group(), 'header')
 
     # We set xref_ofs if available. It is not an error not to have it
     # (e.g. with a broken PDF with xref + trailer).
@@ -6891,18 +6894,19 @@ cvx bind /LoadCff exch def
     self.trailer = None
     self.file_name = file_name
     self.file_size = len(data)
-    i = 0
+    i = header_end_ofs
     end_ofs_out = []
     # None or a dict mapping object numbers to their start offsets in data.
     obj_starts = None
     length_objs = {}
+    ws = PdfObj.PDF_WHITESPACE_CHARS
 
     # When this loop exist, data[i : i + 16].startswith('startxref') will be true.
     while 1:
       if i >= len(data):
         raise PdfTokenParseError('unexpeted EOF in PDF')
       i0 = i
-      if data[i] == '%' or data[i] in PdfObj.PDF_WHITESPACE_CHARS:
+      if data[i] == '%' or data[i] in ws:
         scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
         i = scanner.match().end()  # Always matches.
 
@@ -6914,7 +6918,7 @@ cvx bind /LoadCff exch def
       i = match.start()
       if i0 != i:
         # Report wasted bytes between objs.
-        setitem_callback(None, data[i0 : i], None)
+        setitem_callback(None, data[i0 : i], 'wasted')
 
       del end_ofs_out[:]
       prefix = data[i : i + 16]
@@ -6926,12 +6930,16 @@ cvx bind /LoadCff exch def
         match = scanner.search()
         if not match:
           raise PdfTokenParseError('cannot find trailer after xref')
-        if offsets_out is not None:
-          offsets_out.append(i)  # xref
-          i = match.start(1)
-          offsets_out.append(i)  # trailer
-        else:
-          i = match.start(1)
+        trailer_ofs = match.start(1)
+        j = trailer_ofs
+        while data[j - 1] in ws:
+          j -= 1
+        if data[j : j + 2] in (' \n', ' \r', '\r\n'):
+          j += 2
+        setitem_callback(None, data[i : j], 'xref')
+        # TODO(pts): Also add comments in here.
+        setitem_callback(None, data[j : trailer_ofs], 'whitespace_after_xref')
+        i = trailer_ofs
         del end_ofs_out[:]
         # TODO(pts): What if there are multiple trailers (linearized)?
         self.trailer = PdfObj.ParseTrailer(
@@ -6941,18 +6949,24 @@ cvx bind /LoadCff exch def
               'unexpected trailer obj type: %s' % self.trailer.Get('Type'))
         self.trailer.Set('Prev', None)  # Why?
         i = end_ofs_out[0]
+        if data[i : i + 1] in ws:
+          i += 1
+        i1 = i
         # Usually there is a single space only.
         match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i).match()
         if match:
           i = match.end()
         if PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1).match():
+          setitem_callback(None, data[trailer_ofs : i1], 'trailer')
+          if i > i1:
+            setitem_callback(None, data[i1 : i], 'whitespace_after_trailer')
           break
         # We reach this point in case of a linearized PDF. We usually have
         # `startxref <offset> %%EOF' here, and then we get new objs.
         if data[i : i + 9].startswith('startxref'):
           # TODO(pts): Add more, till `%%EOF'.
           i += 9
-        setitem_callback(None, data[i0 : i], 'linearized')
+        setitem_callback(None, data[i0 : i], 'linearized_xref')
         continue
       if prefix.startswith('trailer'):
         raise PdfTokenParseError(
@@ -7004,7 +7018,8 @@ cvx bind /LoadCff exch def
     # Postcondition of the code above.
     assert self.trailer.Get('Type') in ('/XRef', None)
     return self
-    # !!! other objs: other_stream_objs, other_nonstream_objs
+    # !!! TODO(pts): other objs: other_stream_objs, other_nonstream_objs
+    # !!! TODO(pts): count inline images
 
   @classmethod
   def ComputePdfStatistics(cls, file_name):
@@ -7024,18 +7039,17 @@ cvx bind /LoadCff exch def
     # All values are in bytes.
     stats = {
         'image_objs': 0,
-        # In the beginning this includes the entire file. In the end, this
-        # will include `startxref' and what follows, plus space wasted (e.g.
-        # in comments and whitespace) between objs.
-        'separator_data': len(data),
         'xref': 0,
         'trailer': 0,
         # TODO(pts): Count hyperlinks seperately, but they may be part of
         # content streams, and we don't have the infrastructure to inspect
         # that.
         'other_objs': 0,
+        # Space wasted (e.g. in commetns and whitespace) between objs.
         'wasted_between_objs': 0,
         'header': 0,
+        # `startxref' and what follows.
+        'footer': 0,
         'contents_objs': 0,
         'font_data_objs': 0,
         'linearized_xref': 0,
@@ -7070,21 +7084,18 @@ cvx bind /LoadCff exch def
     def SetItemCallback(obj_num, pdf_obj, end_ofs):
       if obj_num is None:
         assert isinstance(pdf_obj, str)
-        if not offsets_out:
-          stats['header'] += len(pdf_obj)
-        elif end_ofs == 'linearized':
-          # For testing: inkscape_manual.pdf
-          stats['linearized_xref'] += len(pdf_obj)
+        if end_ofs in (
+            'header', 'linearized_xref', 'trailer', 'xref'):
+          # For testing linearized_xref: inkscape_manual.pdf
+          stats[end_ofs] += len(pdf_obj)
         else:
           stats['wasted_between_objs'] += len(pdf_obj)
-        stats['separator_data'] -= len(pdf_obj)
         return
       assert isinstance(pdf_obj, PdfObj)
       obj_ofs = offsets_out[-1]
       offsets_idx[0] = len(offsets_out)
+      # The object spans from obj_ofs to end_ofs.
       obj_size_by_num[obj_num] = obj_size = end_ofs - obj_ofs
-      # The object spans from start_ofs to end_ofs.
-      stats['separator_data'] -= obj_size
       if pdf.trailer is pdf_obj:  # Only in an xref stream.
         assert pdf.trailer.stream is not None
         trailer_obj_num[0] = obj_num
@@ -7170,29 +7181,12 @@ cvx bind /LoadCff exch def
         stats['other_objs'] -= obj_size
 
     assert stats['other_objs'] > 0  # We must have a page catalog etc.
-
-    if trailer_obj_num[0] is None:  # Without xref stream.
-      assert pdf.trailer.stream is None
-      assert stats['trailer'] == 0
-      assert stats['xref'] == 0
-      # This breaks if there is a 'linerized' trailer in the middle.
-      # TODO(pts): Also process 'linearized' trailer.
-      # offsets_out[-3] is the offset of 'xref'.
-      # offsets_out[-2] is the offset of 'trailer'.
-      # offsets_out[-1] is the offset of 'startxref'.
-      # !!! TODO(pts): Don't count startxref as separator_data, but footer.
-      assert len(offsets_out) == offsets_idx[0] + 3
-      stats['xref'] += offsets_out[-2] - offsets_out[-3]
-      stats['separator_data'] -= offsets_out[-2] - offsets_out[-3]
-      stats['trailer'] += offsets_out[-1] - offsets_out[-2]
-      stats['separator_data'] -= offsets_out[-1] - offsets_out[-2]
-    else:
-      # With xref stream.
-      # For testing: any Multivalent output
-      assert pdf.trailer.stream is not None
-      assert len(offsets_out) == offsets_idx[0] + 1
-      assert stats['trailer'] > 0
-      assert stats['xref'] > 0
+    # offsets_out[-1] is the offset of 'startxref'.
+    assert len(offsets_out) == offsets_idx[0] + 1
+    stats['footer'] += len(data) - offsets_out[-1]
+    assert stats['trailer'] > 0
+    assert stats['xref'] > 0
+    # if trailer_obj_num[0] is None: ...  # Without xref stream.
 
     for key in sorted(stats):
       print >>sys.stderr, 'info: stat %s = %s bytes (%s)' % (
