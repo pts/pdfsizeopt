@@ -30,6 +30,7 @@ that. This script runs Multivalent unless --use-multivalent=no is specified.
 
 __author__ = 'pts@fazekas.hu (Peter Szabo)'
 
+# TODO(pts): Add flag to os.remove temporary files even on an exception.
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
 
@@ -54,6 +55,9 @@ import zlib
 
 class Error(Exception):
   """Comon base class for exceptions defined in this file."""
+
+
+TMP_PREFIX = '///dev/null/psotmp..'  # Will be overridden in main.
 
 
 def VerifyGs(gs_cmd):
@@ -2351,7 +2355,7 @@ class PdfObj(object):
       raise FilterNotImplementedError(
           'filter not implemented: ' + filter_value)
     ps_file_name = None
-    tmp_file_name = 'pso.filter.tmp.bin'
+    tmp_file_name = TMP_PREFIX + 'filter.tmp.bin'
     f = open(tmp_file_name, 'wb')
     write_ok = False
     try:
@@ -2378,7 +2382,7 @@ class PdfObj(object):
       # TODO(pts): If tmp_file_name contains funny characters, Ghostscript
       # will fails with data == ''. Fix it (possibly not use -s...="..." on
       # Windows?).
-      ps_file_name = 'pso.filter.tmp.ps'
+      ps_file_name = TMP_PREFIX + 'filter.tmp.ps'
       f = open(ps_file_name, 'wb')
       try:
         f.write(gs_code)
@@ -5330,7 +5334,7 @@ cvx bind /LoadCff exch def
     # !! proper tmp prefix
     type1c_objs = self.GenerateType1CFontsFromType1(
         self.GetFonts('Type1'), self.objs,
-        'pso.conv.tmp.ps', 'pso.conv.tmp.pdf')
+        TMP_PREFIX + 'conv.tmp.ps', TMP_PREFIX + 'conv.tmp.pdf')
     for obj_num in type1c_objs:
       obj = self.objs[obj_num]
       assert str(obj.Get('FontName')).startswith('/')
@@ -5579,8 +5583,8 @@ cvx bind /LoadCff exch def
           duplicate_count)
 
     parsed_fonts = self.ParseType1CFonts(
-        objs=type1c_objs, ps_tmp_file_name='pso.conv.parse.tmp.ps',
-        data_tmp_file_name='pso.conv.parsedata.tmp.ps')
+        objs=type1c_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse.tmp.ps',
+        data_tmp_file_name=TMP_PREFIX + 'conv.parsedata.tmp.ps')
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
         (sorted(parsed_fonts), sorted(type1c_objs)))
 
@@ -5780,8 +5784,8 @@ cvx bind /LoadCff exch def
       AppendSerialized(parsed_fonts[obj_num], output)
       output.append('endobj\n')
     output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
-    ps_tmp_file_name = 'pso.conv.gen.tmp.ps'
-    pdf_tmp_file_name = 'pso.conv.gen.tmp.pdf'
+    ps_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.ps'
+    pdf_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.pdf'
     output_str = ''.join(output)
     print >>sys.stderr, (
         'info: writing Type1CGenerator (%s font bytes) to: %s' %
@@ -5835,8 +5839,8 @@ cvx bind /LoadCff exch def
         (sorted(parsed_fonts), sorted(type1c_objs)))
     if do_double_check_missing_glyphs:
       parsed2_fonts = self.ParseType1CFonts(
-          objs=loaded_objs, ps_tmp_file_name='pso.conv.parse2.tmp.ps',
-          data_tmp_file_name='pso.conv.parse2data.tmp.ps')
+          objs=loaded_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse2.tmp.ps',
+          data_tmp_file_name=TMP_PREFIX + 'conv.parse2data.tmp.ps')
       assert sorted(parsed_fonts) == sorted(type1c_objs), (
           'Font object number list mismatch: loaded=%r expected=%s' %
           (sorted(parsed_fonts), sorted(type1c_objs)))
@@ -6337,7 +6341,7 @@ cvx bind /LoadCff exch def
         device_image_objs[gs_device][obj_num] = obj2
       else:
         images[obj_num].append(('parse', (image2.SavePng(
-            file_name='pso.conv-%d.parse.png' % obj_num))))
+            file_name=TMP_PREFIX + 'conv-%d.parse.png' % obj_num))))
         if image1.compression == 'none':
           image1.idat = zlib.compress(image1.idat, 9)
           image1.compression = 'zip'
@@ -6355,13 +6359,13 @@ cvx bind /LoadCff exch def
 
     # Render images which we couldn't convert in-process.
     for gs_device in sorted(device_image_objs):
-      ps_tmp_file_name = 'pso.conv.%s.tmp.ps' % gs_device
+      ps_tmp_file_name = TMP_PREFIX + 'conv.%s.tmp.ps' % gs_device
       objs = device_image_objs[gs_device]
       if objs:
         # Dictionary mapping object numbers to /Image PdfObj{}s.
         rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern='pso.conv-%%04d.%s.tmp.png' % gs_device)
+            png_tmp_file_pattern=TMP_PREFIX + 'conv-%%04d.%s.tmp.png' % gs_device)
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
           images[obj_num].append(
@@ -6406,7 +6410,7 @@ cvx bind /LoadCff exch def
                         'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
-            targetfn='pso.conv-%d.sam2p-np.pdf' % obj_num,
+            targetfn=TMP_PREFIX + 'conv-%d.sam2p-np.pdf' % obj_num,
             # We specify -s here to explicitly exclude SF_Opaque for
             # single-color images.
             # !! do we need /ImageMask parsing if we exclude SF_Mask here as
@@ -6441,7 +6445,7 @@ cvx bind /LoadCff exch def
             sam2p_s_flags = ''
           obj_images.append(self.ConvertImage(
               sourcefn=rendered_image_file_name,
-              targetfn='pso.conv-%d.sam2p-pr.png' % obj_num,
+              targetfn=TMP_PREFIX + 'conv-%d.sam2p-pr.png' % obj_num,
               cmd_pattern=('sam2p ' + sam2p_s_flags +
                            '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
               cmd_name='sam2p_pr'))
@@ -6452,15 +6456,15 @@ cvx bind /LoadCff exch def
             if obj_images[-1][1].color_type != 'gray':
               # This changes obj_images[-1].file_name as well.
               obj_images[-1][1].SavePng(
-                  file_name='pso.conv-%d.gray.png' % obj_num,
+                  file_name=TMP_PREFIX + 'conv-%d.gray.png' % obj_num,
                   do_force_gray=True)
             obj_images[-1][1].idat = self.ConvertImage(
                 sourcefn=obj_images[-1][1].file_name,
-                targetfn='pso.conv-%d.jbig2' % obj_num,
+                targetfn=TMP_PREFIX + 'conv-%d.jbig2' % obj_num,
                 cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
                 cmd_name='jbig2', do_just_read=True)[1]
             obj_images[-1][1].compression = 'jbig2'
-            obj_images[-1][1].file_name = 'pso.conv-%d.jbig2' % obj_num
+            obj_images[-1][1].file_name = TMP_PREFIX + 'conv-%d.jbig2' % obj_num
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
           # !! TODO(pts): Find better pngout binary file name.
@@ -6475,7 +6479,7 @@ cvx bind /LoadCff exch def
             # if it can't compress the file any further.
             image = self.ConvertImage(
                 sourcefn=rendered_image_file_name,
-                targetfn='pso.conv-%d.pngout.png' % obj_num,
+                targetfn=TMP_PREFIX + 'conv-%d.pngout.png' % obj_num,
                 cmd_pattern='pngout -force ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout',
@@ -7711,7 +7715,7 @@ cvx bind /LoadCff exch def
 
     # TODO(pts): Specify args to Multivalent.jar.
     # TODO(pts): Specify right $CLASSPATH for Multivalent.jar
-    in_pdf_tmp_file_name = 'pso.conv.mi.tmp.pdf'
+    in_pdf_tmp_file_name = TMP_PREFIX + 'conv.mi.tmp.pdf'
 
     assert in_pdf_tmp_file_name.endswith('.pdf')
     # This is what Multivalent.jar generates.
@@ -7856,7 +7860,7 @@ cvx bind /LoadCff exch def
 
     if multivalent_java:
       # TODO(pts): Work around exception for emptypage.pdf:
-      # pso.conv.mi.tmp.pdf: java.lang.ClassCastException:
+      # psotmp.PID.conv.mi.tmp.pdf: java.lang.ClassCastException:
       # multivalent.std.adaptor.pdf.Dict cannot be cast to
       # multivalent.std.adaptor.pdf.IRef
       multivalent_output_data, tmp_files_to_remove = self._RunMultivalent(
@@ -8167,6 +8171,10 @@ def main(argv):
         sys.exit(2)
   if multivalent_java is not None:
     print >>sys.stderr, 'info: using Java for Multivalent: ' + multivalent_java
+
+  global TMP_PREFIX
+  TMP_PREFIX = os.path.join(
+      os.path.dirname(output_file_name), 'psotmp.%d.' % os.getpid())
 
   # It's OK that file_name == output_file_name.
   pdf = PdfData(
