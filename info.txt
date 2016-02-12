@@ -1,5 +1,7 @@
 # by pts@fazekas.hu at Fri Mar 27 22:37:48 CET 2009
 
+* doc: pdfsizeopt --stats
+* doc: to do just the serialization improvements: pdfsizeopt --use-multivalent=no --do-optimize-objs=no --do-remove-generational-objs=no --do-optimize-images=no --do-optimize-fonts=no --do-decompress-most-streams=yes --do-optimize-obj-heads=yes --do-generate-object-stream=yes --do-generate-xref-stream=yes
 * gs -sDEVICE=pdfwrite can do Type1C font embedding --> great reduction for small PDFs
 * PDF tools including compression:
   http://multivalent.sourceforge.net/Tools/index.html
@@ -487,6 +489,8 @@ additional compression may be possible with:
 * It fails to validate as PDF/A-1b (using acrobat 7.1.0 for the validation).
   (need /ID)
 * WinArchiver can compress PDFs from 3451 MB to 2658 MB.
+* TODO: why does Type1C font generation break for data_cmhello.pdf
+  (sffb1000.pfb)?
 
 --- JPEG:
 

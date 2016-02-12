@@ -2334,7 +2334,7 @@ class PdfObj(object):
     """
     assert self.stream is not None
     filter_value = self.Get('Filter')
-    if filter_value is None:
+    if filter_value in (None, '[]'):  # TODO(pts): Match '[ ]' etc.
       return self.stream
     decodeparms = self.Get('DecodeParms') or ''
     if objs is None:
@@ -6780,26 +6780,65 @@ cvx bind /LoadCff exch def
 
     return objs_ret
 
-  def DecompressFlate(self):
-    """Decompress all stream data containing /FlateDecode filter.
+  def DecompressStreams(self, is_flate_only):
+    """Decompress stream data in most objects.
 
     This usually greatly increases the size of the PDF file, but it's a useful
     debug tool.
+
+    Args:
+      is_flate_only: bool indicating whether only /FlateDecode streems
+          should be recompressed. If false, all streams get recompressed
+          except for /DCTDecode and /JPXDecode.
     """
     # !! TODO(pts): Replace [/FlateDecode] with /FlateDecode elsewhere.
     # TODO(pts): Pass self.objs instead of self as arg.
     uncompress_count = 0
+    if is_flate_only:
+      substring = '/FlateDecode'
+      msg_word = '/FlateDecode streams'
+    else:
+      substring = ''
+      msg_word = 'streams'
     for pdf_obj in self.objs.itervalues():
-      if '/FlateDecode' in pdf_obj.head:
+      if pdf_obj.head.startswith('<<') and substring in pdf_obj.head:
         filter_value = pdf_obj.Get('Filter')
-        if isinstance(filter_value, str) and '/FlateDecode' in filter_value:
-          pdf_obj.stream = pdf_obj.GetUncompressedStream(self.objs)
-          pdf_obj.Set('Filter', None)
-          pdf_obj.Set('DecodeParms', None)
-          pdf_obj.Set('Length', len(pdf_obj.stream))
-          uncompress_count += 1
-    print >>sys.stderr, 'info: uncompressed %d /FlateDecode streams' % (
-        uncompress_count)
+        if isinstance(filter_value, str):  # Should always be true (except None).
+          if is_flate_only:
+            do_decompress = '/FlateDecode' in filter_value
+          else:
+            do_decompress = (
+                filter_value and
+                '/DCTDecode' not in filter_value and
+                '/JPXDecode' not in filter_value)
+          if do_decompress:
+            pdf_obj.stream = pdf_obj.GetUncompressedStream(self.objs)
+            pdf_obj.Set('Filter', None)
+            pdf_obj.Set('DecodeParms', None)
+            pdf_obj.Set('Length', len(pdf_obj.stream))
+            uncompress_count += 1
+    print >>sys.stderr, 'info: uncompressed %d %s' % (
+        uncompress_count, msg_word)
+
+  def CompressUncompressedStreams(self):
+    """Compress uncompressed stream data in all objects.
+
+    Only /FlateDecode will be tried. If it's larger than the original, then
+    the original will be kept.
+    """
+    compress_count = uncompressed_count = 0
+    for pdf_obj in self.objs.itervalues():
+      if (pdf_obj.stream is not None and
+          pdf_obj.head.startswith('<<') and
+          pdf_obj.Get('Filter') in (None, '[]')):
+        pdf_obj.SetStreamAndCompress(
+            pdf_obj.GetUncompressedStream(self.objs), pdf=self)
+        if pdf_obj.Get('Filter'):
+          uncompressed_count += 1
+        compress_count += 1
+    print >>sys.stderr, (
+        'info: compressed %d streams, kept %d of them uncompressed' %
+        (compress_count, uncompressed_count))
 
   def OptimizeObjs(self, do_unify_pages):
     """Optimize PDF objects.
@@ -7283,7 +7322,7 @@ cvx bind /LoadCff exch def
         obj_num_by_ofs_out=obj_num_by_in_ofs)
     assert pdf.trailer.stream is not None
     if not is_flate_ok:
-      pdf.DecompressFlate()
+      pdf.DecompressStreams(is_flate_only=True)
     # in_offsets[-1] is the offset of `startxref', in_offsets[-2] is (for
     # Multivalent) the offset of the /Type/XRef trailer_obj. Since both pdf
     # and pdf_objs are local, it's OK to modify objects in place.
@@ -7960,6 +7999,7 @@ def main(argv):
     use_pngout = True
     use_jbig2 = True
     use_multivalent = True
+    do_optimize_fonts = True
     do_optimize_images = True
     do_optimize_objs = True
     do_unify_fonts = True
@@ -7978,7 +8018,21 @@ def main(argv):
     do_generate_xref_stream = True
     do_generate_object_stream = True
     do_unify_pages = True
+    # This usually greatly increases the size of the PDF file, but it's a
+    # useful debug tool. For debugging, specify both flags:
+    # --do_decompress_flate=yes --do_compress_uncompressed_streams=no.
     do_decompress_flate = False
+    # Actually not all streams are decompressed, but only those which
+    # eventually get used in the output PDF, except if they have filter
+    # /DCTDecode or /JPXDecode.
+    #
+    # This usually greatly increases the size of the PDF file, but it's a
+    # useful debug tool. For debugging, specify both flags:
+    # --do_decompress_most_streams=yes --do_compress_uncompressed_streams=no.
+    do_decompress_most_streams = False
+    do_compress_uncompressed_streams = True
+    do_remove_generational_objs = True
+    do_optimize_obj_heads = True
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -7993,8 +8047,15 @@ def main(argv):
         'do-generate-xref-stream=',
         'do-generate-object-stream=',
         'do-unify-pages=',
+        'do-remove-generational-objs=',
+        'do-optimize-obj-heads=',
         'do-decompress-flate=',
-        'do-optimize-images=', 'do-optimize-objs=', 'do-unify-fonts='])
+        'do-decompress-most-streams=',
+        'do-compress-uncompressed-streams=',
+        'do-optimize-fonts=',
+        'do-optimize-images=',
+        'do-optimize-objs=',
+        'do-unify-fonts='])
 
     for key, value in opts:
       if key == '--stats':
@@ -8011,13 +8072,19 @@ def main(argv):
       elif key == '--do-ignore-generation-numbers':
         do_ignore_generation_numbers = ParseBoolFlag(key, value)
       elif key == '--do-escape-images-from-multivalent':
-        do_optimize_images = ParseBoolFlag(key, value)
+        do_escape_images_from_multivalent = ParseBoolFlag(key, value)
       elif key == '--do-generate-xref-stream':
         do_generate_xref_stream = ParseBoolFlag(key, value)
       elif key == '--do-generate-object-stream':
         do_generate_object_stream = ParseBoolFlag(key, value)
       elif key == '--do-unify-pages':
         do_unify_pages = ParseBoolFlag(key, value)
+      elif key == '--do-remove-generational-objs':
+        do_remove_generational_objs = ParseBoolFlag(key, value)
+      elif key == '--do-optimize-obj-heads':
+        do_optimize_obj_heads = ParseBoolFlag(key, value)
+      elif key == '--do-optimize-fonts':
+        do_optimize_fonts = ParseBoolFlag(key, value)
       elif key == '--do-optimize-images':
         do_optimize_images = ParseBoolFlag(key, value)
       elif key == '--do-optimize-objs':
@@ -8032,6 +8099,10 @@ def main(argv):
         do_regenerate_all_fonts = ParseBoolFlag(key, value)
       elif key == '--do-decompress-flate':
         do_decompress_flate = ParseBoolFlag(key, value)
+      elif key == '--do-decompress-most-streams':
+        do_decompress_most_streams = ParseBoolFlag(key, value)
+      elif key == '--do-compress-uncompressed-streams':
+        do_compress_uncompressed_streams = ParseBoolFlag(key, value)
       elif key == '--help':
         print >>sys.stderr, (
             'info: usage for statistics computation: %s --stats <input.pdf>' %
@@ -8102,27 +8173,35 @@ def main(argv):
       do_ignore_generation_numbers=do_ignore_generation_numbers,
       ).Load(file_name)
   pdf.FixAllBadNumbers()
-  pdf.ConvertType1FontsToType1C()
-  if do_unify_fonts:
-    pdf.UnifyType1CFonts(
-        do_keep_font_optionals=do_keep_font_optionals,
-        do_double_check_missing_glyphs=do_double_check_missing_glyphs,
-        do_regenerate_all_fonts=do_regenerate_all_fonts)
+  if do_optimize_fonts:
+    pdf.ConvertType1FontsToType1C()
+    if do_unify_fonts:
+      pdf.UnifyType1CFonts(
+          do_keep_font_optionals=do_keep_font_optionals,
+          do_double_check_missing_glyphs=do_double_check_missing_glyphs,
+          do_regenerate_all_fonts=do_regenerate_all_fonts)
   if do_optimize_images:
     pdf.ConvertInlineImagesToXObjects()
     pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
   may_obj_heads_contain_comments = True
-  if do_optimize_objs:
+  if do_optimize_objs or do_remove_generational_objs:
+    # TODO(pts): Do only a simpler optimization with renumbering if
+    # do_optimize_objs is false and do_remove_generation_objs is true.
     pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
     may_obj_heads_contain_comments = False  # OptimizeObj removes comments.
-  elif pdf.has_generational_objs:
-    # TODO(pts): Do only a simpler optimization with renumbering.
-    pdf.OptimizeObjs(do_unify_pages=do_unify_pages)
-    may_obj_heads_contain_comments = False  # OptimizeObj removes comments.
-  if do_decompress_flate:
-    # This usually greatly increases the size of the PDF file, but it's a
-    # useful debug tool.
-    pdf.DecompressFlate()
+  elif do_optimize_obj_heads:
+    pdf.trailer.head = PdfObj.CompressValue(pdf.trailer.head)
+    for obj in pdf.objs.itervalues():
+      obj.head = PdfObj.CompressValue(obj.head)
+    may_obj_heads_contain_comments = False  # CompressValue removes comments.
+  if do_decompress_most_streams:
+    # TODO(pts): Also decompress in Multivalent output.
+    pdf.DecompressStreams(is_flate_only=False)
+  elif do_decompress_flate:
+    # TODO(pts): Also decompress in Multivalent output.
+    pdf.DecompressStreams(is_flate_only=True)
+  if do_compress_uncompressed_streams and multivalent_java is None:
+    pdf.CompressUncompressedStreams()
   pdf.Save(
       output_file_name,
       multivalent_java=multivalent_java,
@@ -8131,4 +8210,4 @@ def main(argv):
       do_generate_xref_stream=do_generate_xref_stream,
       do_generate_object_stream=do_generate_object_stream,
       may_obj_heads_contain_comments=may_obj_heads_contain_comments,
-      is_flate_ok=not do_decompress_flate)
+      is_flate_ok=do_compress_uncompressed_streams)
