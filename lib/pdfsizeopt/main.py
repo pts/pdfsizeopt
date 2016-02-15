@@ -405,8 +405,10 @@ class PdfObj(object):
   '42.' and '.5' are a valid floats in Python, PostScript and PDF.
   """
 
+  PDF_STARTXREF_EOF_NOZ_RE = re.compile(
+      r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?')
   PDF_STARTXREF_EOF_RE = re.compile(
-      r'[>\0\t\n\r\f ]startxref\s+(\d+)(?:\s+%%EOF\s*)?\Z')
+      PDF_STARTXREF_EOF_NOZ_RE.pattern + r'\Z')
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
 
   PDF_VERSION_HEADER_RE = re.compile(
@@ -7007,9 +7009,11 @@ cvx bind /LoadCff exch def
           j -= 1
         if data[j : j + 2] in (' \n', ' \r', '\r\n'):
           j += 2
-        setitem_callback(None, data[i : j], 'xref')
-        # TODO(pts): Also add comments in here.
-        setitem_callback(None, data[j : trailer_ofs], 'whitespace_after_xref')
+        callback_calls = [(None, data[i : j], 'xref')]
+        if trailer_ofs > j:
+          # TODO(pts): Also add comments in here.
+          callback_calls.append(
+              (None, data[j : trailer_ofs], 'whitespace_after_xref'))
         i = trailer_ofs
         del end_ofs_out[:]
         # TODO(pts): What if there are multiple trailers (linearized)?
@@ -7028,15 +7032,22 @@ cvx bind /LoadCff exch def
         if match:
           i = match.end()
         if PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1).match():
-          setitem_callback(None, data[trailer_ofs : i1], 'trailer')
+          callback_calls.append((None, data[trailer_ofs : i1], 'trailer'))
           if i > i1:
-            setitem_callback(None, data[i1 : i], 'whitespace_after_trailer')
+            callback_calls.append(
+                (None, data[i1 : i], 'whitespace_after_trailer'))
+          for callback_call in callback_calls:
+            setitem_callback(*callback_call)
+          callback_calls = None  # Save memory.
           break
         # We reach this point in case of a linearized PDF. We usually have
         # `startxref <offset> %%EOF' here, and then we get new objs.
-        if data[i : i + 9].startswith('startxref'):
-          # TODO(pts): Add more, till `%%EOF'.
+        match = PdfObj.PDF_STARTXREF_EOF_NOZ_RE.scanner(data, i - 1).match()
+        if match:
+          i = match.end()
+        elif data[i : i + 9].startswith('startxref'):  # Fallback.
           i += 9
+        # This contains 'xref ... trailer ... startxref ... %%EOF\n'.
         setitem_callback(None, data[i0 : i], 'linearized_xref')
         continue
       if prefix.startswith('trailer'):
