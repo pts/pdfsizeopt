@@ -5335,7 +5335,7 @@ cvx bind /LoadCff exch def
 
   def ConvertType1FontsToType1C(self):
     """Convert all Type1 fonts to Type1C in self, returns self."""
-    # !! proper tmp prefix
+    # GenerateType1CFontsFromType1 removes the tmp files it creates.
     type1c_objs = self.GenerateType1CFontsFromType1(
         self.GetFonts('Type1'), self.objs,
         TMP_PREFIX + 'conv.tmp.ps', TMP_PREFIX + 'conv.tmp.pdf')
@@ -5586,6 +5586,7 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
           duplicate_count)
 
+    # ParseType1CFonts removes the tmp files it creates.
     parsed_fonts = self.ParseType1CFonts(
         objs=type1c_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse.tmp.ps',
         data_tmp_file_name=TMP_PREFIX + 'conv.parsedata.tmp.ps')
