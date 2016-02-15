@@ -3348,8 +3348,8 @@ class ImageData(object):
     self.file_name = file_name
     return self
 
-  def Load(self, file_name):
-    """Load (parts of) a PNG file to self, return self.
+  def Load(self, file_name, do_remove_file_on_success=False):
+    """Load (parts of) a PNG or PDF image file to self, return self.
 
     Please note that this method discards possibly important PNG chunks.
 
@@ -3386,6 +3386,8 @@ class ImageData(object):
     else:
       print >>sys.stderr, 'info: loaded PNG IDAT of %s bytes' % len(self.idat)
     assert self.idat, 'image data empty'
+    if do_remove_file_on_success:
+      os.remove(file_name)
     return self
 
   def LoadPdf(self, f):
@@ -5865,7 +5867,8 @@ cvx bind /LoadCff exch def
 
   @classmethod
   def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
-                   do_just_read=False, return_none_if_status=None):
+                   do_just_read=False, return_none_if_status=None,
+                   do_remove_targetfn_on_success=True):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
     if not isinstance(sourcefn, str):
       raise TypeError
@@ -5879,7 +5882,7 @@ cvx bind /LoadCff exch def
     targetfnq = ShellQuoteFileName(targetfn)
     cmd = cmd_pattern % locals()
     EnsureRemoved(targetfn)
-    assert os.path.isfile(sourcefn)
+    assert os.path.isfile(sourcefn), sourcefn
 
     print >>sys.stderr, (
         'info: executing image optimizer %s: %s' % (cmd_name, cmd))
@@ -5895,11 +5898,15 @@ cvx bind /LoadCff exch def
     if do_just_read:
       f = open(targetfn, 'rb')
       try:
-        return cmd_name, f.read()
+        result = (cmd_name, f.read())
       finally:
         f.close()
+      if do_remove_targetfn_on_success:
+        os.remove(targetfn)
+      return result
     else:
-      return cmd_name, ImageData().Load(targetfn)
+      return cmd_name, ImageData().Load(
+          targetfn, do_remove_file_on_success=do_remove_targetfn_on_success)
 
   def AddObj(self, obj):
     """Add PdfObj to self.objs, return its object number."""
@@ -6341,7 +6348,7 @@ cvx bind /LoadCff exch def
         device_image_objs[gs_device][obj_num] = obj2
       else:
         images[obj_num].append(('parse', (image2.SavePng(
-            file_name=TMP_PREFIX + 'conv-%d.parse.png' % obj_num))))
+            file_name=TMP_PREFIX + 'img-%d.parse.png' % obj_num))))
         if image1.compression == 'none':
           image1.idat = zlib.compress(image1.idat, 9)
           image1.compression = 'zip'
@@ -6351,6 +6358,8 @@ cvx bind /LoadCff exch def
           # other images (generated below) be generated from the image2 PNG.
           images[obj_num][-1] = ('parse', image1)
           image1.file_name = image2.file_name
+          # image2.file_name (*.parse.png) will be removed by
+          # os.remove(rendered_image_file_name).
 
     if not images:  # No images => no conversion.
       return self
@@ -6365,11 +6374,14 @@ cvx bind /LoadCff exch def
         # Dictionary mapping object numbers to /Image PdfObj{}s.
         rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern=TMP_PREFIX + 'conv-%%04d.%s.tmp.png' % gs_device)
+            png_tmp_file_pattern=TMP_PREFIX + 'img-%%04d.%s.tmp.png' % gs_device)
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
+          # file_name will be removed by os.remove(rendered_image_file_name).
           images[obj_num].append(
-              ('gs', ImageData().Load(file_name=rendered_images[obj_num])))
+              ('gs', ImageData().Load(
+                  file_name=rendered_images[obj_num],
+                  do_remove_file_on_success=False)))
 
     # Optimize images.
     bytes_saved = 0
@@ -6384,6 +6396,8 @@ cvx bind /LoadCff exch def
       for method, image in obj_images:
         assert obj.Get('Width') == image.width
         assert obj.Get('Height') == image.height
+      assert len(obj_images) == 1, obj_images
+      assert obj_images[-1][0] in ('parse', 'gs')
       rendered_tuple = obj_images[-1][1].ToDataTuple()
       target_image = by_rendered_tuple.get(rendered_tuple)
       if target_image is not None:  # We have already rendered this image.
@@ -6410,7 +6424,7 @@ cvx bind /LoadCff exch def
                         'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
             sourcefn=rendered_image_file_name,
-            targetfn=TMP_PREFIX + 'conv-%d.sam2p-np.pdf' % obj_num,
+            targetfn=TMP_PREFIX + 'img-%d.sam2p-np.pdf' % obj_num,
             # We specify -s here to explicitly exclude SF_Opaque for
             # single-color images.
             # !! do we need /ImageMask parsing if we exclude SF_Mask here as
@@ -6437,7 +6451,7 @@ cvx bind /LoadCff exch def
           # produced by sam2p depends only on the RGB image data.
           print >>sys.stderr, (
               'info: using already processed image for obj %s' % obj_num)
-          obj_images.append(('#prev-sam2p-best', target_image))
+          obj_images.append(('#prev-processed-best', target_image))
         else:
           if obj_num in force_grayscale_obj_nums:
             sam2p_s_flags = '-s %s ' % ShellQuote(self.SAM2P_GRAYSCALE_MODE)
@@ -6445,26 +6459,32 @@ cvx bind /LoadCff exch def
             sam2p_s_flags = ''
           obj_images.append(self.ConvertImage(
               sourcefn=rendered_image_file_name,
-              targetfn=TMP_PREFIX + 'conv-%d.sam2p-pr.png' % obj_num,
+              targetfn=TMP_PREFIX + 'img-%d.sam2p-pr.png' % obj_num,
               cmd_pattern=('sam2p ' + sam2p_s_flags +
                            '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
-              cmd_name='sam2p_pr'))
+              cmd_name='sam2p_pr',
+              do_remove_targetfn_on_success=False))  # Will remove manually.
+          pr_file_name = obj_images[-1][1].file_name
           if (use_jbig2 and obj_images[-1][1].bpc == 1 and
               obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
-            # !! autoconvert 1-bit indexed PNG to gray
             obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
+            gray_file_name = ''
             if obj_images[-1][1].color_type != 'gray':
               # This changes obj_images[-1].file_name as well.
+              gray_file_name = TMP_PREFIX + 'img-%d.gray.png' % obj_num
               obj_images[-1][1].SavePng(
-                  file_name=TMP_PREFIX + 'conv-%d.gray.png' % obj_num,
-                  do_force_gray=True)
+                  file_name=gray_file_name, do_force_gray=True)
             obj_images[-1][1].idat = self.ConvertImage(
-                sourcefn=obj_images[-1][1].file_name,
-                targetfn=TMP_PREFIX + 'conv-%d.jbig2' % obj_num,
+                sourcefn=obj_images[-1][1].file_name,  # Can be pr_file_name.
+                targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
                 cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
                 cmd_name='jbig2', do_just_read=True)[1]
+            if gray_file_name:
+              os.remove(gray_file_name)
             obj_images[-1][1].compression = 'jbig2'
-            obj_images[-1][1].file_name = TMP_PREFIX + 'conv-%d.jbig2' % obj_num
+            obj_images[-1][1].file_name = TMP_PREFIX + 'img-%d.jbig2' % obj_num
+          os.remove(pr_file_name)
+
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
           # !! TODO(pts): Find better pngout binary file name.
@@ -6479,7 +6499,7 @@ cvx bind /LoadCff exch def
             # if it can't compress the file any further.
             image = self.ConvertImage(
                 sourcefn=rendered_image_file_name,
-                targetfn=TMP_PREFIX + 'conv-%d.pngout.png' % obj_num,
+                targetfn=TMP_PREFIX + 'img-%d.pngout.png' % obj_num,
                 cmd_pattern='pngout -force ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
                 cmd_name='pngout',
@@ -6490,12 +6510,14 @@ cvx bind /LoadCff exch def
               obj_images.append(image)
               image = None
           # TODO(pts): For very small (10x10) images, try uncompressed too.
+        os.remove(rendered_image_file_name)
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
+      # Populate obj_infos from obj_images.
       for cmd_name, image_data in obj_images:
         if obj.Get('ImageMask') and not image_data.CanUpdateImageMask():
           # We can't use this optimized image, so we skip it.
-          # Mo warning for what was rendered by Ghostscript.
+          # No warning for what was rendered by Ghostscript.
           if cmd_name != 'gs':
             print >>sys.stderr, (
                 'warning: skipping bpc=%s color_type=%s file_name=%r '
@@ -6514,8 +6536,9 @@ cvx bind /LoadCff exch def
           continue
         new_obj = PdfObj(obj)
         image_data.UpdatePdfObj(new_obj)
-        obj_infos.append([new_obj.size, cmd_name, image_data.file_name,
-                          new_obj, image_data])
+        obj_infos.append((new_obj.size, cmd_name, image_data.file_name,
+                          new_obj, image_data))
+      del obj_images[:]  # Free memory.
 
       assert obj.Get('Width') == image_tuple[0]
       assert obj.Get('Height') == image_tuple[1]
@@ -6571,12 +6594,10 @@ cvx bind /LoadCff exch def
         # TODO(pts): !! Cache something if obj_infos[0][4] is None, seperate
         # case for len(obj_info) == 1.
         # TODO(pts): Investigate why the original image can be the smallest.
-      del obj_images[:]  # free memory occupied by unchosen images
+      del obj_infos[:]  # Free memory occupied by unchosen images.
     print >>sys.stderr, 'info: saved %s bytes (%s) on optimizable images' % (
         bytes_saved, FormatPercent(bytes_saved, image_total_size))
     # !! compress PDF palette to a new object if appropriate
-    # !! delete all optimized_image_file_name{}s
-    # !! os.remove(obj_images[...]), also *.jbig2 and *.gray.png
 
     for obj_num in modify_obj_nums:
       self.objs[obj_num] = PdfObj(self.objs[modify_obj_nums[obj_num]])
