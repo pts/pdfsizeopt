@@ -548,7 +548,7 @@ Lossless JPEG optimization:
   C program using libjpeg
   sudo apt-get install jpegoptim
   https://github.com/tjko/jpegoptim
-  Does lossless optimization by default, can also do lossless.
+  Does lossless optimization by default, can also do lossy.
   jpegoptim --strip-all file.jpg
 * http://blog.jsdelivr.com/2013/02/jpeg-optimization-tools-benchmark.html
   comparison of tools:
@@ -566,7 +566,7 @@ Lossless JPEG optimization:
     mv -f jo.bin "$F"; done
   ... but make sure to run jfifremove (part of imgopt, simple code, unused)
   etc. first for removing JFIF, EXIF etc. metadata; `-copy none' also
-  removes some stuff
+  removes some stuff (why not all?)
   jfifremove: https://github.com/kormoc/imgopt/blob/master/jfifremove.c
 
 Removing JPEG comments, JFIF, EXIF etc. markers:
