@@ -568,6 +568,13 @@ Lossless JPEG optimization:
   etc. first for removing JFIF, EXIF etc. metadata; `-copy none' also
   removes some stuff (why not all?)
   jfifremove: https://github.com/kormoc/imgopt/blob/master/jfifremove.c
+* Better JPEG compression: mozjpeg.
+* Better JPEG, PNG, ZIP and Flate compression: ECT
+  https://github.com/fhanau/Efficient-Compression-Tool
+
+  Check out https://github.com/fhanau/Efficient-Compression-Tool - it's a little-known project that's had tons of development recently and consistently beats Google's original implementation both in filesize and in processing time. Oh, and it's also quite a bit easier to use (no messing around choosing filters and number of iterations - you just have a gzip-like 1-9 scale for performance vs time, and 9 times out of 10 the resulting filesize will be similar or even a few bytes smaller than a ZopfliPNG compression run with some crazy number of iterations - say, 500-1000. And it'll take 2% of the time to run that ZopfliPNG would hav e with those types of settings. Oh, and did I mention that it also happens to integrate MozJPEG into the same interface, so it's literally the best tool available for shrinking both PNGs and JPEGs, and that regardless of what crazy lengths you're willing to go to to shave off those last few bytes, this program is really all you need to get 100% of the way anyone's been able to go yet with these two file formats. A truly incredible little project that really deserves to get a lot more attention from people.
+
+  ECT contains a zopfli-fork, with some brotli code cut-and-pasted into it. Recently, the author of ECT asked me to do the same in the official zopfli release, and I tried. I saw some improvements here and there, but an equal amount of worse compression results.
 
 Removing JPEG comments, JFIF, EXIF etc. markers:
 
