@@ -1,8 +1,9 @@
-//
-// pdfsizeopt_winstub.c: Start Python on Win32.
-// by pts@fazekas.hu at Wed Jun 27 14:07:04 CEST 2012
-//
-// Compile with: i586-mingw32msvc-gcc -mconsole -s -W -Wall -o pdfsizeopt.exe pdfsizeopt_winstub.c
+/*
+ * pdfsizeopt_winstub.c: Start Python on Win32.
+ * by pts@fazekas.hu at Wed Jun 27 14:07:04 CEST 2012
+ *
+ * Compile with: i586-mingw32msvc-gcc -mconsole -s -W -Wall -o ../pdfsizeopt.exe pdfsizeopt_winstub.c
+ */
 
 #include <errno.h>
 #include <limits.h>  // PATH_MAX is 259.
@@ -33,6 +34,11 @@ static char is_in_dir(const char *file, const char *p, const char *q) {
   return 0 == stat(pathname, &st) && S_ISREG(st.st_mode);
 }
 
+static char is_file(const char *pathname) {
+  struct stat st;
+  return 0 == stat(pathname, &st) && S_ISREG(st.st_mode);
+}
+
 static void find_on_path(const char *prog, char *dir_out) {
   const char *path = getenv("PATH"), *p, *q;
   if (path != NULL || *path != '\0') {
@@ -58,12 +64,14 @@ static void find_on_path(const char *prog, char *dir_out) {
   *dir_out = '\0';
 }
 
-static const char python_exe[] = "pdfsizeopt_python.exe";
-static const char pdfsizeopt_py[] = "pdfsizeopt.py";
+/* FILE_SEP inlined here. */
+static const char python_exe[] = "pdfsizeopt_win32exec\\pdfsizeopt_python.exe";
+static const char pdfsizeopt_py0[] = "pdfsizeopt";
+static const char pdfsizeopt_py1[] = "pdfsizeopt.single";
 
 int main(int argc, char **argv) {
   char python_bin[PATH_MAX + 1], argv0_bin[PATH_MAX + 1], *p, *q;
-  char prog_py[PATH_MAX + 1];
+  char prog_py[PATH_MAX + 2];
   const char *moreargv[ARGV_MAX + 1];
   int i;
   (void)argc;
@@ -110,11 +118,20 @@ int main(int argc, char **argv) {
   strcpy(python_bin + i + 1, python_exe);
 
   i = strlen(prog_py);
-  if (i + strlen(pdfsizeopt_py) > PATH_MAX) {
-    i = PATH_MAX - strlen(pdfsizeopt_py);
+  if (i + strlen(pdfsizeopt_py0) > PATH_MAX) {
+    i = PATH_MAX - strlen(pdfsizeopt_py0);
   }
-  prog_py[i] = FILE_SEP;
-  strcpy(prog_py + i + 1, pdfsizeopt_py);
+  if (i + strlen(pdfsizeopt_py1) > PATH_MAX) {
+    i = PATH_MAX - strlen(pdfsizeopt_py0);
+  }
+  prog_py[i++] = FILE_SEP;
+  strcpy(prog_py + i, pdfsizeopt_py0);
+  if (!is_file(prog_py)) {
+    strcpy(prog_py + i, pdfsizeopt_py1);
+    if (!is_file(prog_py)) {
+      fprintf(stderr, "error: Python script missing: %s\n", prog_py);
+    }
+  }
 
   moreargv[0] = "python26";
   moreargv[1] = prog_py;
@@ -122,7 +139,6 @@ int main(int argc, char **argv) {
     moreargv[i + 1] = argv[i];
   }
   moreargv[i + 1] = NULL;
-  
 
   // execv(...) and P_OVERLAY don't work well in wine-1.2.2 and Windows XP,
   // because they make this process return before the started process finishes.
