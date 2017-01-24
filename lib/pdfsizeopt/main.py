@@ -100,7 +100,7 @@ def GetGsCommand():
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
     if sys.platform.startswith('win'):  # Windows: win32 or win64
-      gs_cmd = FindOnPath(r'pdfsizeopt_gswin\gswin32c.exe')
+      gs_cmd = FindOnPath(os.path.join('pdfsizeopt_gswin', 'gswin32c.exe'))
       if gs_cmd is None:
         data = None
       else:
@@ -8017,7 +8017,14 @@ def main(argv):
     used_script_dir = script_dir
   else:
     used_script_dir = os.path.dirname(os.path.abspath(main_file))
-  libexec_dir = os.path.join(used_script_dir, 'pdfsizeopt_libexec')
+  libexec_dir = None
+  if libexec_dir is None and sys.platform.startswith('win'):
+    xdir = os.path.join(used_script_dir, 'pdfsizeopt_win32exec')
+    if os.path.isdir(xdir):
+      libexec_dir = xdir
+    xdir = None
+  if libexec_dir is None:
+    libexec_dir = os.path.join(used_script_dir, 'pdfsizeopt_libexec')
   avian_pathname = None
   if os.path.isdir(libexec_dir):
     extrapath_dir = libexec_dir
@@ -8027,9 +8034,13 @@ def main(argv):
   else:
     extrapath_dir = used_script_dir
   if sys.platform.startswith('win'):
-    extrapath_dir = ShellQuote(extrapath_dir)
+    # ShellQuote(...) doesn't work in wine-1.6.2, is it needed on normal
+    # Windows (e.g. for running sam2p).
+    # extrapath_dir = ShellQuote(extrapath_dir)
+    pass
   os.environ['PATH'] = '%s%s%s' % (
       extrapath_dir, os.pathsep, os.getenv('PATH', ''))
+  #assert 0, os.environ['PATH']
   if not argv:
     argv = ['pdfsizeopt']
   if len(argv) == 1:
@@ -8186,6 +8197,14 @@ def main(argv):
   except getopt.GetoptError, exc:
     print >>sys.stderr, 'error: in command line: %s' % exc
     sys.exit(1)
+  if sys.platform.startswith('win'):
+    # pngout doesn't work otherwise, because it treats / as flag.
+    # This fix affects wine.
+    if file_name.startswith('/'):
+      file_name = file_name.replace('/', os.sep)
+    if output_file_name.startswith('/'):
+      output_file_name = output_file_name.replace('/', os.sep)
+
   if do_generate_object_stream and not do_generate_xref_stream:
     print >>sys.stderr, ('error: --do-generate-object-stream=yes requires '
                          '--do-generate-xref-stream=yes')
