@@ -7985,7 +7985,7 @@ def GetDir(file_name):
   return os.path.dirname(file_name)
 
 
-zip_file = None
+zip_file = script_dir = None
 
 
 def main(argv):
@@ -8013,8 +8013,11 @@ def main(argv):
       zip_msg, rev or 'UNKNOWN', size)
 
   # Find image converters etc. in script dir first.
-  script_dir = os.path.dirname(os.path.abspath(main_file))
-  libexec_dir = os.path.join(script_dir, 'pdfsizeopt_libexec')
+  if script_dir:
+    used_script_dir = script_dir
+  else:
+    used_script_dir = os.path.dirname(os.path.abspath(main_file))
+  libexec_dir = os.path.join(used_script_dir, 'pdfsizeopt_libexec')
   avian_pathname = None
   if os.path.isdir(libexec_dir):
     extrapath_dir = libexec_dir
@@ -8022,7 +8025,7 @@ def main(argv):
     if not os.path.exists(avian_pathname):
       avian_pathname = None
   else:
-    extrapath_dir = script_dir
+    extrapath_dir = used_script_dir
   if sys.platform.startswith('win'):
     extrapath_dir = ShellQuote(extrapath_dir)
   os.environ['PATH'] = '%s%s%s' % (

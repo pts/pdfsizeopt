@@ -27,4 +27,5 @@ if os.path.isfile(os.path.join(
   sys.path[:0] = [os.path.join(os.path.dirname(__file__), 'lib')]
 
 from pdfsizeopt import main
+main.script_dir = os.path.dirname(__file__)
 sys.exit(main.main(sys.argv))
