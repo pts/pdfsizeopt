@@ -167,7 +167,7 @@ def ShellQuoteFileName(string):
     string = '.%s%s' % (os.sep, string)
   if sys.platform.startswith('win'):
     # os.system on Windows XP doesn't seem to accept "..." escaping for
-    # aguments. (It accepts that for the command name.)
+    # arguments. (It accepts that for the command name.)
     assert not re.search(r'\s', string), (
         'Unexpected space in filename argument: %r' % string)
     return string
