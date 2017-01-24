@@ -8038,7 +8038,7 @@ def main(argv):
   try:
     use_pngout = True
     use_jbig2 = True
-    use_multivalent = True
+    use_multivalent = False
     do_optimize_fonts = True
     do_optimize_images = True
     do_optimize_objs = True
