@@ -36,7 +36,7 @@ To optimize a PDF, run the following command
 
   ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
 
-Additional image compression is possible by removing --use-pngout=no, but
+Additional image compression is possible by adding --use-pngout=no, but
 that would make the whole process much slower, because pngout is very slow.
 
 pdfsizeopt creates lots of temporary files (psotmp.*) in the output
@@ -47,8 +47,8 @@ specify the pathname (including the directory name) in the command-line.
 
 Please note that the commands above download all dependencies (including
 Python and Ghostscript) as well. It's possible to install some of the
-dependencies with your package manager, but these steps are not covered
-here.
+dependencies with your package manager, but these steps are considered
+alternative and more complicated, and thus are not covered here.
 
 Please note that pdfsizeopt works perfectly on any x86 and amd64 Linux
 system. There is no restriction on the libc, Linux distribution etc. because
@@ -59,7 +59,7 @@ FreeBSD systems with the Linux emulation layer enabled.
 
 To avoid typing ~/pdfsizeopt/pdfsizeopt, add "$HOME/pdfsizeopt" to your PATH
 (probably in your ~/.bashrc), open a new terminal window, and the
-command `pdfsizeopt' will work from any directory.
+command pdfsizeopt will work from any directory.
 
 You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you
 like.
@@ -93,14 +93,18 @@ Since you have to type the input filename as a full pathname, it's
 recommended to create a directory with a short name (e.g. C:\pdfs), and copy
 the input PDF there first.
 
+Additional image compression is possible by adding --use-pngout=no, but
+that would make the whole process much slower, because pngout is very slow.
+
 To avoid typing C:\pdfsizeopt\pdfsizeopt, add C:\pdfsizeopt to (the end of)
 the system PATH, open a new Command Prompt window, and the command
 `pdfsizeopt' will work from any directory.
 
 Depending on your environment, filenames with whitespace, double quotes or
-accented characters may not work in the Windows version of pdfsizeopt. Make
-sure your input and output files have names with ASCII code between 33 and
-126.
+accented characters may not work in the Windows version of pdfsizeopt. To
+play it safe, make sure your input and output files have names with letters,
+numbers, underscore (_), dash (-) and plus (+). The backslash (\) and the
+slash (/) are both OK as the directory separator.
 
 You can also put pdfsizeopt to a directory other than C:\pdfsizeopt , but it
 won't work if there is whitespace or there are accented characters in any of
