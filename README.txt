@@ -14,6 +14,9 @@ sam2p, pngtopnm, pngout (optional), and the Multivalent PDF compressor
 Doesn't pdfsizeopt work with your PDF?
 Report the issue here: https://github.com/pts/pdfsizeopt/issues
 
+Send donations to the author of pdfsizeopt:
+https://flattr.com/submit/auto?user_id=pts&url=https://github.com/pts/pdfsizeopt
+
 Installation instructions and usage on Linux
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 There is no installer, you need to run some commands in the command line to
