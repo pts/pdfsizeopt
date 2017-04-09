@@ -39,7 +39,7 @@ To optimize a PDF, run the following command
 
   ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
 
-Additional image compression is possible by adding --use-pngout=no, but
+Additional image compression is possible by adding --use-pngout=yes, but
 that would make the whole process much slower, because pngout is very slow.
 
 pdfsizeopt creates lots of temporary files (psotmp.*) in the output
@@ -96,7 +96,7 @@ Since you have to type the input filename as a full pathname, it's
 recommended to create a directory with a short name (e.g. C:\pdfs), and copy
 the input PDF there first.
 
-Additional image compression is possible by adding --use-pngout=no, but
+Additional image compression is possible by adding --use-pngout=yes, but
 that would make the whole process much slower, because pngout is very slow.
 
 To avoid typing C:\pdfsizeopt\pdfsizeopt, add C:\pdfsizeopt to (the end of)
