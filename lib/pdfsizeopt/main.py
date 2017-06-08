@@ -4600,7 +4600,7 @@ class PdfData(object):
 /SkipWhitespaceRead {  % <file> SkipWhitespaceRead <charcode>
   {
     dup read
-    not{/invalidfileaccess /SkipWhitespaceRead signalerror}if
+    not{/SkipWhitespaceRead /invalidfileaccess signalerror}if
     dup _WhitespaceCharCodes exch known not{exit}if
     pop
   } loop
@@ -4608,9 +4608,9 @@ class PdfData(object):
 } bind def
 
 /ReadWhitespaceChar {  % <file> SkipWhitespaceRead <charcode>
-  read not{/invalidfileaccess /ReadWhitespaceChar signalerror}if
+  read not{/ReadWhitespaceChar /invalidfileaccess signalerror}if
   dup _WhitespaceCharCodes exch known not {
-    /invalidfileaccess /WhitespaceCharExpected signalerror
+    /WhitespaceCharExpected /invalidfileaccess signalerror
   } if
 } bind def
 
@@ -4619,7 +4619,7 @@ class PdfData(object):
   % Reading to a string would fail for >65535 bytes (this is the maximum
   % string size in PostScript)
   %string currentfile exch readstring
-  %not{/invalidfileaccess /ReadStreamData signalerror}if
+  %not{/ReadStreamData /invalidfileaccess signalerror}if
   currentfile exch () /SubFileDecode filter
   << /CloseSource true /Intent 0 >> /ReusableStreamDecode filter
   %dup 0 setfileposition % by default
@@ -4627,13 +4627,13 @@ class PdfData(object):
   currentfile SkipWhitespaceRead
   (.) dup 0 3 index put exch pop  % Convert char to 1-char string.
   currentfile 8 string readstring
-  not{/invalidfileaccess /ReadEndStream signalerror}if
+  not{/ReadEndStream /invalidfileaccess signalerror}if
   concatstrings  % concat (e) and (ndstream)
-  (endstream) ne{/invalidfileaccess /CompareEndStream signalerror}if
+  (endstream) ne{/CompareEndStream /invalidfileaccess signalerror}if
   currentfile ReadWhitespaceChar pop
   currentfile 6 string readstring
-  not{/invalidfileaccess /ReadEndObj signalerror}if
-  (endobj) ne{/invalidfileaccess /CompareEndObj signalerror}if
+  not{/ReadEndObj /invalidfileaccess signalerror}if
+  (endobj) ne{/CompareEndObj /invalidfileaccess signalerror}if
   currentfile ReadWhitespaceChar pop
 } bind def
 
@@ -4780,8 +4780,8 @@ class PdfData(object):
   count -1 _Count 1 add {pop pop}for  % more reliable than cleartomark
   closefile
   systemdict /FontDirectory get
-  dup length 0 eq {/invalidfileaccess /NoFontDefined signalerror} if
-  dup length 1 gt {/invalidfileaccess /MultipleFontsDefined signalerror} if
+  dup length 0 eq {/NoFontDefined /invalidfileaccess signalerror} if
+  dup length 1 gt {/MultipleFontsDefined /invalidfileaccess signalerror} if
   [exch {pop} forall] 0 get  % Convert FontDirectory to the name of our font
   dup /_OrigFontName exch def
   % stack: <font-name>
@@ -5151,9 +5151,9 @@ class PdfData(object):
 %   {/FontSetInit /ProcSet findresource begin //true ReadData}
 GS_PDF_ProcSet /FRD .knownget not { pdfdict /readType1C get } if
 dup /FontSetInit FindItem
-  dup 0 lt { /invalidfileaccess /MissingFontSetInit signalerror } if
+  dup 0 lt { /MissingFontSetInit /invalidfileaccess signalerror } if
 1 index /ReadData FindItem
-  dup 0 lt { /invalidfileaccess /MissingReadData signalerror } if
+  dup 0 lt { /MissingReadData /invalidfileaccess signalerror } if
 1 index sub 1 add getinterval
 cvx bind /LoadCff exch def
 % Now we have one of these:
@@ -5176,7 +5176,7 @@ cvx bind /LoadCff exch def
   % <streamdict>
   pop
   /MY findfont
-  dup /FontType get 2 ne {/invalidfileaccess /NotType2Font signalerror} if
+  dup /FontType get 2 ne {/NotType2Font /invalidfileaccess signalerror} if
   _DataFile _ObjNumber write===only
   _DataFile ( <<\n) writestring
   % SUXX: the CFF /FontName got lost (overwritten by /MY above)
