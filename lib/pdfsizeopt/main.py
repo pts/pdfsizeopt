@@ -5108,6 +5108,7 @@ class PdfData(object):
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, (
         'info: executing Type1CConverter with Ghostscript: %s' % gs_cmd)
+    sys.stdout.flush()
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
@@ -5355,6 +5356,7 @@ cvx bind /LoadCff exch def
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, (
         'info: executing Type1CParser with Ghostscript: %s' % gs_cmd)
+    sys.stdout.flush()
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
@@ -5859,6 +5861,7 @@ cvx bind /LoadCff exch def
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, (
         'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
+    sys.stdout.flush()
     status = os.system(gs_cmd)
     if status:
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
@@ -5938,6 +5941,7 @@ cvx bind /LoadCff exch def
 
     print >>sys.stderr, (
         'info: executing image optimizer %s: %s' % (cmd_name, cmd))
+    sys.stdout.flush()
     status = os.system(cmd)
     if (return_none_if_status is not None and
         status == return_none_if_status):
@@ -6169,6 +6173,7 @@ cvx bind /LoadCff exch def
         lines.append(line)
     finally:
       status = p.close()
+    sys.stdout.flush()
     if status:
       print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
       # Example line: 'Error: /ioerror in --.reusablestreamdecode--\n'.
@@ -7886,6 +7891,7 @@ cvx bind /LoadCff exch def
         ShellQuoteFileName(in_pdf_tmp_file_name))
     print >>sys.stderr, (
         'info: executing Multivalent to optimize PDF: %s' % multivalent_cmd)
+    sys.stdout.flush()
     status = os.system(multivalent_cmd)
 
     if status:
