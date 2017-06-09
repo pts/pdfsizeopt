@@ -8070,6 +8070,7 @@ def main(argv):
       avian_pathname = None
   else:
     extrapath_dir = used_script_dir
+  print >>sys.stderr, 'info: prepending to PATH: %s' % extrapath_dir
   if sys.platform.startswith('win'):
     # ShellQuote(...) doesn't work in wine-1.6.2, is it needed on normal
     # Windows (e.g. for running sam2p).
