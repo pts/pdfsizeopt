@@ -4643,7 +4643,7 @@ class PdfData(object):
 
 % <streamdict> <compressed-file> DecompressStreamFile
 % <streamdict> <decompressed-file>
-/DecompressStreamFile {
+/DecompressStreamFileWithReusableStreamDecode {
   exch
   % TODO(pts): Give these parameters to the /ReusableStreamDecode in
   % ReadStreamFile.
@@ -4676,6 +4676,40 @@ class PdfData(object):
   exch currentdict end
   % stack: <streamdict> <compressed-file> <reusabledict>
   /ReusableStreamDecode filter
+} bind def
+
+% <streamdict> <compressed-file> DecompressStreamFile
+% <streamdict> <decompressed-file>
+/DecompressStreamFileWithIndividualFilters {
+  % We don't use /ReusableStreamDecode, because it raises errors quickly
+  % (at `filter' time) with corrupt or incomplete input. Instead of that, we
+  % set up a filter chain.
+  exch
+  dup /Filter .knownget not {null} if
+      dup null eq {pop []} if
+      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
+  1 index /DecodeParms .knownget not {null} if
+      dup null eq {pop []} if
+      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
+  % stack: <compressed-file> <streamdict> <filter-array> <decodeparms-array>
+  dup length 0 eq {  % If decodeparms-array is empty, fill it up with nulls.
+    pop dup length mark exch 1 exch 1 exch {pop null} for
+    counttomark array astore exch pop } if
+  dup length 2 index length ne
+      {/FilterLengthNeDecodeParmsLength /invalidfileaccess signalerror} if
+  4 -1 roll
+  % stack: <streamdict> <filter-array> <decodeparms-array> <compressed-file>
+  1 index length 1 sub 0 exch 1 exch {
+    dup 3 index exch get exch
+    4 index exch get exch
+    % stack: <streamdict> <filter-array> <decodeparms-array>
+    %        <file> <filter> <decodeparms>
+    dup null eq {pop 0 dict} if  % Replace null with <<>> in decodeparms.
+    exch filter
+  } for
+  % stack: <streamdict> <filter-array> <decodeparms-array> <decompressed-file>
+  exch pop exch pop
+  % stack: <streamdict> <decompressed-file>
 } bind def
 
 /obj {  % <objnumber> <gennumber> obj -
@@ -4774,7 +4808,7 @@ class PdfData(object):
 } bind def
 
 /stream {  % <streamdict> stream -
-  ReadStreamFile DecompressStreamFile
+  ReadStreamFile DecompressStreamFileWithReusableStreamDecode
   % <streamdict> <decompressed-file>
   exch pop
   % stack: <decompressed-file> (containing a Type1 font program)
@@ -5178,7 +5212,7 @@ cvx bind /LoadCff exch def
 %   pop } bind def  % gs 8.63 or later
 
 /stream {  % <streamdict> stream -
-  ReadStreamFile DecompressStreamFile
+  ReadStreamFile DecompressStreamFileWithReusableStreamDecode
   % <streamdict> <decompressed-file>
   systemdict /FontDirectory get {pop undefinefont} forall
   dup /MY exch LoadCff
@@ -6037,7 +6071,7 @@ cvx bind /LoadCff exch def
     (\n) print flush
   pop
   % stack: <streamdict> <compressed-file>
-  DecompressStreamFile
+  DecompressStreamFileWithIndividualFilters
   % stack: <streamdict> <decompressed-file> (containing image /DataSource)
 
   9 dict begin  % Image dictionary
@@ -6065,7 +6099,9 @@ cvx bind /LoadCff exch def
   DataSource
   currentdict end
   % Stack: <streamdict> <datasource> <psimagedict>
-  image showpage
+  % This renders the partial image in case of /ioerror from a filter.
+  {image} stopped {(ImageRenderer: warning: corrupt image data\n)print flush}if
+  showpage
   closefile
   % Stack: <streamdict>
   pop restore
