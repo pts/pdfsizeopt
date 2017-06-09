@@ -6120,10 +6120,32 @@ cvx bind /LoadCff exch def
            ShellQuoteFileName(ps_tmp_file_name)))
     print >>sys.stderr, (
         'info: executing ImageRenderer with Ghostscript: %s' % gs_cmd)
-    status = os.system(gs_cmd)
+    p = os.popen(gs_cmd, 'rb', 0)  # SUXX: It remains buffered.
+    lines = []
+    try:
+      for line in iter(p.readline, ''):
+        if line.startswith('  '):  # Stack dump.
+          sys.stdout.write(line.rstrip('\r\n')[:76] + '...\n')  # Truncate.
+        else:
+          sys.stdout.write(line)
+        if line.startswith('ImageRenderer: rendering image XObject '):
+          del lines[:]
+        lines.append(line)
+    finally:
+      status = p.close()
     if status:
       print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
+      # Example line: 'Error: /ioerror in --.reusablestreamdecode--\n'.
+      if [1 for line in lines if line.startswith('Error: /ioerror ')]:
+        line = lines[0].rstrip('\r\n')
+        prefix = 'ImageRenderer: rendering image '
+        if line.startswith(prefix):
+          line = line[len(prefix):]
+        # This is usually indicates a broken PDF containing a corrupt image
+        # XObject.
+        assert False, 'Error in image data: ' + line
       assert False, 'ImageRenderer failed (status)'
+    del lines
     assert not os.path.exists(png_tmp_file_pattern % (len(objs) + 1)), (
         'ImageRenderer created too many PNGs')
 
@@ -8055,7 +8077,6 @@ def main(argv):
     pass
   os.environ['PATH'] = '%s%s%s' % (
       extrapath_dir, os.pathsep, os.getenv('PATH', ''))
-  #assert 0, os.environ['PATH']
   if not argv:
     argv = ['pdfsizeopt']
   if len(argv) == 1:
