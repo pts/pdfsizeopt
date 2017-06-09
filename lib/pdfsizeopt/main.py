@@ -4768,6 +4768,11 @@ class PdfData(object):
 >> setdistillerparams
 .setpdfwrite
 
+/eexec {
+  1 index /FontName get userdict exch
+  /_OrigFontName exch put eexec
+} bind def
+
 /stream {  % <streamdict> stream -
   ReadStreamFile DecompressStreamFile
   % <streamdict> <decompressed-file>
@@ -4776,14 +4781,24 @@ class PdfData(object):
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
   count /_Count exch def  % remember stack depth instead of mark depth
-  9 dict begin dup mark exch cvx exec end
+  /_OrigFontName null def
+  9 dict begin dup mark exch cvx exec end  % eexec will set /_OrigFontName
   count -1 _Count 1 add {pop pop}for  % more reliable than cleartomark
   closefile
   systemdict /FontDirectory get
   dup length 0 eq {/NoFontDefined /invalidfileaccess signalerror} if
-  dup length 1 gt {/MultipleFontsDefined /invalidfileaccess signalerror} if
-  [exch {pop} forall] 0 get  % Convert FontDirectory to the name of our font
-  dup /_OrigFontName exch def
+  _OrigFontName null eq {
+    % /MultipleFontsDefined can happen, the eexec part of some Type 1 font
+    % programs call `definefont' multiple times, e.g. for /Helvetica and
+    % /Helvetica-Oblique.
+    dup length 1 gt {/MultipleFontsDefined /invalidfileaccess signalerror} if
+    dup length ===
+    [exch {pop} forall] 0 get  % Convert FontDirectory to the name of our font
+    dup /_OrigFontName exch def
+  } {
+    _OrigFontName known not {/FontNotFound /invalidaccess signalerror} if
+    _OrigFontName
+  } ifelse
   % stack: <font-name>
   findfont dup length dict copy
   % Let the font name be /Obj68 etc.
