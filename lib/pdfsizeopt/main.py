@@ -5562,10 +5562,24 @@ cvx bind /LoadCff exch def
     if [name for name in encoding if not isinstance(name, str) or
         not name.startswith('/')]:
       raise ValueError
-    if len(encoding) != 256:
+    lene = len(encoding)
+    if lene != 256:
       raise ValueError
-    # !! TODO(pts): Skip /.notdef()s.
-    return '<</Differences[0 %s]>>' % ' '.join(encoding)
+    output = ['<</Differences[']
+    
+    i = 0
+    while i < lene:
+      while i < lene and encoding[i] == '/.notdef':
+        i += 1
+      if i == lene:
+        break
+      output.append(' %d %s' % (i, encoding[i]))
+      i += 1
+      while i < lene and encoding[i] != '/.notdef':
+        output.append(' %s' % encoding[i])
+        i += 1
+    output.append(']>>')
+    return ''.join(output)
 
   def UnifyType1CFonts(self, do_keep_font_optionals,
                        do_double_check_missing_glyphs,
