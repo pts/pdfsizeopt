@@ -5564,6 +5564,45 @@ cvx bind /LoadCff exch def
       self.
     """
     type1c_objs = self.GetFonts(font_type='Type1C')
+    if type1c_objs:
+      for obj_num in sorted(self.objs):
+        obj = self.objs[obj_num]
+        head = obj.head
+        if ('/Font' in head and '/Type' in head and
+            '/Type1' in head and '/Subtype' in head and
+            '/FontDescriptor' in head and
+            '/Encoding' not in head and
+            obj.Get('Type') == '/Font' and
+            obj.Get('Subtype') == '/Type1' and
+            obj.Get('Encoding') is None):
+          match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
+          if match:
+            obj_num = int(match.group(1))  # /Type/FontDescriptor.
+            if obj_num in type1c_objs:
+              # If there is a /Type/Font object referring to the
+              # /Type/FontDescriptor object, and the /Type/Font object doesn't
+              # have the /Encoding field specified, then the font is not
+              # eligible for unification by pdfsizeopt.
+              #
+              # See myfile.pdf and myfile.pso.pdf in
+              # https://github.com/pts/pdfsizeopt/issues/12
+              # how this can break the output.
+              #
+              # pdf_reference_1-7.pdf says that a missing /Encoding in the
+              # /Type/Font object would make use of the /Encoding built in
+              # to the font data. However, the way Type1CGenerator builds
+              # the Type1C data object, it is unable to add /Encoding
+              # information. Also the way ParseType1CFonts parses
+              # the Type1C data, the /Encoding information is already lost.
+              #
+              # pdfsizeopt could be improved to make it able to unify more
+              # Type1C fonts: extraction of /Encoding could be added to
+              # ParseType1CFonts, and generation of an explicit /Encoding
+              # object could be added to the /Type/Font object; as a further
+              # optimiztion, /Encoding generation could be added to
+              # Type1CGenerator, and the explicit /Encoding could be omitted
+              # from the /Type/Font object if not needed.
+              del type1c_objs[obj_num]
     if not type1c_objs:
       return self
 
