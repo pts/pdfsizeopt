@@ -5147,8 +5147,8 @@ class PdfData(object):
 % by pts@fazekas.hu at Tue May 19 22:46:15 CEST 2009
 
 % keys to omit from the font dictionary dump
-/OMIT << /FontName 1 /FID 1 /Encoding 1 /.OrigFont 1
-         /OrigFont 1 >> def
+/OMIT << /FontName 1 /FID 1 /.OrigFont 1
+         /OrigFont 1 /FAPI 1 >> def
 
 /_DataFile DataFile (w) file def  % -sDataFile=... on the command line
 
@@ -5555,6 +5555,18 @@ cvx bind /LoadCff exch def
     # Only modify after doing all the checks.
     target_cs.update(source_cs)
 
+  @classmethod
+  def FormatEncoding(cls, encoding):
+    if not isinstance(encoding, (list, tuple)):
+      raise TypeError
+    if [name for name in encoding if not isinstance(name, str) or
+        not name.startswith('/')]:
+      raise ValueError
+    if len(encoding) != 256:
+      raise ValueError
+    # !! TODO(pts): Skip /.notdef()s.
+    return '<</Differences[0 %s]>>' % ' '.join(encoding)
+
   def UnifyType1CFonts(self, do_keep_font_optionals,
                        do_double_check_missing_glyphs,
                        do_regenerate_all_fonts):
@@ -5564,47 +5576,55 @@ cvx bind /LoadCff exch def
       self.
     """
     type1c_objs = self.GetFonts(font_type='Type1C')
-    if type1c_objs:
-      for obj_num in sorted(self.objs):
-        obj = self.objs[obj_num]
-        head = obj.head
-        if ('/Font' in head and '/Type' in head and
-            '/Type1' in head and '/Subtype' in head and
-            '/FontDescriptor' in head and
-            '/Encoding' not in head and
-            obj.Get('Type') == '/Font' and
-            obj.Get('Subtype') == '/Type1' and
-            obj.Get('Encoding') is None):
-          match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
-          if match:
-            obj_num = int(match.group(1))  # /Type/FontDescriptor.
-            if obj_num in type1c_objs:
-              # If there is a /Type/Font object referring to the
-              # /Type/FontDescriptor object, and the /Type/Font object doesn't
-              # have the /Encoding field specified, then the font is not
-              # eligible for unification by pdfsizeopt.
-              #
-              # See myfile.pdf and myfile.pso.pdf in
-              # https://github.com/pts/pdfsizeopt/issues/12
-              # how this can break the output.
-              #
-              # pdf_reference_1-7.pdf says that a missing /Encoding in the
-              # /Type/Font object would make use of the /Encoding built in
-              # to the font data. However, the way Type1CGenerator builds
-              # the Type1C data object, it is unable to add /Encoding
-              # information. Also the way ParseType1CFonts parses
-              # the Type1C data, the /Encoding information is already lost.
-              #
-              # pdfsizeopt could be improved to make it able to unify more
-              # Type1C fonts: extraction of /Encoding could be added to
-              # ParseType1CFonts, and generation of an explicit /Encoding
-              # object could be added to the /Type/Font object; as a further
-              # optimiztion, /Encoding generation could be added to
-              # Type1CGenerator, and the explicit /Encoding could be omitted
-              # from the /Type/Font object if not needed.
-              del type1c_objs[obj_num]
     if not type1c_objs:
       return self
+
+    # Maps from /Type/FontDescriptor obj_num to list of /Type/Font obj_nums.
+    copy_encoding_dict = {}
+    for obj_num in sorted(self.objs):
+      obj = self.objs[obj_num]
+      head = obj.head
+      if ('/Font' in head and '/Type' in head and
+          '/Type1' in head and '/Subtype' in head and
+          '/FontDescriptor' in head and
+          '/Encoding' not in head and
+          obj.Get('Type') == '/Font' and
+          obj.Get('Subtype') == '/Type1' and
+          obj.Get('Encoding') is None):
+        match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
+        if match:
+          fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
+          if fd_obj_num in type1c_objs:
+            # !!
+            # If there is a /Type/Font object referring to the
+            # /Type/FontDescriptor object, and the /Type/Font object doesn't
+            # have the /Encoding field specified, then pdfsizeopt will add
+            # an explicit /Encoding.
+            #
+            # See myfile.pdf and myfile.pso.pdf in
+            # https://github.com/pts/pdfsizeopt/issues/12 .
+            #
+            # pdf_reference_1-7.pdf says that a missing /Encoding in the
+            # /Type/Font object would make use of the /Encoding built in
+            # to the font data. However, the way Type1CGenerator builds
+            # the Type1C data object, it is unable to add /Encoding
+            # information. Also the way ParseType1CFonts parses
+            # the Type1C data, the /Encoding information is already lost.
+            #
+            # TODO(pts): Unify /Encoding (via .notdef) of multiple fonts.
+            # TODO(pts): Unify /Widths of multiple fonts.
+            # TODO(pts): Don't emit /Encoding if not needed.
+            # pdfsizeopt could be improved to make it able to unify more
+            # Type1C fonts: extraction of /Encoding could be added to
+            # ParseType1CFonts, and generation of an explicit /Encoding
+            # object could be added to the /Type/Font object; as a further
+            # optimiztion, /Encoding generation could be added to
+            # Type1CGenerator, and the explicit /Encoding could be omitted
+            # from the /Type/Font object if not needed.
+            obj_nums = copy_encoding_dict.get(fd_obj_num)
+            if obj_nums is None:
+              obj_nums = copy_encoding_dict[fd_obj_num] = []
+            obj_nums.append(obj_num)
 
     orig_type1c_size = 0
     for obj_num in sorted(type1c_objs):
@@ -5697,6 +5717,12 @@ cvx bind /LoadCff exch def
       obj = self.objs[obj_num]  # /Type/FontDescriptor
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
+      encoding = parsed_font.pop('Encoding', None)
+      if encoding:
+        for font_obj_num in copy_encoding_dict[obj_num]:
+          # TODO(pts): Be smarter: Unify compatible encodings of multiple fonts.
+          self.objs[font_obj_num].Set('Encoding', self.FormatEncoding(encoding))
+      encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
       if (parsed_font.get('FontType') != 2 or
           not isinstance(parsed_font.get('CharStrings'), dict) or
@@ -5947,6 +5973,7 @@ cvx bind /LoadCff exch def
       # * /version is removed from parsed2_fonts.
       # * /UnderlinePosition is reset to value 0 in parsed2_fonts.
       # * /UnderlineThickness reset to value 0 in parsed2_fonts.
+      # * /Encoding (can be missing).
       for obj_num in sorted(loaded_objs):
         parsed_font = parsed_fonts[obj_num]
         parsed2_font = parsed2_fonts[obj_num]
