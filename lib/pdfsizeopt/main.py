@@ -5567,9 +5567,29 @@ cvx bind /LoadCff exch def
     return encoding
 
   @classmethod
+  def MergeEncodings(cls, encodings):
+    if len(encodings) < 2:
+      return None
+    for encoding in encodings:
+      cls.CheckEncoding(encoding)
+    output_encoding = []
+    for i in xrange(len(encodings[0])):
+      name = '/.notdef'
+      for j in xrange(len(encodings)):
+        ename = encodings[j][i]
+        if ename != '/.notdef' and ename != name:
+          if name != '/.notdef':
+            return None  # Conflicting name in position i.
+          name = ename
+      output_encoding.append(name)
+    return output_encoding
+
+  @classmethod
   def FormatEncoding(cls, encoding):
     cls.CheckEncoding(encoding)
     lene = len(encoding)
+    # TODO(pts): Be smarter: use /StandardEncoding or something else as
+    # base, whichever is smallest.
     output = ['<</Differences[']
     
     i = 0
@@ -5578,10 +5598,10 @@ cvx bind /LoadCff exch def
         i += 1
       if i == lene:
         break
-      output.append(' %d %s' % (i, encoding[i]))
+      output.append(' %d%s' % (i, encoding[i]))
       i += 1
       while i < lene and encoding[i] != '/.notdef':
-        output.append(' %s' % encoding[i])
+        output.append(encoding[i])
         i += 1
     output.append(']>>')
     return ''.join(output)
@@ -5615,7 +5635,6 @@ cvx bind /LoadCff exch def
         if match:
           fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
           if fd_obj_num in type1c_objs:
-            # !!
             # If there is a /Type/Font object referring to the
             # /Type/FontDescriptor object, and the /Type/Font object doesn't
             # have the /Encoding field specified, then pdfsizeopt will add
@@ -5628,12 +5647,14 @@ cvx bind /LoadCff exch def
             # /Type/Font object would make use of the /Encoding built in
             # to the font data. However, the way Type1CGenerator builds
             # the Type1C data object, it is unable to add /Encoding
-            # information. Also the way ParseType1CFonts parses
-            # the Type1C data, the /Encoding information is already lost.
+            # information. (Is this true? Let's try.)
             #
             # TODO(pts): Unify /Encoding (via .notdef) of multiple fonts.
             # TODO(pts): Unify /Widths of multiple fonts.
             # TODO(pts): Don't emit /Encoding if not needed.
+            # TODO(pts): Unify /Encoding dicts globally, not only for
+            #            merged fonts.
+            # TODO(pts): Move reused /Encoding dicts to separate objects.
             # pdfsizeopt could be improved to make it able to unify more
             # Type1C fonts: extraction of /Encoding could be added to
             # ParseType1CFonts, and generation of an explicit /Encoding
@@ -5866,11 +5887,23 @@ cvx bind /LoadCff exch def
       # Set /Encoding for each /Type/Font object. We need this because
       # parsed_fonts[obj_num] doesn't contain the /Encoding anymore, we've
       # removed it above.
-      for obj_num in group_obj_nums:
-        encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
-        for font_obj_num in font_obj_nums:
-          # TODO(pts): Be smarter: Unify compatible encodings of multiple fonts.
-          self.objs[font_obj_num].Set('Encoding', self.FormatEncoding(encoding))
+
+      # TODO(pts): Merge only some of the encodings if all of them can't
+      # be merged.
+      encoding = self.MergeEncodings(
+          [copy_encoding_dict[obj_num][0] for obj_num in group_obj_nums])
+      if encoding is not None:
+        encoding = self.FormatEncoding(encoding)
+        for obj_num in group_obj_nums:
+          font_obj_nums = copy_encoding_dict.pop(obj_num)[1]
+          for font_obj_num in font_obj_nums:
+            self.objs[font_obj_num].Set('Encoding', encoding)
+      else:
+        for obj_num in group_obj_nums:
+          encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+          for font_obj_num in font_obj_nums:
+            self.objs[font_obj_num].Set(
+                'Encoding', self.FormatEncoding(encoding))
       encoding = None
 
       print >>sys.stderr, (
