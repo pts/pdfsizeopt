@@ -5556,15 +5556,20 @@ cvx bind /LoadCff exch def
     target_cs.update(source_cs)
 
   @classmethod
-  def FormatEncoding(cls, encoding):
+  def CheckEncoding(cls, encoding):
     if not isinstance(encoding, (list, tuple)):
       raise TypeError
     if [name for name in encoding if not isinstance(name, str) or
         not name.startswith('/')]:
       raise ValueError
-    lene = len(encoding)
-    if lene != 256:
+    if len(encoding) != 256:
       raise ValueError
+    return encoding
+
+  @classmethod
+  def FormatEncoding(cls, encoding):
+    cls.CheckEncoding(encoding)
+    lene = len(encoding)
     output = ['<</Differences[']
     
     i = 0
@@ -5593,7 +5598,8 @@ cvx bind /LoadCff exch def
     if not type1c_objs:
       return self
 
-    # Maps from /Type/FontDescriptor obj_num to list of /Type/Font obj_nums.
+    # Maps from /Type/FontDescriptor obj_num to lists [encoding, obj_nums].
+    # obj_nums is a list of /Type/Font obj_nums.
     copy_encoding_dict = {}
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
@@ -5637,8 +5643,8 @@ cvx bind /LoadCff exch def
             # from the /Type/Font object if not needed.
             obj_nums = copy_encoding_dict.get(fd_obj_num)
             if obj_nums is None:
-              obj_nums = copy_encoding_dict[fd_obj_num] = []
-            obj_nums.append(obj_num)
+              obj_nums = copy_encoding_dict[fd_obj_num] = [None, []]
+            obj_nums[1].append(obj_num)
 
     orig_type1c_size = 0
     for obj_num in sorted(type1c_objs):
@@ -5732,10 +5738,8 @@ cvx bind /LoadCff exch def
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       encoding = parsed_font.pop('Encoding', None)
-      if encoding:
-        for font_obj_num in copy_encoding_dict[obj_num]:
-          # TODO(pts): Be smarter: Unify compatible encodings of multiple fonts.
-          self.objs[font_obj_num].Set('Encoding', self.FormatEncoding(encoding))
+      if encoding is not None:
+        copy_encoding_dict[obj_num][0] = self.CheckEncoding(encoding)
       encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
       if (parsed_font.get('FontType') != 2 or
@@ -5858,6 +5862,17 @@ cvx bind /LoadCff exch def
         # unreachable objs safely.
       new_char_count = len(merged_font['CharStrings'])
       unified_obj_nums.add(group_obj_nums[0])
+
+      # Set /Encoding for each /Type/Font object. We need this because
+      # parsed_fonts[obj_num] doesn't contain the /Encoding anymore, we've
+      # removed it above.
+      for obj_num in group_obj_nums:
+        encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+        for font_obj_num in font_obj_nums:
+          # TODO(pts): Be smarter: Unify compatible encodings of multiple fonts.
+          self.objs[font_obj_num].Set('Encoding', self.FormatEncoding(encoding))
+      encoding = None
+
       print >>sys.stderr, (
           'info: merged fonts %r, reduced char count from %d to %d (%s)' %
           (font_group_names[font_group], orig_char_count, new_char_count,
