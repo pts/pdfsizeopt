@@ -5906,6 +5906,12 @@ cvx bind /LoadCff exch def
                 'Encoding', self.FormatEncoding(encoding))
       encoding = None
 
+      # TODO(pts): If all /Encoding values are merged, unify /Widths (in
+      # /copy_encoding_dict, also noting FirstChar and /LastChar). Now, if
+      # /everything else (including the new /Encoding and /Widths) are the same,
+      # take /BaseFont from the first /Type/Font, and merge the /Type/Font
+      # objects.
+
       print >>sys.stderr, (
           'info: merged fonts %r, reduced char count from %d to %d (%s)' %
           (font_group_names[font_group], orig_char_count, new_char_count,
@@ -5926,6 +5932,21 @@ cvx bind /LoadCff exch def
       for obj_num in sorted(type1c_objs):
         type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
       return self
+
+    # This is for proper saving of /Encoding with do_regenerate_all_fonts==True.
+    for obj_num in sorted(unified_obj_nums):
+      if obj_num in copy_encoding_dict:
+        # It would be convenient to do this here:
+        #
+        #   parsed_fonts[obj_num]['Encoding'] = copy_encoding_dict.pop(obj_num)[0]
+        #
+        # Unfortunately it doesn't work, because self.TYPE1C_GENERATOR_PROCSET
+        # is not able to emit /Encoding properly due to a Ghostscript bug.
+        encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+        for font_obj_num in font_obj_nums:
+          self.objs[font_obj_num].Set(
+              'Encoding', self.FormatEncoding(encoding))
+    encoding = None
 
     def AppendSerialized(value, output):
       if isinstance(value, list):
