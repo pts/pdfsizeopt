@@ -1760,7 +1760,7 @@ class PdfObj(object):
     As a relaxation, numbers are allowed as dict keys.
 
     Args:
-      data: PDF token sequence
+      data: String containing a PDF token sequence.
     Returns:
       A recursive Python data structure.
     Raises:
@@ -5664,7 +5664,7 @@ cvx bind /LoadCff exch def
           'FontMatrix' not in parsed_font or
           'PaintType' not in parsed_font):
         print >>sys.stderr, (
-            'warning: strange Type1 font obj %d, not attempting to merge; '
+            'warning: strange Type1C font obj %d, not attempting to merge; '
             'CharStrings=%s FontType=%r FontMatrix=%r PaintType=%r' %
             (obj_num, type(parsed_font.get('CharStrings')),
              parsed_font.get('FontType'),
@@ -5769,7 +5769,7 @@ cvx bind /LoadCff exch def
         obj.head = merged_fontdesc_obj.head
         assert obj.stream is None
         font_group_names[font_group].append(
-            parsed_fonts[group_obj_nums[i]]['FontName'])
+            parsed_fonts[group_obj_num]['FontName'])
         del type1c_objs[group_obj_num]
         del parsed_fonts[group_obj_num]
         if group_obj_num in unified_obj_nums:
@@ -5898,9 +5898,16 @@ cvx bind /LoadCff exch def
       parsed2_fonts = self.ParseType1CFonts(
           objs=loaded_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse2.tmp.ps',
           data_tmp_file_name=TMP_PREFIX + 'conv.parse2data.tmp.ps')
-      assert sorted(parsed_fonts) == sorted(type1c_objs), (
+      assert sorted(parsed_fonts) == sorted(parsed_fonts), (
           'Font object number list mismatch: loaded=%r expected=%s' %
-          (sorted(parsed_fonts), sorted(type1c_objs)))
+          (sorted(parsed_fonts), sorted(parsed_fonts)))
+      # Typical differences:
+      # * /FontName is removed from parsed2_fonts. (Ghostscript does this,
+      #   not the code in pdfsizeopt.)
+      # * /FontBBox is added to parsed2_fonts with computed values.
+      # * /version is removed from parsed2_fonts.
+      # * /UnderlinePosition is reset to value 0 in parsed2_fonts.
+      # * /UnderlineThickness reset to value 0 in parsed2_fonts.
       for obj_num in sorted(loaded_objs):
         parsed_font = parsed_fonts[obj_num]
         parsed2_font = parsed2_fonts[obj_num]
