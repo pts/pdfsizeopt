@@ -5790,7 +5790,7 @@ cvx bind /LoadCff exch def
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       encoding = parsed_font.pop('Encoding', None)
-      if encoding is not None:
+      if encoding is not None and obj_num in copy_encoding_dict:
         copy_encoding_dict[obj_num][0] = self.CheckEncoding(encoding)
       encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
@@ -5922,24 +5922,27 @@ cvx bind /LoadCff exch def
       # TODO(pts): Merge only some of the encodings if all of them can't
       # be merged.
       encoding = self.MergeEncodings(
-          [copy_encoding_dict[obj_num][0] for obj_num in group_obj_nums])
+          [copy_encoding_dict[obj_num][0] for obj_num in group_obj_nums
+           if obj_num in copy_encoding_dict])
       if encoding is not None:
         encoding = self.FormatEncoding(encoding)
         for obj_num in group_obj_nums:
-          font_obj_nums = copy_encoding_dict.pop(obj_num)[1]
-          for font_obj_num in font_obj_nums:
-            self.objs[font_obj_num].Set('Encoding', encoding)
+          if obj_num in copy_encoding_dict:
+            font_obj_nums = copy_encoding_dict.pop(obj_num)[1]
+            for font_obj_num in font_obj_nums:
+              self.objs[font_obj_num].Set('Encoding', encoding)
       else:
         for obj_num in group_obj_nums:
-          encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
-          for font_obj_num in font_obj_nums:
-            self.objs[font_obj_num].Set(
-                'Encoding', self.FormatEncoding(encoding))
+          if obj_num in copy_encoding_dict:
+            encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+            for font_obj_num in font_obj_nums:
+              self.objs[font_obj_num].Set(
+                  'Encoding', self.FormatEncoding(encoding))
       encoding = None
 
       # TODO(pts): If all /Encoding values are merged, unify /Widths (in
-      # /copy_encoding_dict, also noting FirstChar and /LastChar). Now, if
-      # /everything else (including the new /Encoding and /Widths) are the same,
+      # copy_encoding_dict, also noting FirstChar and /LastChar). Now, if
+      # everything else (including the new /Encoding and /Widths) are the same,
       # take /BaseFont from the first /Type/Font, and merge the /Type/Font
       # objects.
 
