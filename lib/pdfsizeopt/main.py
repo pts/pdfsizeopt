@@ -7113,7 +7113,7 @@ cvx bind /LoadCff exch def
             pdf_obj.Set('DecodeParms', None)
             pdf_obj.Set('Length', len(pdf_obj.stream))
             uncompress_count += 1
-    print >>sys.stderr, 'info: uncompressed %d %s' % (
+    print >>sys.stderr, 'info: decompressed %d %s' % (
         uncompress_count, msg_word)
 
   def CompressUncompressedStreams(self):
