@@ -5637,10 +5637,11 @@ cvx bind /LoadCff exch def
     outputs.sort()
     return outputs[0][1]  # Pick the shortest string.
 
-  def UnifyType1CFonts(self, do_keep_font_optionals,
-                       do_double_check_missing_glyphs,
-                       do_regenerate_all_fonts):
-    """Unify different subsets of the same Type1C font.
+  def OptimizeType1CFonts(self, do_keep_font_optionals,
+                          do_double_check_missing_glyphs,
+                          do_unify_fonts,
+                          do_regenerate_all_fonts):
+    """Regenerate or unify different subsets of the same Type1C font.
 
     Returns:
       self.
@@ -5648,55 +5649,6 @@ cvx bind /LoadCff exch def
     type1c_objs = self.GetFonts(font_type='Type1C')
     if not type1c_objs:
       return self
-
-    # Maps from /Type/FontDescriptor obj_num to lists [encoding, obj_nums].
-    # obj_nums is a list of /Type/Font obj_nums.
-    copy_encoding_dict = {}
-    for obj_num in sorted(self.objs):
-      obj = self.objs[obj_num]
-      head = obj.head
-      if ('/Font' in head and '/Type' in head and
-          '/Type1' in head and '/Subtype' in head and
-          '/FontDescriptor' in head and
-          '/Encoding' not in head and
-          obj.Get('Type') == '/Font' and
-          obj.Get('Subtype') == '/Type1' and
-          obj.Get('Encoding') is None):
-        match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
-        if match:
-          fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
-          if fd_obj_num in type1c_objs:
-            # If there is a /Type/Font object referring to the
-            # /Type/FontDescriptor object, and the /Type/Font object doesn't
-            # have the /Encoding field specified, then pdfsizeopt will add
-            # an explicit /Encoding.
-            #
-            # See myfile.pdf and myfile.pso.pdf in
-            # https://github.com/pts/pdfsizeopt/issues/12 .
-            #
-            # pdf_reference_1-7.pdf says that a missing /Encoding in the
-            # /Type/Font object would make use of the /Encoding built in
-            # to the font data. However, the way Type1CGenerator builds
-            # the Type1C data object, it is unable to add /Encoding
-            # information. (Is this true? Let's try.)
-            #
-            # TODO(pts): Unify /Encoding (via .notdef) of multiple fonts.
-            # TODO(pts): Unify /Widths of multiple fonts.
-            # TODO(pts): Don't emit /Encoding if not needed.
-            # TODO(pts): Unify /Encoding dicts globally, not only for
-            #            merged fonts.
-            # TODO(pts): Move reused /Encoding dicts to separate objects.
-            # pdfsizeopt could be improved to make it able to unify more
-            # Type1C fonts: extraction of /Encoding could be added to
-            # ParseType1CFonts, and generation of an explicit /Encoding
-            # object could be added to the /Type/Font object; as a further
-            # optimiztion, /Encoding generation could be added to
-            # Type1CGenerator, and the explicit /Encoding could be omitted
-            # from the /Type/Font object if not needed.
-            obj_nums = copy_encoding_dict.get(fd_obj_num)
-            if obj_nums is None:
-              obj_nums = copy_encoding_dict[fd_obj_num] = [None, []]
-            obj_nums[1].append(obj_num)
 
     orig_type1c_size = 0
     for obj_num in sorted(type1c_objs):
@@ -5768,6 +5720,10 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
           duplicate_count)
 
+    if not (do_unify_fonts or do_regenerate_all_fonts):
+      # TODO(pts): Decompress fonts with /LZWDecode, to be recompressed.
+      return self
+
     # ParseType1CFonts removes the tmp files it creates.
     parsed_fonts = self.ParseType1CFonts(
         objs=type1c_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse.tmp.ps',
@@ -5784,6 +5740,55 @@ cvx bind /LoadCff exch def
       unified_obj_nums = set(type1c_objs)
     else:
       unified_obj_nums = set()
+
+    # Maps from /Type/FontDescriptor obj_num to lists [encoding, obj_nums].
+    # obj_nums is a list of /Type/Font obj_nums.
+    copy_encoding_dict = {}
+    for obj_num in sorted(self.objs):
+      obj = self.objs[obj_num]
+      head = obj.head
+      if ('/Font' in head and '/Type' in head and
+          '/Type1' in head and '/Subtype' in head and
+          '/FontDescriptor' in head and
+          '/Encoding' not in head and
+          obj.Get('Type') == '/Font' and
+          obj.Get('Subtype') == '/Type1' and
+          obj.Get('Encoding') is None):
+        match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
+        if match:
+          fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
+          if fd_obj_num in type1c_objs:
+            # If there is a /Type/Font object referring to the
+            # /Type/FontDescriptor object, and the /Type/Font object doesn't
+            # have the /Encoding field specified, then pdfsizeopt will add
+            # an explicit /Encoding.
+            #
+            # See myfile.pdf and myfile.pso.pdf in
+            # https://github.com/pts/pdfsizeopt/issues/12 .
+            #
+            # pdf_reference_1-7.pdf says that a missing /Encoding in the
+            # /Type/Font object would make use of the /Encoding built in
+            # to the font data. However, the way Type1CGenerator builds
+            # the Type1C data object, it is unable to add /Encoding
+            # information. (Is this true? Let's try.)
+            #
+            # TODO(pts): Unify /Encoding (via .notdef) of multiple fonts.
+            # TODO(pts): Unify /Widths of multiple fonts.
+            # TODO(pts): Don't emit /Encoding if not needed.
+            # TODO(pts): Unify /Encoding dicts globally, not only for
+            #            merged fonts.
+            # TODO(pts): Move reused /Encoding dicts to separate objects.
+            # pdfsizeopt could be improved to make it able to unify more
+            # Type1C fonts: extraction of /Encoding could be added to
+            # ParseType1CFonts, and generation of an explicit /Encoding
+            # object could be added to the /Type/Font object; as a further
+            # optimiztion, /Encoding generation could be added to
+            # Type1CGenerator, and the explicit /Encoding could be omitted
+            # from the /Type/Font object if not needed.
+            obj_nums = copy_encoding_dict.get(fd_obj_num)
+            if obj_nums is None:
+              obj_nums = copy_encoding_dict[fd_obj_num] = [None, []]
+            obj_nums[1].append(obj_num)
 
     for obj_num in sorted(parsed_fonts):  # !! sort by font name to get exacts
       obj = self.objs[obj_num]  # /Type/FontDescriptor
@@ -5807,6 +5812,8 @@ cvx bind /LoadCff exch def
              parsed_font.get('PaintType')))
         continue
 
+      if not do_unify_fonts:
+        continue
       if ('Subrs' in parsed_font or
           'Subrs' in parsed_font.get('Private', ())):
         # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex
@@ -5950,12 +5957,6 @@ cvx bind /LoadCff exch def
           'info: merged fonts %r, reduced char count from %d to %d (%s)' %
           (font_group_names[font_group], orig_char_count, new_char_count,
            FormatPercent(new_char_count, orig_char_count)))
-
-    if not font_groups:
-      # Could not unify any fonts.
-      for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
-      return self
 
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
         (sorted(parsed_fonts), sorted(type1c_objs)))
@@ -8327,7 +8328,9 @@ def main(argv):
     do_keep_font_optionals = False
     # It is not much slower (and it's actually faster if some fonts need
     # /LZWDecode), and we can gain a few bytes by converting all Type1C fonts
-    # with Ghostscript.
+    # with Ghostscript. However, Ghostscript breaks some fonts, so in case
+    # of font problems, specify
+    # --do-unify-fonts=no --do-regenerate-all-fonts=no.
     do_regenerate_all_fonts = True
     do_double_check_missing_glyphs = False
     do_ignore_generation_numbers = True
@@ -8507,11 +8510,11 @@ def main(argv):
   pdf.FixAllBadNumbers()
   if do_optimize_fonts:
     pdf.ConvertType1FontsToType1C()
-    if do_unify_fonts:
-      pdf.UnifyType1CFonts(
-          do_keep_font_optionals=do_keep_font_optionals,
-          do_double_check_missing_glyphs=do_double_check_missing_glyphs,
-          do_regenerate_all_fonts=do_regenerate_all_fonts)
+    pdf.OptimizeType1CFonts(
+        do_keep_font_optionals=do_keep_font_optionals,
+        do_double_check_missing_glyphs=do_double_check_missing_glyphs,
+        do_unify_fonts=do_unify_fonts,
+        do_regenerate_all_fonts=do_regenerate_all_fonts)
   if do_optimize_images:
     pdf.ConvertInlineImagesToXObjects()
     pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
