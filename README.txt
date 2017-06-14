@@ -39,8 +39,11 @@ To optimize a PDF, run the following command
 
   ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
 
-Additional image compression is possible by adding --use-pngout=yes, but
-that would make the whole process much slower, because pngout is very slow.
+If the input PDF has many images or large images, pdfsizeopt can be very
+slow. You can speed it up by disabling pngout, the slowest image optimization
+method, like this:
+
+  ~/pdfsizeopt/pdfsizeopt --use-pngout=no input.pdf output.pdf
 
 pdfsizeopt creates lots of temporary files (psotmp.*) in the output
 directory, but it also cleans up after itself.
@@ -96,8 +99,11 @@ Since you have to type the input filename as a full pathname, it's
 recommended to create a directory with a short name (e.g. C:\pdfs), and copy
 the input PDF there first.
 
-Additional image compression is possible by adding --use-pngout=yes, but
-that would make the whole process much slower, because pngout is very slow.
+If the input PDF has many images or large images, pdfsizeopt can be very
+slow. You can speed it up by disabling pngout, the slowest image optimization
+method, like this:
+
+  C:\pdfsizeopt\pdfsizeopt --use-pngout=no input.pdf output.pdf
 
 To avoid typing C:\pdfsizeopt\pdfsizeopt, add C:\pdfsizeopt to (the end of)
 the system PATH, open a new Command Prompt window, and the command
@@ -159,7 +165,9 @@ Try it with:
   info: This is pdfsizeopt ZIP rUNKNOWN size=105366.
 
 pdfsizeopt has many dependencies. For full functionality, you need all of
-them. Install all of them and put them to the $PATH. Dependencies.
+them. Install all of them and put them to the $PATH.
+
+Dependencies:
 
 * Python (command: python). Version 2.4, 2.5, 2.6 and 2.7 work (3.x doesn't
   work).
