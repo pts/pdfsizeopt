@@ -312,6 +312,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.DoTestParseSimplestDict(e=e)
     self.assertEqual({}, e('<<\0\r>>'))
     self.assertEqual({}, e('<<\n>>'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, e, '<<')
     self.assertEqual({'I': 5}, e('<</I%\n5>>'))
     self.assertEqual({'N': '/Foo-42+_'}, e('<</N/Foo-42+_>>'))
     self.assertEqual({'N': '/Foo-42+_#2A'}, e('<</N/Foo-42+_*>>'))
@@ -1034,6 +1035,21 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(ValueError, f, '/foo#20')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, '/foo#28')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, '/foo#25')  # PDF_NONNAME_CHARS.
+
+  def testIsFontBuiltInEncodingUsed(self):
+    f = pdfsizeopt.PdfData.IsFontBuiltInEncodingUsed
+    self.assertEqual(True, f(None))
+    self.assertEqual(None, f(True))
+    self.assertEqual(None, f(42))
+    self.assertRaises(ValueError, f, '42 0 R foo')
+    self.assertEqual(False, f('/WinAnsiEncoding'))
+    self.assertEqual(None, f('[]'))
+    self.assertRaises(pdfsizeopt.PdfTokenParseError, f, '<<')
+    self.assertEqual(False, f('<</BaseEncoding/MacRomanEncoding>>'))
+    self.assertEqual(
+        False, f('<</BaseEncoding/MaxRomanEncoding/Differences[5/foo]>>'))
+    self.assertEqual(True, f('<<>>'))
+    self.assertEqual(True, f('<</Differences[5/foo]>>'))
 
 
 if __name__ == '__main__':

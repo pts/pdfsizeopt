@@ -1182,8 +1182,10 @@ class PdfObj(object):
       PdfTokenParseError:
     """
     # TODO(pts): Integate this with Get(), Set() and output optimization
-    assert data.startswith('<<')
-    assert data.endswith('>>')
+    if not data.startswith('<<'):
+      raise PdfTokenParseError('dict should start with <<')
+    if not data.endswith('>>'):
+      raise PdfTokenParseError('dict should end with >>')
     start = 2
     end = len(data) - 2
 
@@ -5692,6 +5694,25 @@ cvx bind /LoadCff exch def
     outputs.sort()
     return outputs[0][1]  # Pick the shortest string.
 
+  @classmethod
+  def IsFontBuiltInEncodingUsed(cls, encoding_value):
+    # pdf_reference_1-7.pdf says that the /Encoding built in to the
+    # font program will be used if: /Encoding is missing from the
+    # /Type/Font object; or with an encoding dict without
+    # a /BaseEncoding.
+    if encoding_value is None:  # No /Encoding in /Type/Font.
+      return True
+    if not isinstance(encoding_value, str):
+      return None  # Unsupported.
+    if re.match(PdfObj.PDF_REF_RE, encoding_value):
+      raise ValueError('Reference in encoding_value: %r' % encoding_value)
+    if encoding_value.startswith('/'):
+      return False
+    if not encoding_value.startswith('<<'):
+      return None  # Unsupported.
+    encoding_dict = PdfObj.ParseDict(encoding_value)
+    return encoding_dict.get('BaseEncoding') is None
+
   def OptimizeType1CFonts(self, do_keep_font_optionals,
                           do_double_check_missing_glyphs,
                           do_unify_fonts,
@@ -5807,41 +5828,34 @@ cvx bind /LoadCff exch def
       if ('/Font' in head and '/Type' in head and
           '/Type1' in head and '/Subtype' in head and
           '/FontDescriptor' in head and
-          '/Encoding' not in head and
           obj.Get('Type') == '/Font' and
           obj.Get('Subtype') == '/Type1' and
-          obj.Get('Encoding') is None):
+          self.IsFontBuiltInEncodingUsed(
+              obj.ResolveReferences(obj.Get('Encoding'), objs=self.objs)[0])):
         match = obj.PDF_REF_RE.search(str(obj.Get('FontDescriptor')))
         if match:
           fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
           if fd_obj_num in type1c_objs:
             # If there is a /Type/Font object referring to the
-            # /Type/FontDescriptor object, and the /Type/Font object doesn't
-            # have the /Encoding field specified, then pdfsizeopt will add
-            # an explicit /Encoding.
+            # /Type/FontDescriptor object, and the /Type/Font object uses
+            # /the built-in encoding of the font, then pdfsizeopt will add
+            # an explicit /Encoding. This is needed, because the Type1C
+            # fonts emitted by Type1CGenerator below don't contain a
+            # good built-in encoding, thus the encoding information is lost
+            # from the font program during conversion and merging.
             #
             # See myfile.pdf and myfile.pso.pdf in
             # https://github.com/pts/pdfsizeopt/issues/12 .
             #
-            # pdf_reference_1-7.pdf says that a missing /Encoding in the
-            # /Type/Font object would make use of the /Encoding built in
-            # to the font data. However, the way Type1CGenerator builds
-            # the Type1C data object, it is unable to add /Encoding
-            # information. (Is this true? Let's try.)
-            #
             # TODO(pts): Unify /Encoding (via .notdef) of multiple fonts.
             # TODO(pts): Unify /Widths of multiple fonts.
-            # TODO(pts): Don't emit /Encoding if not needed.
+            # TODO(pts): Don't emit /Encoding if not needed (for this we
+            #            need to put /Encoding back to Type1C fonts).
             # TODO(pts): Unify /Encoding dicts globally, not only for
             #            merged fonts.
             # TODO(pts): Move reused /Encoding dicts to separate objects.
-            # pdfsizeopt could be improved to make it able to unify more
-            # Type1C fonts: extraction of /Encoding could be added to
-            # ParseType1CFonts, and generation of an explicit /Encoding
-            # object could be added to the /Type/Font object; as a further
-            # optimiztion, /Encoding generation could be added to
-            # Type1CGenerator, and the explicit /Encoding could be omitted
-            # from the /Type/Font object if not needed.
+            # TODO(pts): Remove or simplify explicit /Encoding in the
+            #            /Type/Font object if not needed.
             obj_nums = copy_encoding_dict.get(fd_obj_num)
             if obj_nums is None:
               obj_nums = copy_encoding_dict[fd_obj_num] = [None, []]
