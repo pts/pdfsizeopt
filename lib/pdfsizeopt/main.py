@@ -916,6 +916,12 @@ class PdfObj(object):
       r'[\0\t\n\r\f ]+|(<<)|<(?!<)([^>]*)>')
   """Matches whitespace (1 or more) or a hex string constant or <<."""
 
+  PDF_NAME_HEX_RE = re.compile(r'#([0-9a-fA-F]{2})')
+  """Matches a hex escape (#AB) in a PDF name."""
+
+  PDF_NONNAME_CHARS = '[]{}()<>%\0\t\n\r\f '
+  """Characters that can't be part of a PDF name."""
+
   PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
 
@@ -6036,22 +6042,23 @@ cvx bind /LoadCff exch def
               'Encoding', self.FormatEncoding(encoding))
     encoding = None
 
-    def AppendSerialized(value, output):
+    def AppendSerializedPs(value, output, pdf_to_ps_name=PdfObj.PdfToPsName):
+      # TODO(pts): Reimplement this using a stack.
       if isinstance(value, list):
         output.append('[')
         for item in value:
-          AppendSerialized(item, output)
+          AppendSerializedPs(item, output)
           output.append(' ')
         output.append(']')
       elif isinstance(value, dict):
         output.append('<<')
         for item in sorted(value):
           if isinstance(item, str):
-            output.append('/' + item)
+            output.append(pdf_to_ps_name('/' + item))
           else:
-            AppendSerialized(item, output)
+            AppendSerializedPs(item, output)
           output.append(' ')
-          AppendSerialized(value[item], output)
+          AppendSerializedPs(value[item], output)
           output.append(' ')
         output.append('>>')
       elif value is None:
@@ -6061,7 +6068,10 @@ cvx bind /LoadCff exch def
       elif value is False:
         output.append('false ')
       else:
-        output.append(str(value))
+        value = str(value)
+        if value.startswith('/'):
+          value = pdf_to_ps_name(value)
+        output.append(value)
         output.append(' ')
 
     # !! fix the /BaseFont in /Font (PDF spec says they must be identical)
@@ -6073,7 +6083,7 @@ cvx bind /LoadCff exch def
     output_prefix_len = sum(map(len, output))
     for obj_num in sorted(unified_obj_nums):
       output.append('%s 0 obj' % obj_num)
-      AppendSerialized(parsed_fonts[obj_num], output)
+      AppendSerializedPs(parsed_fonts[obj_num], output)
       output.append('endobj\n')
     output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
     ps_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.ps'

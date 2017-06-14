@@ -1016,5 +1016,25 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(['<<>>', 51], f('<<%]\r>>51'))
     self.assertEqual(['[]', -3], f('[%<<\n]-3'))
 
+  def testPdfToPsName(self):
+    f = pdfsizeopt.PdfObj.PdfToPsName
+    self.assertEqual('/foo!', f('/foo#21'))
+    self.assertEqual('pedal.*', f('pedal.*'))
+    self.assertEqual('/pedal.*', f('/pedal.*'))
+    self.assertEqual('/pedal.*', f('/pedal.#2A'))
+    self.assertEqual('pedal.*', f('pedal.#2A'))
+    self.assertEqual('/pedal.*B+', f('/pedal.#2AB#2b'))
+    self.assertEqual('/pedal.#2A', f('/peda#6c.#232A'))
+    self.assertEqual('/\xFEeD', f('/#fEeD'))
+
+    self.assertRaises(ValueError, f, '')
+    self.assertRaises(ValueError, f, '/')
+    self.assertRaises(ValueError, f, '//')
+    self.assertRaises(ValueError, f, '//foo')
+    self.assertRaises(ValueError, f, '/foo#20')  # PDF_NONNAME_CHARS.
+    self.assertRaises(ValueError, f, '/foo#28')  # PDF_NONNAME_CHARS.
+    self.assertRaises(ValueError, f, '/foo#25')  # PDF_NONNAME_CHARS.
+
+
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
