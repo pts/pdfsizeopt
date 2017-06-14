@@ -435,9 +435,9 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('ABC', obj.stream)
     obj = pdfsizeopt.PdfObj(
         '42 0 obj<</Length  4>>stream\r\nABC endstream endobj')
-    self.assertRaises(
-        pdfsizeopt.PdfTokenParseError, pdfsizeopt.PdfObj,
-        '42 0 obj<</Length 99>>stream\r\nABC endstream endobj')
+    self.assertEqual(
+        'ABC ', pdfsizeopt.PdfObj(
+            '42 0 obj<</Length 99>>stream\r\nABC endstream endobj').stream)
     self.assertEqual('<</Length  4>>', obj.head)
     self.assertEqual('ABC ', obj.stream)
     obj = pdfsizeopt.PdfObj(

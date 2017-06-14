@@ -387,7 +387,7 @@ class PdfObj(object):
   """Matches the beginning of a subset font name (starting with slash)."""
 
   PDF_OBJ_DEF_RE_STR = (
-      r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
+      r'(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
       r'(?=[\0\t\n\r\f %/<\[({])[\0\t\n\r\f ]*')
   PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
   """Matches an `obj' definition no leading, with trailing whitespace."""
@@ -437,6 +437,10 @@ class PdfObj(object):
 
   PDF_TRAILER_WORD_RE = re.compile(r'[\0\t\n\r\f ](trailer[\0\t\n\r\f ]*<<)')
   """Matches whitespace, the wirt 'trailer' and some more chars."""
+
+  PDF_ENDSTREAM_ENDOBJ_RE = re.compile(
+      r'[\0\t\n\r\f ]*endstream[\0\t\n\r\f ]+endobj(?:[\0\t\n\r\f /]|\Z)')
+  """Matches endstream+endobj."""
 
   PDF_FONT_FILE_KEYS = ('FontFile', 'FontFile2', 'FontFile3')
   """Tuple of keys in /Type/FontDescriptor referring to the font data obj."""
@@ -510,7 +514,8 @@ class PdfObj(object):
         raise PdfTokenParseError(
             'X Y obj expected, got %r at ofs=%s' %
             (other[start : start + 32], file_ofs))
-      # This already strips leaning whitespace after `obj'.
+      obj_def_obj_num = int(match.group(1))
+      # This already strips leafing whitespace after `obj'.
       skip_obj_number_idx = match.end()
       if other[skip_obj_number_idx : skip_obj_number_idx + 1] == '%':
         match = self.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(
@@ -614,15 +619,22 @@ class PdfObj(object):
           self._head = '%s/Length %d%s' % (
               self._head[:match.start()], stream_length,
               self._head[match.end():])
-        endstream_str = other[stream_end_idx : stream_end_idx + 30]
-        match = re.match(  # TODO(pts): Create objs for regexps.
-            r'[\0\t\n\r\f ]*endstream[\0\t\n\r\f ]+'
-            r'endobj(?:[\0\t\n\r\f /]|\Z)',
-            endstream_str)
+        endstream_str = other[stream_end_idx : stream_end_idx + 128]
+        # TODO(pts): Create objs for regexps.
+        match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
         if not match:
-          raise PdfTokenParseError(
-              'expected endstream+endobj in %r at %s' %
-              (endstream_str, file_ofs + stream_end_idx))
+          i = other.find('endstream', stream_start_idx)
+          if i >= 0:
+            endstream_str = other[i : i + 128]
+            match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
+          if not match:
+            raise PdfTokenParseError(
+                'expected endstream+endobj in %r at %s' %
+                (endstream_str, file_ofs + stream_end_idx))
+          print >>sys.stderr, (
+              'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
+          self.Set('Length', i - stream_start_idx)
+          stream_end_idx = i
         end_ofs = stream_end_idx + match.end()
         self.stream = other[stream_start_idx : stream_end_idx]
       if end_ofs_out is not None:
