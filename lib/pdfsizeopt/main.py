@@ -5680,6 +5680,8 @@ cvx bind /LoadCff exch def
       obj.Set('StemH', None)
       obj.Set('AvgWidth', None)
       obj.Set('MaxWidth', None)
+      # Optional.
+      obj.Set('CharSet', None)
       orig_type1c_size += type1c_objs[obj_num].size + obj.size
 
     # Merge byte-by-byte identical fonts.
