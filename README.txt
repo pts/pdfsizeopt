@@ -195,6 +195,47 @@ After installation, use pdfsizeopt as:
 You can add the directory containing pdfsizeopt to your $PATH, so the
 command `pdfsizeopt' will work from any directory.
 
+Troubleshooting
+~~~~~~~~~~~~~~~
+1. pdfsizeopt fails for some fonts.
+"""""""""""""""""""""""""""""""""""
+Specify --do-unify-fonts=no and --do-regenerate-all-fonts=no .
+
+If it still fails, specify -do-optimize-fonts=no .
+
+In either case, please report it on https://github.com/pts/pdfsizeopt/issues
+
+2. pdfsizeopt fails for some images.
+""""""""""""""""""""""""""""""""""""
+Specify --do-optimize-images=no .
+
+Please report it on https://github.com/pts/pdfsizeopt/issues
+
+3. pdfsizeopt is too slow processing images.
+""""""""""""""""""""""""""""""""""""""""""""
+Specify --use-pngout=no . This disables pngout, which is the slowest
+optimization step for images.
+
+4. pdfsizeopt fails without creating the output PDF.
+""""""""""""""""""""""""""""""""""""""""""""""""""""
+Please report it on https://github.com/pts/pdfsizeopt/issues , attaching the
+input PDF file and the console output of pdfsizeopt. Your report is very
+much appreciated.
+
+If pdfsizeopt exits with an uncaught exception, it may leave some temporary
+files (psotmp.*) behind in the current directory. You can remove these files.
+
+Please note that pdfsizeopt is not resilient in processing corrupt PDF
+files (i.e. those which are not compliant to the PDF standard). So if
+pdfsizeopt fails, then the reason may be a bug in pdfsizeopt or a corrupt
+PDF input file. Nevertheless, please report an issue (see above).
+
+5. The output PDF of pdfsizeopt doesn't look like the same as the input PDF.
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Please report it on https://github.com/pts/pdfsizeopt/issues , attaching the
+input PDF file and the output PDF file (.pso.pdf) and the console output of
+pdfsizeopt. Your report is very much appreciated.
+
 More documentation
 ~~~~~~~~~~~~~~~~~~
 * https://github.com/pts/pdfsizeopt/releases/download/docs-v1/pts_pdfsizeopt2009.psom.pdf
