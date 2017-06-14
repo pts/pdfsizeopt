@@ -1667,8 +1667,8 @@ class PdfObj(object):
         return match.group(1)
       else:  # whitespace: remove unless needed
         if (match.start() == 0 or match.end() == len(data) or
-            data[match.start() - 1] in '<>)[]{}' or
-            data[match.end()] in '/<>([]{}'):
+            data[match.start() - 1] in '<>)[]{}' or  # % not needed.
+            data[match.end()] in '/<>([]{}'):  # % not needed.
           return ''
         else:
           return ' '
@@ -1774,10 +1774,39 @@ class PdfObj(object):
       return ''.join(output)
 
   @classmethod
+  def PdfToPsName(cls, data):
+    """Converts a PDF name (in data) to a PostScript name.
+
+    The most important conversion step is converting hex escapes (#AB) to
+    their literal form, e.g. '/pedal.#2A' becomes '/pedal.*'.
+
+    Args:
+      data: String containing a PDF name (can start with /).
+    Returns:
+      String containing the equivalent PostScript name.
+    Raises:
+      ValueError: If there is no PostScript name which can represent this
+        PDF name. (Maybe keep it escaped then, in a separate function?)
+    """
+    def Replacement(match):
+      c = chr(int(match.group(1), 16))
+      if c in cls.PDF_NONNAME_CHARS:
+        raise ValueError(
+            'Char not allowed in PDF name: #%s' % match.group(1).upper())
+      return c
+
+    data = cls.PDF_NAME_HEX_RE.sub(Replacement, data)
+    if not data or data == '/' or data.startswith('//'):
+      raise ValueError('Invalid PostScript name: %r' % data)
+    return data
+
+  @classmethod
   def ParseValueRecursive(cls, data):
     """Parse PDF token sequence data to a recursive Python structure.
 
     As a relaxation, numbers are allowed as dict keys.
+
+    Contrary to the function name, the implementation is not recursive.
 
     Args:
       data: String containing a PDF token sequence.
@@ -1786,6 +1815,8 @@ class PdfObj(object):
     Raises:
       PdfTokenParseError
     """
+    # PdfObj.CompressValue converts some characters in names to hex,
+    # thus e.g. /pedal.* becomes /pedal.#2A.
     data = PdfObj.CompressValue(data, do_emit_strings_as_hex=True)
     scanner = PdfObj.PDF_SIMPLE_TOKEN_RE.scanner(data)
     match = scanner.match()
@@ -5393,6 +5424,12 @@ cvx bind /LoadCff exch def
       data = f.read()
     finally:
       f.close()
+    # So far, `data' doesn't have names converted to hex (#AB), e.g.
+    # /pedal.* remains intact, and doesn't become /pedal.#2A .
+    # PdfObj.CompressValue called by
+    # PdfObj.ParseValueRecursive does this conversion, e.g.
+    # PdfObj.ParseValueRecursive('/pedal.*') == '/pedal.#2A'.
+
     # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
     # accepts it.
     # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
@@ -5809,6 +5846,8 @@ cvx bind /LoadCff exch def
       assert obj.stream is None
       parsed_font = parsed_fonts[obj_num]
       encoding = parsed_font.pop('Encoding', None)
+      # encoding also contains /pedal.#2A (and not /pedal.*) because it's
+      # also coming from ParseType1CFonts.
       if encoding is not None and obj_num in copy_encoding_dict:
         copy_encoding_dict[obj_num][0] = self.CheckEncoding(encoding)
       encoding = None
