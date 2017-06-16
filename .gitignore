@@ -4,3 +4,7 @@ Multivalent.jar
 MultivalentCompress.jar
 pdfsizeopt_libexec/
 pdfsizeopt_libexec_linux-v2.tar.gz
+pdfsizeopt.exe
+pdfsizeopt_win32exec-v*.zip
+pdfsizeopt_win32exec/
+
