@@ -4850,8 +4850,16 @@ class PdfData(object):
 % Stack use: <glyph> <_EncodingDict> GlyphShowWithEncodingDict -
 /GlyphShowWithEncodingDict {
   1 index .knownget {
-    _S1 exch 0 exch put _S1 show
-    pop  % pop the glyph name
+    dup 255 gt {
+      % This long /Encoding was created by `[exch {pop} forall] NameSort'
+      % below.
+      pop
+      (warning: using glyphshow for glyph encoded above 255: /) print dup =
+      glyphshow
+    } {
+      _S1 exch 0 exch put _S1 show
+      pop  % pop the glyph name
+    } ifelse
   } {
     (warning: using glyphshow for unencoded glyph: /) print dup =
     glyphshow
