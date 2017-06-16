@@ -4010,6 +4010,18 @@ class PdfData(object):
         raise PdfXrefStreamError('in-object-stream obj stream %d' % obj_num)
       try:
         objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start)
+      except PdfIndirectLengthError, e:
+        # Example: obj_num == 16 in functional-programming-python.pdf
+        if e.length_obj_num not in obj_starts:
+          raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
+        length_obj_start = obj_starts[e.length_obj_num]
+        length_obj = PdfObj(
+            data, start=length_obj_start, file_ofs=length_obj_start)
+        try:
+          objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start,
+                              objs={e.length_obj_num: length_obj})
+        except PdfTokenParseError, e:
+          raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
       except PdfTokenParseError, e:
         raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
       compressed_obj_nums, compressed_obj_headbufs = objstm_obj.ParseObjStm(
