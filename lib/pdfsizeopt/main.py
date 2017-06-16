@@ -623,19 +623,21 @@ class PdfObj(object):
         # TODO(pts): Create objs for regexps.
         match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
         if not match:
-          i = other.find('endstream', stream_start_idx)
-          if i >= 0:
-            endstream_str = other[i : i + 128]
-            match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
-          if not match:
+          # TODO(pts): Find the last match.
+          for match in self.PDF_ENDSTREAM_ENDOBJ_RE.finditer(
+              buffer(other, stream_start_idx, len(other) - stream_start_idx)):
+            pass
+          if match is None:
             raise PdfTokenParseError(
-                'expected endstream+endobj in %r at %s' %
-                (endstream_str, file_ofs + stream_end_idx))
+                'expected endstream+endobj in obj %d at %s' %
+                (obj_def_obj_num, file_ofs + stream_end_idx))
           print >>sys.stderr, (
               'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
-          self.Set('Length', i - stream_start_idx)
-          stream_end_idx = i
-        end_ofs = stream_end_idx + match.end()
+          self.Set('Length', match.start())
+          stream_end_idx = match.start() + stream_start_idx
+          end_ofs = match.end() + stream_start_idx
+        else:
+          end_ofs = stream_end_idx + match.end()
         self.stream = other[stream_start_idx : stream_end_idx]
       if end_ofs_out is not None:
         end_ofs_out.append(end_ofs)
