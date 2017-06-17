@@ -921,8 +921,14 @@ class PdfObj(object):
   PDF_NAME_HEX_RE = re.compile(r'#([0-9a-fA-F]{2})')
   """Matches a hex escape (#AB) in a PDF name."""
 
-  PDF_NONNAME_CHARS = '[]{}()<>%\0\t\n\r\f '
-  """Characters that can't be part of a PDF name."""
+  PDF_NONNAME_CHARS = '/[]{}()<>%\0\t\n\r\f '
+  """Characters that can't be part of a PDF name.
+
+  Same as the CFF spec disallows in a FontName.
+  """
+
+  PDF_NONNAME_CHAR_RE = re.compile('[%s]' % re.escape(PDF_NONNAME_CHARS))
+
 
   PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
@@ -1798,17 +1804,20 @@ class PdfObj(object):
       ValueError: If there is no PostScript name which can represent this
         PDF name. (Maybe keep it escaped then, in a separate function?)
     """
-    def Replacement(match):
-      c = chr(int(match.group(1), 16))
-      if c in cls.PDF_NONNAME_CHARS:
-        raise ValueError(
-            'Char not allowed in PDF name: #%s' % match.group(1).upper())
-      return c
-
-    data = cls.PDF_NAME_HEX_RE.sub(Replacement, data)
-    if not data or data == '/' or data.startswith('//'):
-      raise ValueError('Invalid PostScript name: %r' % data)
-    return data
+    data_size = len(data)
+    data = data.lstrip('/')
+    slash_count = data_size - len(data)
+    if slash_count > 1:
+      raise ValueError('Too many leading slashes in name: %r' % data)
+    if not data:
+      raise ValueError('Empty name: %r' % data)
+    data = cls.PDF_NAME_HEX_RE.sub(
+        lambda match: chr(int(match.group(1), 16)), data)
+    match = cls.PDF_NONNAME_CHAR_RE.search(data)
+    if match:
+      raise ValueError(
+          'Char not allowed in PDF name: %r' % match.group())
+    return '/' * slash_count + data
 
   @classmethod
   def ParseValueRecursive(cls, data):
