@@ -439,7 +439,7 @@ class PdfObj(object):
   """Matches whitespace, the wirt 'trailer' and some more chars."""
 
   PDF_ENDSTREAM_ENDOBJ_RE = re.compile(
-      r'[\0\t\n\r\f ]*endstream[\0\t\n\r\f ]+endobj(?:[\0\t\n\r\f /]|\Z)')
+      r'([\0\t\n\r\f ]*)endstream[\0\t\n\r\f ]+endobj(?:[\0\t\n\r\f /]|\Z)')
   """Matches endstream+endobj."""
 
   PDF_FONT_FILE_KEYS = ('FontFile', 'FontFile2', 'FontFile3')
@@ -633,8 +633,8 @@ class PdfObj(object):
                 (obj_def_obj_num, file_ofs + stream_end_idx))
           print >>sys.stderr, (
               'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
-          self.Set('Length', match.start())
-          stream_end_idx = match.start() + stream_start_idx
+          self.Set('Length', match.end(1))  # Trailing whitespace included.
+          stream_end_idx = match.end(1) + stream_start_idx
           end_ofs = match.end() + stream_start_idx
         else:
           end_ofs = stream_end_idx + match.end()
