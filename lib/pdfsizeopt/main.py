@@ -6040,6 +6040,11 @@ cvx bind /LoadCff exch def
         copy_encoding_dict[obj_num][0] = self.CheckEncoding(encoding)
       encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
+      # Extra, not checked: 'UniqueID'
+      if 'FontBBox' in parsed_font:
+        # This is part of the /FontDescriptor, we don't need it in the Type1C
+        # font.
+        del parsed_font['FontBBox']
       if not do_unify_fonts:
         continue
 
@@ -6054,11 +6059,6 @@ cvx bind /LoadCff exch def
             obj_num)
         continue
 
-      # Extra, not checked: 'UniqueID'
-      if 'FontBBox' in parsed_font:
-        # This is part of the /FontDescriptor, we don't need it in the Type1C
-        # font.
-        del parsed_font['FontBBox']
       font_name = parsed_font['FontName']
       # TODO(pts): Smarter initial grouping, even if name doesn't match.
       match = PdfObj.SUBSET_FONT_NAME_PREFIX_RE.match(font_name)
