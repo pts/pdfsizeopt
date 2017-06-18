@@ -5434,8 +5434,12 @@ cvx bind /LoadCff exch def
 '''
 
   @classmethod
-  def ParseType1CFonts(cls, objs, ps_tmp_file_name, data_tmp_file_name):
-    """Converts /Subtype/Type1C objs to data structure representation."""
+  def ParseType1CFonts(cls, objs, ps_tmp_file_name, data_tmp_file_name,
+                       is_permissive=False):
+    """Converts /Subtype/Type1C objs to data structure representation.
+
+    Modifies objs in place, removes unparsable and strange fonts.
+    """
     if not objs:
       return {}
     output = ['%!PS-Adobe-3.0\n',
@@ -5498,25 +5502,34 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(parsed_fonts)
     assert sorted(parsed_fonts) == sorted(objs), (
         'Data object number list mismatch.')
+    objs_size = len(objs)
     unparsable_obj_nums = []
     for obj_num in sorted(objs):
       parsed_font = parsed_fonts[obj_num]
       if not parsed_font:
         unparsable_obj_nums.append(obj_num)
+        del parsed_fonts[obj_num]
+        del objs[obj_num]
         continue
       if (parsed_font.get('FontType') != 2 or
           not isinstance(parsed_font.get('CharStrings'), dict) or
           'FontMatrix' not in parsed_font or
           'PaintType' not in parsed_font):
+        del parsed_fonts[obj_num]
+        del objs[obj_num]
         print >>sys.stderr, (
-            'warning: strange Type1C font obj %d '
+            'warning: ignoring strange Type1C font obj %d '
             'CharStrings:%s FontType=%r FontMatrix=%r PaintType=%r' %
             (obj_num, type(parsed_font.get('CharStrings')),
              parsed_font.get('FontType'),
              parsed_font.get('FontMatrix'),
              parsed_font.get('PaintType')))
-    assert not unparsable_obj_nums, (
-        'Found unparsable Type1C fonts, obj nums are: %s' % unparsable_obj_nums)
+    if unparsable_obj_nums:
+      print >>sys.stderr, (
+          'warning: found unparsable Type1C fonts, obj nums are: %s' %
+          unparsable_obj_nums)
+    if not is_permissive and obj_size != len(objs):
+      assert 0, 'Error (see warnings above) during Type1C font parsing.'
     os.remove(data_tmp_file_name)
     return parsed_fonts
 
@@ -5920,9 +5933,11 @@ cvx bind /LoadCff exch def
                           do_regenerate_all_fonts,
                           do_double_check_type1c_output):
     # ParseType1CFonts removes the tmp files it creates.
+    # ParseType1CFonts removes unparsable fonts from type1c_objs.
     parsed_fonts = self.ParseType1CFonts(
         objs=type1c_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse.tmp.ps',
-        data_tmp_file_name=TMP_PREFIX + 'conv.parsedata.tmp.ps')
+        data_tmp_file_name=TMP_PREFIX + 'conv.parsedata.tmp.ps',
+        is_permissive=True)
 
     # Maps from /Type/FontDescriptor obj_num to lists [encoding, obj_nums].
     # obj_nums is a list of /Type/Font obj_nums.
@@ -5985,19 +6000,6 @@ cvx bind /LoadCff exch def
       encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
       if not do_unify_fonts:
-        continue
-
-      if (parsed_font.get('FontType') != 2 or
-          not isinstance(parsed_font.get('CharStrings'), dict) or
-          'FontMatrix' not in parsed_font or
-          'PaintType' not in parsed_font):
-        print >>sys.stderr, (
-            'warning: strange Type1C font obj %d, not attempting to merge; '
-            'CharStrings=%s FontType=%r FontMatrix=%r PaintType=%r' %
-            (obj_num, type(parsed_font.get('CharStrings')),
-             parsed_font.get('FontType'),
-             parsed_font.get('FontMatrix'),
-             parsed_font.get('PaintType')))
         continue
 
       if ('Subrs' in parsed_font or
@@ -6264,6 +6266,10 @@ cvx bind /LoadCff exch def
       print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
           duplicate_count)
     if do_unify_fonts or do_regenerate_all_fonts:
+      # _ProcessType1CFonts removes unparsable fonts from type1c_objs.
+      # TODO(pts): Keep unparsable fonts for the new_type1c_size statistics
+      #            below.
+      # _ProcessType1CFonts removes merged fonts from type1c_objs.
       self._ProcessType1CFonts(
           type1c_objs=type1c_objs,
           do_unify_fonts=do_unify_fonts,
