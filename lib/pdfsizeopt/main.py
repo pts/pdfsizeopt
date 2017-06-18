@@ -6076,6 +6076,18 @@ cvx bind /LoadCff exch def
       if len(group_obj_nums) < 2:
         del font_groups[font_group]
         continue
+      all_glyphs = set()
+      for obj_num in group_obj_nums:
+        all_glyphs.update(parsed_fonts[obj_num]['CharStrings'])
+      if len(all_glyphs) > 256:
+        # Untested, tested with `> 2' in lme_v6.pdf.
+        print >>sys.stderr, (
+            'info: merged /CharStrings size %d is larger than 256, '
+            'not merging objs: %s' %
+            (len(all_glyphs), group_obj_nums))
+        del font_groups[font_group]
+        continue
+      # Example: lme_v6.pdf
       merged_font = parsed_fonts[group_obj_nums[0]]
       # /Type/FontDescriptor
       merged_fontdesc_obj = PdfObj(self.objs[group_obj_nums[0]])
