@@ -244,7 +244,7 @@ def PermissiveZlibDecompress(data):
           return zlib.decompress(data + adler32_data)
 
 # Allowed in /Encoding of /TypeFont, pdf_reference_1-7.pdf page 414.
-# gs -dNODISPLAY -q -c '/MacRomanEncoding .findencoding === quit'
+# gs -dNODISPLAY -q -P- -c '/MacRomanEncoding .findencoding === quit'
 PDF_FONT_ENCODINGS = {
    'WinAnsiEncoding': '/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /space /exclam /quotedbl /numbersign /dollar /percent /ampersand /quotesingle /parenleft /parenright /asterisk /plus /comma /hyphen /period /slash /zero /one /two /three /four /five /six /seven /eight /nine /colon /semicolon /less /equal /greater /question /at /A /B /C /D /E /F /G /H /I /J /K /L /M /N /O /P /Q /R /S /T /U /V /W /X /Y /Z /bracketleft /backslash /bracketright /asciicircum /underscore /grave /a /b /c /d /e /f /g /h /i /j /k /l /m /n /o /p /q /r /s /t /u /v /w /x /y /z /braceleft /bar /braceright /asciitilde /bullet /Euro /bullet /quotesinglbase /florin /quotedblbase /ellipsis /dagger /daggerdbl /circumflex /perthousand /Scaron /guilsinglleft /OE /bullet /Zcaron /bullet /bullet /quoteleft /quoteright /quotedblleft /quotedblright /bullet /endash /emdash /tilde /trademark /scaron /guilsinglright /oe /bullet /zcaron /Ydieresis /space /exclamdown /cent /sterling /currency /yen /brokenbar /section /dieresis /copyright /ordfeminine /guillemotleft /logicalnot /hyphen /registered /macron /degree /plusminus /twosuperior /threesuperior /acute /mu /paragraph /periodcentered /cedilla /onesuperior /ordmasculine /guillemotright /onequarter /onehalf /threequarters /questiondown /Agrave /Aacute /Acircumflex /Atilde /Adieresis /Aring /AE /Ccedilla /Egrave /Eacute /Ecircumflex /Edieresis /Igrave /Iacute /Icircumflex /Idieresis /Eth /Ntilde /Ograve /Oacute /Ocircumflex /Otilde /Odieresis /multiply /Oslash /Ugrave /Uacute /Ucircumflex /Udieresis /Yacute /Thorn /germandbls /agrave /aacute /acircumflex /atilde /adieresis /aring /ae /ccedilla /egrave /eacute /ecircumflex /edieresis /igrave /iacute /icircumflex /idieresis /eth /ntilde /ograve /oacute /ocircumflex /otilde /odieresis /divide /oslash /ugrave /uacute /ucircumflex /udieresis /yacute /thorn /ydieresis'.split(' '),
    'MacRomanEncoding': '/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /space /exclam /quotedbl /numbersign /dollar /percent /ampersand /quotesingle /parenleft /parenright /asterisk /plus /comma /hyphen /period /slash /zero /one /two /three /four /five /six /seven /eight /nine /colon /semicolon /less /equal /greater /question /at /A /B /C /D /E /F /G /H /I /J /K /L /M /N /O /P /Q /R /S /T /U /V /W /X /Y /Z /bracketleft /backslash /bracketright /asciicircum /underscore /grave /a /b /c /d /e /f /g /h /i /j /k /l /m /n /o /p /q /r /s /t /u /v /w /x /y /z /braceleft /bar /braceright /asciitilde /.notdef /Adieresis /Aring /Ccedilla /Eacute /Ntilde /Odieresis /Udieresis /aacute /agrave /acircumflex /adieresis /atilde /aring /ccedilla /eacute /egrave /ecircumflex /edieresis /iacute /igrave /icircumflex /idieresis /ntilde /oacute /ograve /ocircumflex /odieresis /otilde /uacute /ugrave /ucircumflex /udieresis /dagger /degree /cent /sterling /section /bullet /paragraph /germandbls /registered /copyright /trademark /acute /dieresis /.notdef /AE /Oslash /.notdef /plusminus /.notdef /.notdef /yen /mu /.notdef /.notdef /.notdef /.notdef /.notdef /ordfeminine /ordmasculine /.notdef /ae /oslash /questiondown /exclamdown /logicalnot /.notdef /florin /.notdef /.notdef /guillemotleft /guillemotright /ellipsis /space /Agrave /Atilde /Otilde /OE /oe /endash /emdash /quotedblleft /quotedblright /quoteleft /quoteright /divide /.notdef /ydieresis /Ydieresis /fraction /currency /guilsinglleft /guilsinglright /fi /fl /daggerdbl /periodcentered /quotesinglbase /quotedblbase /perthousand /Acircumflex /Ecircumflex /Aacute /Edieresis /Egrave /Iacute /Icircumflex /Idieresis /Igrave /Oacute /Ocircumflex /.notdef /Ograve /Uacute /Ucircumflex /Ugrave /dotlessi /circumflex /tilde /macron /breve /dotaccent /ring /cedilla /hungarumlaut /ogonek /caron'.split(' '),
@@ -311,7 +311,7 @@ class PdfXrefStreamWidthsError(PdfXrefStreamError):
 class FontsNotMergeable(Error):
   """Raised if the specified fonts cannot be merged.
 
-  Please not the `Parsable' and `Mergeable' are correct spellings.
+  Please note that `Parsable' and `Mergeable' are correct spellings.
   """
 
 
@@ -674,7 +674,7 @@ class PdfObj(object):
     return self._head
 
   def __SetHead(self, head):
-    if head != self._head:  # works for None as well
+    if head != self._head:  # Works for None as well.
       self._head = head
       self._cache = None
 
@@ -2461,12 +2461,12 @@ class PdfObj(object):
       finally:
         f.close()
       gs_defilter_cmd = (
-          '%s -dNODISPLAY -sINFN=%s -q %s' %
+          '%s -dNODISPLAY -sINFN=%s -q -P- %s' %
           (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
            ShellQuoteFileName(ps_file_name)))
     else:
       gs_defilter_cmd = (
-          '%s -dNODISPLAY -sINFN=%s -q -c %s' %
+          '%s -dNODISPLAY -sINFN=%s -q -P- -c %s' %
           (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
            ShellQuote(gs_code)))
     print >>sys.stderr, (
@@ -4875,6 +4875,25 @@ class PdfData(object):
   } ifelse
 } bind def
 
+% A version of findfont which:
+%
+% * doesn't try to load fonts from dict
+% * doesn't use the Fontmap
+% * doesn't do font substitution
+% * doesn't do font aliasing
+%
+% See also gs_fonts.gs
+%
+% <fontname> TryFindFont <font-dict> true
+% <fontname> TryFindFont <false>
+/TryFindFont {
+  .FontDirectory 1 index .fontknownget {
+    exch pop true
+  } {
+    pop false
+  } ifelse
+} bind def
+
 % </ProcSet>
 
 '''
@@ -4924,7 +4943,8 @@ class PdfData(object):
     _OrigFontName
   } ifelse
   % stack: <font-name>
-  findfont dup length dict copy
+  TryFindFont not { /FontNotInFindfont /invalidaccess signalerror} if
+  dup length dict copy
   % Let the font name be /Obj68 etc.
   dup /FullName _ObjNumber 10 string cvs
       % pad to 10 digits for object unification in FixFontNameInType1C.
@@ -5191,7 +5211,7 @@ class PdfData(object):
 
     EnsureRemoved(pdf_tmp_file_name)
     gs_cmd = (
-        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -f %s'
         % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
@@ -5315,18 +5335,19 @@ cvx bind /LoadCff exch def
   closefile  % is this needed?
   % <streamdict>
   pop
-  /MY findfont
-  dup /FontType get 2 ne {/NotType2Font /invalidfileaccess signalerror} if
   _DataFile _ObjNumber write===only
   _DataFile ( <<\n) writestring
-  % SUXX: the CFF /FontName got lost (overwritten by /MY above)
-  {
-    exch dup OMIT exch known not
-    { _DataFile exch write===only
-      _DataFile ( ) writestring
-      _DataFile exch Dump
-      _DataFile (\n) writestring} {pop pop} ifelse
-  } forall
+  /MY TryFindFont {  % This can fail if the font data is corrupt.
+    dup /FontType get 2 ne {/NotType2Font /invalidfileaccess signalerror} if
+    % SUXX: the CFF /FontName got lost (overwritten by /MY above)
+    {
+      exch dup OMIT exch known not
+      { _DataFile exch write===only
+        _DataFile ( ) writestring
+        _DataFile exch Dump
+        _DataFile (\n) writestring} {pop pop} ifelse
+    } forall
+  } if
   _DataFile (>>\n) writestring
   systemdict /FontDirectory get {pop undefinefont} forall
   restore  % save created by /obj
@@ -5440,7 +5461,7 @@ cvx bind /LoadCff exch def
 
     EnsureRemoved(data_tmp_file_name)
     gs_cmd = (
-        '%s -q -dNOPAUSE -dBATCH -sDEVICE=nullpage '
+        '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=nullpage '
         '-sDataFile=%s -f %s'
         % (GetGsCommand(), ShellQuoteFileName(data_tmp_file_name),
            ShellQuoteFileName(ps_tmp_file_name)))
@@ -5472,13 +5493,32 @@ cvx bind /LoadCff exch def
     # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
     # accepts it.
     # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
-    data_objs = PdfObj.ParseValueRecursive('<<%s>>' % data)
-    assert isinstance(data_objs, dict)
-    print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(data_objs)
-    assert sorted(data_objs) == sorted(objs), (
+    parsed_fonts = PdfObj.ParseValueRecursive('<<%s>>' % data)
+    assert isinstance(parsed_fonts, dict)
+    print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(parsed_fonts)
+    assert sorted(parsed_fonts) == sorted(objs), (
         'Data object number list mismatch.')
+    unparsable_obj_nums = []
+    for obj_num in sorted(objs):
+      parsed_font = parsed_fonts[obj_num]
+      if not parsed_font:
+        unparsable_obj_nums.append(obj_num)
+        continue
+      if (parsed_font.get('FontType') != 2 or
+          not isinstance(parsed_font.get('CharStrings'), dict) or
+          'FontMatrix' not in parsed_font or
+          'PaintType' not in parsed_font):
+        print >>sys.stderr, (
+            'warning: strange Type1C font obj %d '
+            'CharStrings:%s FontType=%r FontMatrix=%r PaintType=%r' %
+            (obj_num, type(parsed_font.get('CharStrings')),
+             parsed_font.get('FontType'),
+             parsed_font.get('FontMatrix'),
+             parsed_font.get('PaintType')))
+    assert not unparsable_obj_nums, (
+        'Found unparsable Type1C fonts, obj nums are: %s' % unparsable_obj_nums)
     os.remove(data_tmp_file_name)
-    return data_objs
+    return parsed_fonts
 
   def ConvertType1FontsToType1C(self):
     """Convert all Type1 fonts to Type1C in self, returns self."""
@@ -5744,111 +5784,145 @@ cvx bind /LoadCff exch def
     encoding_dict = PdfObj.ParseDict(encoding_value)
     return encoding_dict.get('BaseEncoding') is None
 
-  def OptimizeType1CFonts(self, do_keep_font_optionals,
-                          do_double_check_missing_glyphs,
-                          do_unify_fonts,
-                          do_regenerate_all_fonts):
-    """Regenerate or unify different subsets of the same Type1C font.
+  @classmethod
+  def SerializeType1CFonts(cls, parsed_fonts, target_objs, objs,
+                           do_double_check_type1c_output):
+    """Generates PdfObj with Type1C font data.
 
-    Returns:
-      self.
+    Runs Type1CGenerator (via Ghostscript) in a batch with each object in
+    parsed_fonts, saves the result to target_objs.
     """
-    type1c_objs = self.GetFonts(font_type='Type1C')
-    if not type1c_objs:
-      return self
 
-    orig_type1c_size = 0
-    for obj_num in sorted(type1c_objs):
-      obj = self.objs[obj_num]  # /Type/FontDescriptor
-      assert obj.stream is None
-      assert obj.Get('Flags') is not None
-      assert obj.Get('StemV') is not None
-      assert str(obj.Get('FontName')).startswith('/')
-      assert str(obj.Get('FontBBox')).startswith('[')
-      # These entries are important only for finding substitute fonts, so
-      # we can get rid of them.
-      obj.Set('FontFamily', None)
-      obj.Set('FontStretch', None)
-      obj.Set('FontWeight', None)
-      obj.Set('Leading', None)
-      obj.Set('XHeight', None)
-      obj.Set('StemH', None)
-      obj.Set('AvgWidth', None)
-      obj.Set('MaxWidth', None)
-      # Optional.
-      obj.Set('CharSet', None)
-      orig_type1c_size += type1c_objs[obj_num].size + obj.size
-
-    # Merge byte-by-byte identical fonts.
-    duplicate_count = 0
-    h = {}
-    for obj_num in sorted(type1c_objs):
-      type1c_obj = type1c_objs[obj_num]
-      head_dict = PdfObj.ParseDict(type1c_obj.head)
-      assert head_dict['Subtype'] == '/Type1C'
-      try:
-        stream = type1c_obj.GetUncompressedStream(self.objs)
-        head_dict.clear()
-      except FilterNotImplementedError:
-        stream = type1c_obj.stream
-        for key in sorted(head_dict):
-          if key != 'Filter' and key != 'DecodeParms':
-            del head_dict[key]
-      key = (PdfObj.SerializeDict(head_dict), stream)
-      data_len = len(key[0]) + len(key[1])
-      if key in h:
-        h[key].append((data_len, obj_num))
+    def AppendSerializedPs(value, output, pdf_to_ps_name=PdfObj.PdfToPsName):
+      # TODO(pts): Reimplement this using a stack.
+      if isinstance(value, list):
+        output.append('[')
+        for item in value:
+          AppendSerializedPs(item, output)
+          output.append(' ')
+        output.append(']')
+      elif isinstance(value, dict):
+        output.append('<<')
+        for item in sorted(value):
+          if isinstance(item, str):
+            output.append(pdf_to_ps_name('/' + item))
+          else:
+            AppendSerializedPs(item, output)
+          output.append(' ')
+          AppendSerializedPs(value[item], output)
+          output.append(' ')
+        output.append('>>')
+      elif value is None:
+        output.append('null ')
+      elif value is True:
+        output.append('true ')
+      elif value is False:
+        output.append('false ')
       else:
-        h[key] = [(data_len, obj_num)]
-    for key in h:
-      same_type1c_objs = h[key]
-      if len(same_type1c_objs) < 2:
-        continue
-      # For testing: tuzv.pdf
-      # Use sort() instead of min(...) to find the smallest tuple, min(...)
-      # is buggy on tuples.
-      same_type1c_objs.sort()  # smallest first
-      master_obj_num = None
-      for data_len, obj_num in same_type1c_objs:
-        obj = self.objs[obj_num]
-        target_obj_num = PdfObj.GetReferenceTarget(obj.Get('FontFile3'))
-        assert (
-            target_obj_num is not None and
-            self.objs[target_obj_num] is type1c_objs[obj_num]), (
-            'bad /FontFile3 target in %s' % obj_num)
-        if master_obj_num is None:
-          master_obj_num = target_obj_num
-        elif master_obj_num != target_obj_num:
-          obj.Set('FontFile3', '%s 0 R' % master_obj_num)
-          # TODO(pts): What if self.objs has another reference to
-          # target_obj_num, which is not coming from /FontDescriptor{}s?
-          del self.objs[target_obj_num]
-          duplicate_count += 1
-    h.clear()
-    if duplicate_count:
-      print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
-          duplicate_count)
+        value = str(value)
+        if value.startswith('/'):
+          value = pdf_to_ps_name(value)
+        output.append(value)
+        output.append(' ')
 
-    if not (do_unify_fonts or do_regenerate_all_fonts):
-      # TODO(pts): Decompress fonts with /LZWDecode, to be recompressed.
-      return self
+    # !! fix the /BaseFont in /Font (PDF spec says they must be identical)
+    output = ['%!PS-Adobe-3.0\n',
+              '% Ghostscript helper generating Type1C fonts\n',
+              '%% autogenerated by %s at %s\n' % ('pdfsizeopt', time.time())]
+    output.append(cls.GENERIC_PROCSET)
+    output.append(cls.TYPE1C_GENERATOR_PROCSET)
+    output_prefix_len = sum(map(len, output))
+    for obj_num in sorted(parsed_fonts):
+      output.append('%s 0 obj' % obj_num)
+      AppendSerializedPs(parsed_fonts[obj_num], output)
+      output.append('endobj\n')
+    output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
+    ps_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.ps'
+    pdf_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.pdf'
+    output_str = ''.join(output)
+    print >>sys.stderr, (
+        'info: writing Type1CGenerator (%d bytes in %d fonts) to: %s' %
+        (len(output_str) - output_prefix_len, len(parsed_fonts),
+         ps_tmp_file_name))
+    f = open(ps_tmp_file_name, 'wb')
+    try:
+      f.write(output_str)
+    finally:
+      f.close()
 
+    EnsureRemoved(pdf_tmp_file_name)
+    gs_cmd = (
+        '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
+        '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
+        '-sOutputFile=%s -f %s'
+        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
+           ShellQuoteFileName(ps_tmp_file_name)))
+    print >>sys.stderr, (
+        'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
+    sys.stdout.flush()
+    status = os.system(gs_cmd)
+    if status:
+      print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
+      assert False, 'Type1CGenerator failed (status)'
+    if not os.path.isfile(pdf_tmp_file_name):
+      print >>sys.stderr, (
+          'info: Type1CGenerator has not created output: %s' %
+          pdf_tmp_file_name)
+      assert False, 'Type1CGenerator failed (no output)'
+    pdf = PdfData().Load(pdf_tmp_file_name)
+    # TODO(pts): Better error reporting if the font name is wrong.
+    loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
+    assert sorted(loaded_objs) == sorted(parsed_fonts), (
+        'Font object number list mismatch: loaded=%r parsed=%r' %
+        (sorted(loaded_objs), sorted(parsed_fonts)))
+    for obj_num in sorted(parsed_fonts):
+      loaded_obj = loaded_objs[obj_num]
+      # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
+      assert loaded_obj.Get('Subtype') == '/Type1C', (
+          'Cannot serialize font %s to Type1C' % obj_num)
+      target_obj = target_objs.get(obj_num)
+      if target_obj is None:
+        target_objs[obj_num] = target_obj = loaded_obj
+      else:
+        target_obj.head = loaded_obj.head
+        target_obj.stream = loaded_obj.stream
+
+    if do_double_check_type1c_output:
+      parsed2_fonts = cls.ParseType1CFonts(
+          objs=loaded_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse2.tmp.ps',
+          data_tmp_file_name=TMP_PREFIX + 'conv.parse2data.tmp.ps')
+      assert sorted(parsed_fonts) == sorted(parsed2_fonts), (
+          'Font object number list mismatch: serialized=%r checked=%r' %
+          (sorted(parsed_fonts), sorted(parsed2_fonts)))
+      # Typical differences:
+      # * /FontName is removed from parsed2_fonts. (Ghostscript does this,
+      #   not the code in pdfsizeopt.)
+      # * /FontBBox is added to parsed2_fonts with computed values.
+      # * /version is removed from parsed2_fonts.
+      # * /UnderlinePosition is reset to value 0 in parsed2_fonts.
+      # * /UnderlineThickness reset to value 0 in parsed2_fonts.
+      # * /Encoding (can be missing).
+      for obj_num in sorted(loaded_objs):
+        parsed_font = parsed_fonts[obj_num]
+        parsed2_font = parsed2_fonts[obj_num]
+        cs = sorted(parsed_font['CharStrings'])
+        cs2 = sorted(parsed2_font['CharStrings'])
+        assert not set(cs2).difference(cs)
+        assert cs == cs2, (
+            'missing glyphs from font %s: %r --> %r' %
+            (objs[obj_num].Get('FontName'), cs, cs2))
+
+    # TODO(pts): Don't remove if command-line flag.
+    os.remove(ps_tmp_file_name)
+    os.remove(pdf_tmp_file_name)
+
+  def _ProcessType1CFonts(self, type1c_objs, do_unify_fonts,
+                          do_regenerate_all_fonts,
+                          do_double_check_type1c_output):
     # ParseType1CFonts removes the tmp files it creates.
     parsed_fonts = self.ParseType1CFonts(
         objs=type1c_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse.tmp.ps',
         data_tmp_file_name=TMP_PREFIX + 'conv.parsedata.tmp.ps')
-    assert sorted(parsed_fonts) == sorted(type1c_objs), (
-        (sorted(parsed_fonts), sorted(type1c_objs)))
-
-    # Dictionary mapping a font group name to a list of obj_nums
-    # (in parsed_fonts).
-    font_groups = {}
-    # Dictionary mapping a font group name to a list of font names in it.
-    font_group_names = {}
-    if do_regenerate_all_fonts:
-      unified_obj_nums = set(type1c_objs)
-    else:
-      unified_obj_nums = set()
 
     # Maps from /Type/FontDescriptor obj_num to lists [encoding, obj_nums].
     # obj_nums is a list of /Type/Font obj_nums.
@@ -5892,6 +5966,13 @@ cvx bind /LoadCff exch def
               obj_nums = copy_encoding_dict[fd_obj_num] = [None, []]
             obj_nums[1].append(obj_num)
 
+    # Dictionary mapping a font group name to a list of obj_nums
+    # (in parsed_fonts).
+    font_groups = {}
+    # Dictionary mapping a font group name to a list of font names in it.
+    font_group_names = {}
+    merged_obj_nums = set()
+
     for obj_num in sorted(parsed_fonts):  # !! sort by font name to get exacts
       obj = self.objs[obj_num]  # /Type/FontDescriptor
       assert obj.stream is None
@@ -5903,6 +5984,9 @@ cvx bind /LoadCff exch def
         copy_encoding_dict[obj_num][0] = self.CheckEncoding(encoding)
       encoding = None
       parsed_font['FontName'] = obj.Get('FontName')
+      if not do_unify_fonts:
+        continue
+
       if (parsed_font.get('FontType') != 2 or
           not isinstance(parsed_font.get('CharStrings'), dict) or
           'FontMatrix' not in parsed_font or
@@ -5916,8 +6000,6 @@ cvx bind /LoadCff exch def
              parsed_font.get('PaintType')))
         continue
 
-      if not do_unify_fonts:
-        continue
       if ('Subrs' in parsed_font or
           'Subrs' in parsed_font.get('Private', ())):
         # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex
@@ -6018,13 +6100,12 @@ cvx bind /LoadCff exch def
             parsed_fonts[group_obj_num]['FontName'])
         del type1c_objs[group_obj_num]
         del parsed_fonts[group_obj_num]
-        if group_obj_num in unified_obj_nums:
-          unified_obj_nums.remove(group_obj_num)
         # Don't del `self.objs[group_obj_nums[i]]' yet, because that object may
         # be referenced from another /Font. self.OptimizeObjs() will clean up
         # unreachable objs safely.
       new_char_count = len(merged_font['CharStrings'])
-      unified_obj_nums.add(group_obj_nums[0])
+      assert group_obj_nums[0] in parsed_fonts
+      merged_obj_nums.add(group_obj_nums[0])
 
       # Set /Encoding for each /Type/Font object. We need this because
       # parsed_fonts[obj_num] doesn't contain the /Encoding anymore, we've
@@ -6035,7 +6116,7 @@ cvx bind /LoadCff exch def
       encoding = self.MergeEncodings(
           [copy_encoding_dict[obj_num][0] for obj_num in group_obj_nums
            if obj_num in copy_encoding_dict])
-      if encoding is not None:
+      if encoding is not None:  # All encodings could be merged.
         encoding = self.FormatEncoding(encoding)
         for obj_num in group_obj_nums:
           if obj_num in copy_encoding_dict:
@@ -6064,159 +6145,141 @@ cvx bind /LoadCff exch def
 
     assert sorted(parsed_fonts) == sorted(type1c_objs), (
         (sorted(parsed_fonts), sorted(type1c_objs)))
-    if not unified_obj_nums:
-      print >>sys.stderr, 'info: no fonts to regenerate or unify'
+    if not do_regenerate_all_fonts:  # Regenerate only the merged fonts.
+      for obj_num in sorted(parsed_fonts):
+        if obj_num not in merged_obj_nums:
+          del parsed_fonts[obj_num]
+          # Not doing this: del type1c_objs[obj_num]
+          # ... for statistics generation by the caller.
+    if parsed_fonts:
+      self.SerializeType1CFonts(
+          parsed_fonts=parsed_fonts,
+          target_objs=type1c_objs,
+          objs=self.objs,
+          do_double_check_type1c_output=do_double_check_type1c_output)
+      # This is for proper saving of /Encoding, because SerializeType1CFonts
+      # ruins the built-in encoding in the Type1C font data.
+      for obj_num in sorted(parsed_fonts):
+        if obj_num in copy_encoding_dict:
+          # It would be convenient to do this instead:
+          #
+          #   parsed_fonts[obj_num]['Encoding'] = (
+          #       copy_encoding_dict.pop(obj_num)[0])
+          #
+          # Unfortunately it doesn't work, because
+          # self.TYPE1C_GENERATOR_PROCSET is not able to emit /Encoding
+          # properly due to a Ghostscript bug.
+          encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+          for font_obj_num in font_obj_nums:
+            self.objs[font_obj_num].Set(
+                'Encoding', self.FormatEncoding(encoding))
+      encoding = None  # Save memory.
+    else:
+      print >>sys.stderr, 'info: no Type1C fonts to serialize'
       # TODO(pts): Don't recompress if already recompressed (e.g. when
       # converted from Type1).
-      for obj_num in sorted(type1c_objs):
-        type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
+
+  def OptimizeType1CFonts(self, do_keep_font_optionals,
+                          do_double_check_type1c_output,
+                          do_unify_fonts,
+                          do_regenerate_all_fonts):
+    """Regenerate or unify different subsets of the same Type1C font.
+
+    Returns:
+      self.
+    """
+    type1c_objs = self.GetFonts(font_type='Type1C')
+    if not type1c_objs:
       return self
 
-    # This is for proper saving of /Encoding with do_regenerate_all_fonts==True.
-    for obj_num in sorted(unified_obj_nums):
-      if obj_num in copy_encoding_dict:
-        # It would be convenient to do this here:
-        #
-        #   parsed_fonts[obj_num]['Encoding'] = copy_encoding_dict.pop(obj_num)[0]
-        #
-        # Unfortunately it doesn't work, because self.TYPE1C_GENERATOR_PROCSET
-        # is not able to emit /Encoding properly due to a Ghostscript bug.
-        encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
-        for font_obj_num in font_obj_nums:
-          self.objs[font_obj_num].Set(
-              'Encoding', self.FormatEncoding(encoding))
-    encoding = None
+    orig_type1c_size = 0
+    for obj_num in sorted(type1c_objs):
+      obj = self.objs[obj_num]  # /Type/FontDescriptor
+      assert obj.stream is None
+      assert obj.Get('Flags') is not None
+      assert obj.Get('StemV') is not None
+      assert str(obj.Get('FontName')).startswith('/')
+      assert str(obj.Get('FontBBox')).startswith('[')
+      # These entries are important only for finding substitute fonts, so
+      # we can get rid of them.
+      obj.Set('FontFamily', None)
+      obj.Set('FontStretch', None)
+      obj.Set('FontWeight', None)
+      obj.Set('Leading', None)
+      obj.Set('XHeight', None)
+      obj.Set('StemH', None)
+      obj.Set('AvgWidth', None)
+      obj.Set('MaxWidth', None)
+      # Optional.
+      obj.Set('CharSet', None)
+      orig_type1c_size += type1c_objs[obj_num].size + obj.size
 
-    def AppendSerializedPs(value, output, pdf_to_ps_name=PdfObj.PdfToPsName):
-      # TODO(pts): Reimplement this using a stack.
-      if isinstance(value, list):
-        output.append('[')
-        for item in value:
-          AppendSerializedPs(item, output)
-          output.append(' ')
-        output.append(']')
-      elif isinstance(value, dict):
-        output.append('<<')
-        for item in sorted(value):
-          if isinstance(item, str):
-            output.append(pdf_to_ps_name('/' + item))
-          else:
-            AppendSerializedPs(item, output)
-          output.append(' ')
-          AppendSerializedPs(value[item], output)
-          output.append(' ')
-        output.append('>>')
-      elif value is None:
-        output.append('null ')
-      elif value is True:
-        output.append('true ')
-      elif value is False:
-        output.append('false ')
+    # Merge byte-by-byte identical fonts.
+    duplicate_count = 0
+    h = {}
+    for obj_num in sorted(type1c_objs):
+      type1c_obj = type1c_objs[obj_num]
+      head_dict = PdfObj.ParseDict(type1c_obj.head)
+      assert head_dict['Subtype'] == '/Type1C'
+      try:
+        stream = type1c_obj.GetUncompressedStream(self.objs)
+        head_dict.clear()
+      except FilterNotImplementedError:
+        stream = type1c_obj.stream
+        for key in sorted(head_dict):
+          if key != 'Filter' and key != 'DecodeParms':
+            del head_dict[key]
+      key = (PdfObj.SerializeDict(head_dict), stream)
+      data_len = len(key[0]) + len(key[1])
+      if key in h:
+        h[key].append((data_len, obj_num))
       else:
-        value = str(value)
-        if value.startswith('/'):
-          value = pdf_to_ps_name(value)
-        output.append(value)
-        output.append(' ')
-
-    # !! fix the /BaseFont in /Font (PDF spec says they must be identical)
-    output = ['%!PS-Adobe-3.0\n',
-              '% Ghostscript helper generating Type1C fonts\n',
-              '%% autogenerated by %s at %s\n' % ('pdfsizeopt', time.time())]
-    output.append(self.GENERIC_PROCSET)
-    output.append(self.TYPE1C_GENERATOR_PROCSET)
-    output_prefix_len = sum(map(len, output))
-    for obj_num in sorted(unified_obj_nums):
-      output.append('%s 0 obj' % obj_num)
-      AppendSerializedPs(parsed_fonts[obj_num], output)
-      output.append('endobj\n')
-    output.append('(Type1CGenerator: all OK\\n) print flush\n%%EOF\n')
-    ps_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.ps'
-    pdf_tmp_file_name = TMP_PREFIX + 'conv.gen.tmp.pdf'
-    output_str = ''.join(output)
-    print >>sys.stderr, (
-        'info: writing Type1CGenerator (%s font bytes) to: %s' %
-        (len(output_str) - output_prefix_len, ps_tmp_file_name))
-    f = open(ps_tmp_file_name, 'wb')
-    try:
-      f.write(output_str)
-    finally:
-      f.close()
-
-    EnsureRemoved(pdf_tmp_file_name)
-    gs_cmd = (
-        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
-        '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
-        '-sOutputFile=%s -f %s'
-        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
-           ShellQuoteFileName(ps_tmp_file_name)))
-    print >>sys.stderr, (
-        'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
-    sys.stdout.flush()
-    status = os.system(gs_cmd)
-    if status:
-      print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
-      assert False, 'Type1CGenerator failed (status)'
-    if not os.path.isfile(pdf_tmp_file_name):
-      print >>sys.stderr, (
-          'info: Type1CGenerator has not created output: %s' %
-          pdf_tmp_file_name)
-      assert False, 'Type1CGenerator failed (no output)'
-    pdf = PdfData().Load(pdf_tmp_file_name)
-    # TODO(pts): Better error reporting if the font name is wrong.
-    loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
-    assert sorted(loaded_objs) == sorted(unified_obj_nums), (
-        'Font object number list mismatch: loaded=%r expected=%s' %
-        (sorted(loaded_objs), sorted(type1c_objs)))
-    for obj_num in loaded_objs:
-      loaded_obj = loaded_objs[obj_num]
-      # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
-      assert re.search(r'/Subtype\s*/Type1C\b', loaded_obj.head), (
-          'could not convert font %s to Type1C' % obj_num)
-      loaded_obj.FixFontNameInType1C(objs=self.objs)
-      type1c_objs[obj_num].head = loaded_obj.head
-      type1c_objs[obj_num].stream = loaded_obj.stream
-    for obj_num in sorted(set(type1c_objs).difference(loaded_objs)):
+        h[key] = [(data_len, obj_num)]
+    for key in h:
+      same_type1c_objs = h[key]
+      if len(same_type1c_objs) < 2:
+        continue
+      # For testing: tuzv.pdf
+      # Use sort() instead of min(...) to find the smallest tuple, min(...)
+      # is buggy on tuples.
+      same_type1c_objs.sort()  # smallest first
+      master_obj_num = None
+      for data_len, obj_num in same_type1c_objs:
+        obj = self.objs[obj_num]
+        target_obj_num = PdfObj.GetReferenceTarget(obj.Get('FontFile3'))
+        assert (
+            target_obj_num is not None and
+            self.objs[target_obj_num] is type1c_objs[obj_num]), (
+            'bad /FontFile3 target in %s' % obj_num)
+        if master_obj_num is None:
+          master_obj_num = target_obj_num
+        elif master_obj_num != target_obj_num:
+          obj.Set('FontFile3', '%s 0 R' % master_obj_num)
+          # TODO(pts): What if self.objs has another reference to
+          # target_obj_num, which is not coming from /FontDescriptor{}s?
+          del self.objs[target_obj_num]
+          duplicate_count += 1
+    h.clear()
+    if duplicate_count:
+      print >>sys.stderr, 'info: eliminated %s duplicate /Type1C font data' % (
+          duplicate_count)
+    if do_unify_fonts or do_regenerate_all_fonts:
+      self._ProcessType1CFonts(
+          type1c_objs=type1c_objs,
+          do_unify_fonts=do_unify_fonts,
+          do_regenerate_all_fonts=do_regenerate_all_fonts,
+          do_double_check_type1c_output=do_double_check_type1c_output)
+    for obj_num in sorted(type1c_objs):
       type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
-
     new_type1c_size = 0
-    for obj_num in type1c_objs:
+    for obj_num in sorted(type1c_objs):
       new_type1c_size += type1c_objs[obj_num].size + self.objs[obj_num].size
-
-    assert sorted(parsed_fonts) == sorted(type1c_objs), (
-        (sorted(parsed_fonts), sorted(type1c_objs)))
-    if do_double_check_missing_glyphs:
-      parsed2_fonts = self.ParseType1CFonts(
-          objs=loaded_objs, ps_tmp_file_name=TMP_PREFIX + 'conv.parse2.tmp.ps',
-          data_tmp_file_name=TMP_PREFIX + 'conv.parse2data.tmp.ps')
-      assert sorted(parsed_fonts) == sorted(parsed_fonts), (
-          'Font object number list mismatch: loaded=%r expected=%s' %
-          (sorted(parsed_fonts), sorted(parsed_fonts)))
-      # Typical differences:
-      # * /FontName is removed from parsed2_fonts. (Ghostscript does this,
-      #   not the code in pdfsizeopt.)
-      # * /FontBBox is added to parsed2_fonts with computed values.
-      # * /version is removed from parsed2_fonts.
-      # * /UnderlinePosition is reset to value 0 in parsed2_fonts.
-      # * /UnderlineThickness reset to value 0 in parsed2_fonts.
-      # * /Encoding (can be missing).
-      for obj_num in sorted(loaded_objs):
-        parsed_font = parsed_fonts[obj_num]
-        parsed2_font = parsed2_fonts[obj_num]
-        cs = sorted(parsed_font['CharStrings'])
-        cs2 = sorted(parsed2_font['CharStrings'])
-        assert not set(cs2).difference(cs)
-        assert cs == cs2, (
-            'missing glyphs from font %s: %r --> %r' %
-            (self.objs[obj_num].Get('FontName'), cs, cs2))
-
-    # TODO(pts): Don't remove if command-line flag.
-    os.remove(ps_tmp_file_name)
-    os.remove(pdf_tmp_file_name)
     # TODO(pts): Undo if no reduction in size.
+    # TODO(pts): Decompress fonts with /LZWDecode, to be recompressed.
     print >>sys.stderr, (
-        'info: optimized Type1C fonts to size %s (%s)' % (
-        (new_type1c_size, FormatPercent(new_type1c_size, orig_type1c_size))))
+        'info: optimized Type1C fonts to form %s bytes to %s bytes (%s)' % (
+        (orig_type1c_size, new_type1c_size,
+         FormatPercent(new_type1c_size, orig_type1c_size))))
     return self
 
   @classmethod
@@ -6452,7 +6515,7 @@ cvx bind /LoadCff exch def
       assert not os.path.exists(png_tmp_file_name)
 
     gs_cmd = (
-        '%s -q -dNOPAUSE -dBATCH -sDEVICE=%s '
+        '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=%s '
         '-sOutputFile=%s -f %s'
         % (GetGsCommand(), ShellQuote(gs_device),
            ShellQuoteFileName(png_tmp_file_pattern),
@@ -8444,7 +8507,7 @@ def main(argv):
     # of font problems, specify
     # --do-unify-fonts=no --do-regenerate-all-fonts=no.
     do_regenerate_all_fonts = True
-    do_double_check_missing_glyphs = False
+    do_double_check_type1c_output = False
     do_ignore_generation_numbers = True
     # Escaping (i.e. hiding images from Multivalent) is the safe choice
     # since Multivalent handles some predictors in buggy way, thus garbling
@@ -8477,6 +8540,7 @@ def main(argv):
         'do-ignore-generation-numbers=',
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
+        'do-double-check-type1c-output=',
         'do-regenerate-all-fonts=',
         'do-escape-images-from-multivalent=',
         'do-generate-xref-stream=',
@@ -8528,8 +8592,10 @@ def main(argv):
         do_unify_fonts = ParseBoolFlag(key, value)
       elif key == '--do-keep-font-optionals':
         do_keep_font_optionals = ParseBoolFlag(key, value)
-      elif key == '--do-double-check-missing-glyphs':
-        do_double_check_missing_glyphs = ParseBoolFlag(key, value)
+      elif key == '--do-double-check-missing-glyphs':  # Legacy flag.
+        do_double_check_type1c_output = ParseBoolFlag(key, value)
+      elif key == '--do-double-check-type1c-output':
+        do_double_check_type1c_output = ParseBoolFlag(key, value)
       elif key == '--do-regenerate-all-fonts':
         do_regenerate_all_fonts = ParseBoolFlag(key, value)
       elif key == '--do-decompress-flate':
@@ -8624,7 +8690,7 @@ def main(argv):
     pdf.ConvertType1FontsToType1C()
     pdf.OptimizeType1CFonts(
         do_keep_font_optionals=do_keep_font_optionals,
-        do_double_check_missing_glyphs=do_double_check_missing_glyphs,
+        do_double_check_type1c_output=do_double_check_type1c_output,
         do_unify_fonts=do_unify_fonts,
         do_regenerate_all_fonts=do_regenerate_all_fonts)
   if do_optimize_images:
