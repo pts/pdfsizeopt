@@ -4971,105 +4971,111 @@ class PdfData(object):
   % by the missing keys from /CharStrings.
 
   % stack: <fake-font>
-  dup /Encoding .knownget not {[]} if
+  % As a workaround for `S1' above, we skip a font with too many
+  % /CharStrings.
+  dup /CharStrings get length 256 lt {
+    dup /Encoding .knownget not {[]} if
 
-  % Convert all null entries to /.notdef
-  % For testing: lshort-kr.pdf
-  [ exch { dup null eq { pop /.notdef } if } forall ]
-  dup 2 index exch /Encoding exch put
+    % Convert all null entries to /.notdef
+    % For testing: lshort-kr.pdf
+    [ exch { dup null eq { pop /.notdef } if } forall ]
+    dup 2 index exch /Encoding exch put
 
-  % stack: <fake-font> <encoding-array>
-  << exch -1 exch { exch 1 add dup } forall pop >>
-  dup /.notdef undef
-  % _EncodingDict maps glyph names in th /Encoding to their last encoded
-  % value. Example: << /space 32 /A 65 >>
-  /_EncodingDict exch def
-  % stack: <fake-font>
-  [ 1 index /CharStrings get {
-    pop dup _EncodingDict exch known {
-      pop
-    } {
-      dup /.notdef eq { pop } if
-    } ifelse
-  } forall ]
-  % stack: <fake-font> <unencoded-list>
-  dup length 0 ne {
-    NameSort
-    1 index /Encoding .knownget not {[]} if
-    % stack: <fake-font> <sorted-unencoded-list> <encoding>
-    dup length 256 lt {
-      [exch aload length 1 255 {pop/.notdef} for]
-    } {
-      dup length array copy
-    } ifelse
-    exch
-    /_TargetI 2 index length 1 sub def  % length(Encoding) - 1 (usually 255)
-    % stack: <fake-font> <encoding-padded-to-256> <sorted-unencoded-list>
-    {
-      % stack: <fake-font> <encoding> <unencoded-glyphname>
-      { _TargetI 0 lt { exit } if
-        1 index _TargetI get /.notdef eq { exit } if
-        /_TargetI _TargetI 1 sub def
-      } loop
-      _TargetI 0 lt {
-        % Failed to add all missing glyphs to /Encoding. Give up silently.
-        pop exit  % from forall
-      } if
-      1 index exch _TargetI exch put
-      /_TargetI _TargetI 1 sub def
-    } forall
-    1 index exch /Encoding exch put
-    currentdict /_TargetI undef
-  } {
-    pop
-  } ifelse
-
-  % Regenerate _EncodingDict, now with /.notdef
-  dup /Encoding .knownget not {[]} if
+    % stack: <fake-font> <encoding-array>
     << exch -1 exch { exch 1 add dup } forall pop >>
+    dup /.notdef undef
+    % _EncodingDict maps glyph names in th /Encoding to their last encoded
+    % value. Example: << /space 32 /A 65 >>
     /_EncodingDict exch def
+    % stack: <fake-font>
+    [ 1 index /CharStrings get {
+      pop dup _EncodingDict exch known {
+        pop
+      } {
+        dup /.notdef eq { pop } if
+      } ifelse
+    } forall ]
+    % stack: <fake-font> <unencoded-list>
+    dup length 0 ne {
+      NameSort
+      1 index /Encoding .knownget not {[]} if
+      % stack: <fake-font> <sorted-unencoded-list> <encoding>
+      dup length 256 lt {
+        [exch aload length 1 255 {pop/.notdef} for]
+      } {
+        dup length array copy
+      } ifelse
+      exch
+      /_TargetI 2 index length 1 sub def  % length(Encoding) - 1 (usually 255)
+      % stack: <fake-font> <encoding-padded-to-256> <sorted-unencoded-list>
+      {
+        % stack: <fake-font> <encoding> <unencoded-glyphname>
+        { _TargetI 0 lt { exit } if
+          1 index _TargetI get /.notdef eq { exit } if
+          /_TargetI _TargetI 1 sub def
+        } loop
+        _TargetI 0 lt {
+          % Failed to add all missing glyphs to /Encoding. Give up silently.
+          pop exit  % from forall
+        } if
+        1 index exch _TargetI exch put
+        /_TargetI _TargetI 1 sub def
+      } forall
+      1 index exch /Encoding exch put
+      currentdict /_TargetI undef
+    } {
+      pop
+    } ifelse
 
-  %dup /FID undef  % undef not needed.
-  % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
-  % (for GhostScript 8.54) here, because otherwise Ghostscript would put
-  % the /FontName defined there to the PDF object /Type/FontDescriptor , thus
-  % preventing us from identifying the output font by input object number.
-  dup /OrigFont undef  % undef is OK even if /OrigFont doesn't exist
-  dup /.OrigFont undef  % undef is OK even if /.OrigFont doesn't exist
-  dup /FontName get exch definefont
-  % stack: <fake-font>
-  (Type1CConverter: converting font /) print
-    _OrigFontName =only
-    ( to /) print
-    dup /FontName get =only
-    (\n) print flush
-  dup /FontName get dup length string cvs
-  systemdict /FontDirectory get {  % Undefine all fonts except for <fake-font>
-    pop dup
-    dup length string cvs 2 index eq  % Need cvs for eq comparison.
-    {pop} {undefinefont} ifelse
-  } forall
-  pop % <fake-font-name-string>
-  %systemdict /FontDirectory get {pop ===} forall
+    % Regenerate _EncodingDict, now with /.notdef
+    dup /Encoding .knownget not {[]} if
+      << exch -1 exch { exch 1 add dup } forall pop >>
+      /_EncodingDict exch def
 
-  dup setfont
-  % TODO(pts): Check for embedding the base 14 fonts.
-  %
-  % * It is not enough to show only a few glyphs, because Ghostscript
-  %   sometimes ignores /SubsetFonts=false .
-  % * 200 200 moveto is needed here, otherwise some characters would be too
-  %   far to the right so Ghostscript 8.61 would crop them from the page and
-  %   wouldn't include them to the fonts.
-  % * We have to make sure that all glyphs are on the page -- otherwise
-  %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
-  %   the outliers.
-  % * Using `show' instead of `glyphshow' to prevent Ghostscript from
-  %   splitting the output CFF font to two (or more) on auto-guessed
-  %   Encoding position conflict (such as /G and /Phi).
-  dup /CharStrings get [exch {pop} forall] NameSort {
-    newpath 200 200 moveto
-    _EncodingDict GlyphShowWithEncodingDict
-  } forall
+    %dup /FID undef  % undef not needed.
+    % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
+    % (for GhostScript 8.54) here, because otherwise Ghostscript would put
+    % the /FontName defined there to the PDF object /Type/FontDescriptor , thus
+    % preventing us from identifying the output font by input object number.
+    dup /OrigFont undef  % undef is OK even if /OrigFont doesn't exist
+    dup /.OrigFont undef  % undef is OK even if /.OrigFont doesn't exist
+    dup /FontName get exch definefont
+    % stack: <fake-font>
+    (Type1CConverter: converting font /) print
+      _OrigFontName =only
+      ( to /) print
+      dup /FontName get =only
+      (\n) print flush
+    dup /FontName get dup length string cvs
+    systemdict /FontDirectory get {  % Undefine all fonts except for <fake-font>
+      pop dup
+      dup length string cvs 2 index eq  % Need cvs for eq comparison.
+      {pop} {undefinefont} ifelse
+    } forall
+    pop % <fake-font-name-string>
+    %systemdict /FontDirectory get {pop ===} forall
+
+    dup setfont
+    % TODO(pts): Check for embedding the base 14 fonts.
+    %
+    % * It is not enough to show only a few glyphs, because Ghostscript
+    %   sometimes ignores /SubsetFonts=false .
+    % * 200 200 moveto is needed here, otherwise some characters would be too
+    %   far to the right so Ghostscript 8.61 would crop them from the page and
+    %   wouldn't include them to the fonts.
+    % * We have to make sure that all glyphs are on the page -- otherwise
+    %   Ghostscript 8.61 becomes too smart by clipping the page and not embedding
+    %   the outliers.
+    % * Using `show' instead of `glyphshow' to prevent Ghostscript from
+    %   splitting the output CFF font to two (or more) on auto-guessed
+    %   Encoding position conflict (such as /G and /Phi).
+    dup /CharStrings get [exch {pop} forall] NameSort {
+      newpath 200 200 moveto
+      _EncodingDict GlyphShowWithEncodingDict
+    } forall
+  } {
+    (skipping big-CharStrings font obj ) print _ObjNumber === flush
+  } ifelse
   currentdict /_EncodingDict undef
   pop % <fake-font>
   restore
@@ -5219,7 +5225,19 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: executing Type1CConverter with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
-    status = os.system(gs_cmd)
+    p = os.popen(gs_cmd, 'rb')
+    skip_prefix = 'skipping big-CharStrings font obj '
+    big_charstrings_obj_nums = set()
+    try:
+      for line in iter(p.readline, ''):
+        if line.startswith(skip_prefix):
+          obj_num = int(line[len(skip_prefix):])
+          big_charstrings_obj_nums.add(obj_num)
+        else:
+          sys.stdout.write(line)
+    finally:
+      status = p.close()
+    sys.stdout.flush()
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
       assert False, 'Type1CConverter failed (status)'
@@ -5234,8 +5252,18 @@ class PdfData(object):
         do_obj_num_from_font_name=True, where='in GS output')
     # Remove only if pdf.GetFonts has not found any duplicate fonts.
     os.remove(ps_tmp_file_name)
-    assert sorted(type1c_objs) == sorted(objs), (
-        'Font object number list mismatch.')
+    assert sorted(objs) == (
+        sorted(tuple(type1c_objs) + tuple(big_charstrings_obj_nums))), (
+            'Font object number list mismatch.')
+    if big_charstrings_obj_nums:
+      # Example: lme2006_logomany.pdf
+      # TODO(pts): Implement proper workaround for this in Type1CConverter.
+      print >>sys.stderr, (
+          'info: skipped conversion of %d Type1 fonts to Type1C because their '
+          '/CharStrings were longer than 256, obj nums are: %s' %
+          (len(big_charstrings_obj_nums), sorted(big_charstrings_obj_nums)))
+      for obj_num in sorted(big_charstrings_obj_nums):
+        type1_size -= objs[obj_num].size
     type1c_size = 0
     for obj_num in type1c_objs:
       # TODO(pts): Cross-check /FontFile3 with pdf.GetFonts.
