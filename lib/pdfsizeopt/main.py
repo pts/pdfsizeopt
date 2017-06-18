@@ -5532,6 +5532,7 @@ cvx bind /LoadCff exch def
         'Data object number list mismatch.')
     objs_size = len(objs)
     unparsable_obj_nums = []
+    big_charstrings_obj_nums = []
     for obj_num in sorted(objs):
       parsed_font = parsed_fonts[obj_num]
       if not parsed_font:
@@ -5552,10 +5553,21 @@ cvx bind /LoadCff exch def
              parsed_font.get('FontType'),
              parsed_font.get('FontMatrix'),
              parsed_font.get('PaintType')))
+      if len(parsed_font['CharStrings']) > 256:
+        big_charstrings_obj_nums.append(obj_num)
+        if obj_num in parsed_fonts:
+          del parsed_fonts[obj_num]
+          del objs[obj_num]
     if unparsable_obj_nums:
       print >>sys.stderr, (
           'warning: found unparsable Type1C fonts, obj nums are: %s' %
           unparsable_obj_nums)
+    if big_charstrings_obj_nums:
+      # Example: functional-programming-python.pdf
+      print >>sys.stderr, (
+          'warning: ignoring %d Type1C fonts with /CharStrings longer than '
+          '256, obj nums are: %s' %
+          (len(big_charstrings_obj_nums), big_charstrings_obj_nums))
     if not is_permissive and obj_size != len(objs):
       assert 0, 'Error (see warnings above) during Type1C font parsing.'
     os.remove(data_tmp_file_name)
