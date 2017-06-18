@@ -5971,7 +5971,8 @@ cvx bind /LoadCff exch def
 
   def _ProcessType1CFonts(self, type1c_objs, do_unify_fonts,
                           do_regenerate_all_fonts,
-                          do_double_check_type1c_output):
+                          do_double_check_type1c_output,
+                          do_keep_font_optionals):
     # ParseType1CFonts removes the tmp files it creates.
     # ParseType1CFonts removes unparsable fonts from type1c_objs.
     parsed_fonts = self.ParseType1CFonts(
@@ -6314,7 +6315,8 @@ cvx bind /LoadCff exch def
           type1c_objs=type1c_objs,
           do_unify_fonts=do_unify_fonts,
           do_regenerate_all_fonts=do_regenerate_all_fonts,
-          do_double_check_type1c_output=do_double_check_type1c_output)
+          do_double_check_type1c_output=do_double_check_type1c_output,
+          do_keep_font_optionals=do_keep_font_optionals)
     for obj_num in sorted(type1c_objs):
       type1c_objs[obj_num].FixFontNameInType1C(objs=self.objs)
     new_type1c_size = 0
