@@ -3173,12 +3173,13 @@ class ImageData(object):
       predictor), 'zip-png' (ZIP compression with PNG predictor),
       'jbig2'.
     file_name: name of the file originally loaded
+    is_inverted: bool indicating whether the image data should be inverted.
 
   TODO(pts): Make this a more generic image object; possibly store /Filter
     and predictor.
   """
   __slots__ = ['width', 'height', 'bpc', 'color_type', 'is_interlaced',
-               'idat', 'plte', 'compression', 'file_name']
+               'idat', 'plte', 'compression', 'file_name', 'is_inverted']
 
   SAMPLES_PER_PIXEL_DICT = {
       'gray': 1,
@@ -3222,19 +3223,21 @@ class ImageData(object):
       self.plte = other.plte
       self.compression = other.compression
       self.file_name = other.file_name
+      self.is_inverted = other.is_inverted
     else:
       self.Clear()
 
   def Clear(self):
     self.width = self.height = self.bpc = self.color_type = None
     self.is_interlaced = self.idat = self.plte = self.compression = None
-    self.file_name = None
+    self.file_name = self.is_inverted = None
 
   def __nonzero__(self):
     """Return true iff this object contains a valid image."""
     return bool(isinstance(self.width, int) and self.width > 0 and
                 isinstance(self.height, int) and self.height > 0 and
                 isinstance(self.bpc, int) and
+                isinstance(self.is_inverted, bool) and
                 self.bpc in (1, 2, 4, 8, 12, 16) and
                 self.color_type in ('gray', 'rgb', 'indexed-rgb', 'gray-alpha',
                                     'rgb-alpha') and
@@ -3251,7 +3254,8 @@ class ImageData(object):
   def ToDataTuple(self):
     """Return the data in self as __hash__{}able tuple."""
     return (self.width, self.height, self.bpc, self.color_type,
-            self.is_interlaced, self.idat, self.plte, self.compression)
+            self.is_interlaced, self.idat, self.plte, self.compression,
+            self.is_inverted)
 
   def CanBePdfImage(self):
     return bool(self and self.bpc in (1, 2, 4, 8) and
@@ -3346,6 +3350,7 @@ class ImageData(object):
     if not isinstance(pdf_obj, PdfObj):
       raise TypeError
     pdf_image_data = self.GetPdfImageData()
+    is_inverted = self.is_inverted
     if do_check_dimensions:
       assert pdf_obj.Get('Width') == pdf_image_data['Width'], (
           'image Width mismatch: %r vs %r' % (pdf_obj.head, pdf_image_data))
@@ -3354,8 +3359,6 @@ class ImageData(object):
     else:
       pdf_obj.Set('Width', pdf_image_data['Width'])
       pdf_obj.Set('Height', pdf_image_data['Height'])
-
-    is_inverted = False
 
     if pdf_obj.Get('ImageMask'):
       assert self.CanUpdateImageMask()
@@ -3376,7 +3379,6 @@ class ImageData(object):
     else:
       pdf_obj.Set('BitsPerComponent', pdf_image_data['BitsPerComponent'])
       pdf_obj.Set('ColorSpace', pdf_image_data['ColorSpace'])
-      pdf_obj.Set('Decode', pdf_image_data.get('Decode'))
     pdf_obj.Set('Filter', pdf_image_data['Filter'])
     pdf_obj.Set('DecodeParms', pdf_image_data.get('DecodeParms'))
     pdf_obj.Set('Length', len(pdf_image_data['.stream']))
@@ -3474,7 +3476,7 @@ class ImageData(object):
     self.file_name = file_name
     return self
 
-  def Load(self, file_name, do_remove_file_on_success=False):
+  def Load(self, file_name, do_remove_file_on_success=False, is_inverted=False):
     """Load (parts of) a PNG or PDF image file to self, return self.
 
     Please note that this method discards possibly important PNG chunks.
@@ -3503,6 +3505,8 @@ class ImageData(object):
       f.close()
     self.file_name = file_name
     assert self, 'could not load valid image'
+    if is_inverted:
+      self.is_inverted = not self.is_inverted
     assert not self.color_type.startswith('indexed-') or self.plte, (
         'missing PLTE data')
     if self.plte:
@@ -3571,6 +3575,7 @@ class ImageData(object):
         palette = color2 + color1
       else:
         palette = color1 + color2
+      obj.Set('Decode', None)
       colorspace = '[/Indexed/DeviceRGB %d%s]' % (
           len(palette) / 3 - 1, PdfObj.EscapeString(palette))
       obj.Set('ColorSpace', colorspace)
@@ -3578,7 +3583,7 @@ class ImageData(object):
 
     return self.LoadPdfImageObj(obj=obj, do_zip=True)
 
-  def LoadPdfImageObj(self, obj, do_zip):
+  def LoadPdfImageObj(self, obj, do_zip, decode_kind=None):
     """Load image from PDF obj to self. Doesn't modify `obj'."""
     assert obj.Get('Subtype') == '/Image'
     assert isinstance(obj.stream, str)
@@ -3640,11 +3645,20 @@ class ImageData(object):
         pr_colors_ok = [1, None]
       if decodeparms.Get('Colors') not in pr_colors_ok:
         raise FormatUnsupported('unsupported predictor /Colors')
+    bpc = int(obj.Get('BitsPerComponent'))
+
+    if decode_kind is None:
+      decode_kind = PdfObj.ClassifyImageDecode(
+          obj.Get('Decode'),
+          int(palette is not None and bpc))
+    else:
+      assert decode_kind in ('normal', 'inverted')
 
     self.Clear()
+    self.is_inverted = decode_kind == 'inverted'
     self.width = width
     self.height = height
-    self.bpc = obj.Get('BitsPerComponent')
+    self.bpc = bpc
     assert isinstance(self.bpc, int)
     if colorspace == '/DeviceRGB':
       assert palette is None
@@ -3731,6 +3745,7 @@ class ImageData(object):
     self.idat = ''.join(idats)
     assert not need_plte, 'missing PLTE chunk'
     self.compression = 'zip-png'
+    self.is_inverted = False
     assert self, 'could not load valid PNG image'
     return self
 
@@ -6399,7 +6414,7 @@ cvx bind /LoadCff exch def
   @classmethod
   def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
                    do_just_read=False, return_none_if_status=None,
-                   do_remove_targetfn_on_success=True):
+                   do_remove_targetfn_on_success=True, is_inverted=False):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
     if not isinstance(sourcefn, str):
       raise TypeError
@@ -6438,7 +6453,8 @@ cvx bind /LoadCff exch def
       return result
     else:
       return cmd_name, ImageData().Load(
-          targetfn, do_remove_file_on_success=do_remove_targetfn_on_success)
+          targetfn, do_remove_file_on_success=do_remove_targetfn_on_success,
+          is_inverted=is_inverted)
 
   def AddObj(self, obj):
     """Add PdfObj to self.objs, return its object number."""
@@ -6928,11 +6944,13 @@ cvx bind /LoadCff exch def
       # Ghostscript.
       image1 = image2 = None
       try:
-        if decode_kind == 'inverted':
-          # TODO(pts): Do the inversion in Python, without ImageRenderer. Speed?
-          raise FormatUnsupported('Cannot load inverted image directly.')
         # Both LoadPdfImageObj and CompressToZipPng raise FormatUnsupported.
-        image1 = ImageData().LoadPdfImageObj(obj=obj, do_zip=False)
+        #
+        # TODO(pts): Do the image data inversion here in Python code if
+        # decode_kind == 'inverted'. This way we can avoid emitting
+        # `/Decode [1 0]'.
+        image1 = ImageData().LoadPdfImageObj(
+            obj=obj, do_zip=False, decode_kind=decode_kind)
         if not image1.CanBePngImage(do_ignore_compression=True):
           raise FormatUnsupported('cannot save to PNG')
         image2 = ImageData(image1).CompressToZipPng()
@@ -6975,7 +6993,7 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, 'info: optimizing %s images of %s bytes in total' % (
         image_count, image_total_size)
 
-    # Render images which we couldn't convert in-process.
+    # Render images which we couldn't convert in-process, using ImageRenderer.
     for gs_device in sorted(device_image_objs):
       ps_tmp_file_name = TMP_PREFIX + 'conv.%s.tmp.ps' % gs_device
       objs = device_image_objs[gs_device]
@@ -6987,6 +7005,8 @@ cvx bind /LoadCff exch def
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
           # file_name will be removed by os.remove(rendered_image_file_name).
+          # ImageRenderer does the inversion, we mustn't need to set
+          # ImageData().Load(..., is_inverted=True) below.
           images[obj_num].append(
               ('gs', ImageData().Load(
                   file_name=rendered_images[obj_num],
@@ -7020,6 +7040,7 @@ cvx bind /LoadCff exch def
         obj_images.append(('#prev-rendered-best', target_image))
         image_tuple = target_image.ToDataTuple()
       else:
+        is_inverted = obj_images[-1][1].is_inverted
         rendered_image_file_name = obj_images[-1][1].file_name
         # TODO(pts): use KZIP or something to further optimize the ZIP stream
         # !! shortcut for sam2p (don't need pngtopnm)
@@ -7032,6 +7053,7 @@ cvx bind /LoadCff exch def
           sam2p_mode = ('Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
                         'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
+            is_inverted=is_inverted,
             sourcefn=rendered_image_file_name,
             targetfn=TMP_PREFIX + 'img-%d.sam2p-np.pdf' % obj_num,
             # We specify -s here to explicitly exclude SF_Opaque for
@@ -7067,6 +7089,7 @@ cvx bind /LoadCff exch def
           else:
             sam2p_s_flags = ''
           obj_images.append(self.ConvertImage(
+              is_inverted=is_inverted,
               sourcefn=rendered_image_file_name,
               targetfn=TMP_PREFIX + 'img-%d.sam2p-pr.png' % obj_num,
               cmd_pattern=('sam2p ' + sam2p_s_flags +
@@ -7108,6 +7131,7 @@ cvx bind /LoadCff exch def
             # if it can't compress the file any further.
             image = self.ConvertImage(
                 sourcefn=rendered_image_file_name,
+                is_inverted=is_inverted,
                 targetfn=TMP_PREFIX + 'img-%d.pngout.png' % obj_num,
                 cmd_pattern='pngout -force ' + pngout_gray_flags +
                             '%(sourcefnq)s %(targetfnq)s',
