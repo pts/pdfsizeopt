@@ -3094,9 +3094,13 @@ class PdfObj(object):
       raise PdfXrefStreamError('missing /First in objstm obj %d' % obj_num)
     if not isinstance(first, int) or first <= 0:
       raise PdfXrefStreamError('invalid /First in objstm obj %d' % obj_num)
-    if self.Get('Extends') is not None:
-      # TODO(pts): Implement this.
-      raise NotImplementedError('/Extends in /Type/ObjStm not implemented')
+
+    # Probably we can just ignore /Extends, at least we can do it for
+    # http://www.oreilly.com/web-platform/free/files/python-web-frameworks.pdf
+    # Commenting out the check below proactively.
+    #if self.Get('Extends') is not None:
+    #  raise NotImplementedError('/Extends in /Type/ObjStm not implemented')
+
     # TODO(pts): Handle the various exceptions raised by
     #            trailer_obj.GetUncompressedStream().
     objstm_data = self.GetUncompressedStream()
