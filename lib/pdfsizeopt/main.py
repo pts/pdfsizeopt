@@ -6590,7 +6590,7 @@ cvx bind /LoadCff exch def
 
   @classmethod
   def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern,
-                   gs_device):
+                   gs_device, inverted_obj_nums):
     """Returns: dictionary mapping obj_num to PNG filename."""
     if not objs:
       return {}
@@ -6603,8 +6603,32 @@ cvx bind /LoadCff exch def
     image_size = 0
     sorted_objs = sorted(objs)
     for obj_num in sorted_objs:
-      image_size += objs[obj_num].size
-      objs[obj_num].AppendTo(output, obj_num)
+      obj = objs[obj_num]
+      if (inverted_obj_nums is not None and
+          '/CCITTFaxDecode' in str(obj.Get('Filter')) and
+          '/BlackIs1' in str(obj.Get('DecodeParms'))):
+        decodeparms = obj.Get('DecodeParms')
+        if decodeparms.startswith('['):
+          decodeparms = PdfObj.ParseArray(decodeparms)
+        else:
+          decodeparms = [decodeparms]
+        decodeparms = map(PdfObj.ParseDict, decodeparms)
+        if [1 for parm in decodeparms if parm.get('BlackIs1') is True]:
+          # Invert the image later, with /Decode.
+          if obj_num in inverted_obj_nums:
+            inverted_obj_nums.remove(obj_num)
+          else:
+            inverted_obj_nums.add(obj_num)
+          for parm in decodeparms:
+            parm.pop('BlackIs1', None)
+          decodeparms = map(PdfObj.SerializeDict, decodeparms)
+          if len(decodeparms) == 1:
+            obj.Set('DecodeParms', decodeparms[0])
+          else:
+            obj.Set('DecodeParms', '[%s]' % ' '.join(decodeparms))
+      image_size += obj.size
+      obj.AppendTo(output, obj_num)
+      obj = None  # Save memory.
     output.append('(ImageRenderer: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     print >>sys.stderr, (
@@ -6946,7 +6970,8 @@ cvx bind /LoadCff exch def
         # Dictionary mapping object numbers to /Image PdfObj{}s.
         rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern=TMP_PREFIX + 'img-%%04d.%s.tmp.png' % gs_device)
+            png_tmp_file_pattern=TMP_PREFIX + 'img-%%04d.%s.tmp.png' % gs_device,
+            inverted_obj_nums=inverted_obj_nums)
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
           # file_name will be removed by os.remove(rendered_image_file_name).
