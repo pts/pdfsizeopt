@@ -339,8 +339,8 @@ class PdfObj(object):
   PDF_WHITESPACE_CHARS = '\0\t\n\r\f '
   """String containing all PDF whitespace characters."""
 
-  #PDF_WHITESPACES_RE = re.compile('[' + PDF_WHITESPACE_CHARS + ']+')
-  #"""Matches one or more PDF whitespace characters."""
+  PDF_WHITESPACES_RE = re.compile('[' + PDF_WHITESPACE_CHARS + ']+')
+  """Matches one or more PDF whitespace characters."""
 
   PDF_STREAM_OR_ENDOBJ_RE_STR = (
       r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
@@ -1939,8 +1939,58 @@ class PdfObj(object):
     return True
 
   @classmethod
+  def ClassifyImageDecode(cls, decode, indexed_bpc):
+    """Classifies the /Decode value of an image.
+
+    Args:
+      decode: obj.Get('Decode'), typically str or None.
+      indexed_bpc: BitsPerComponent int for an indexed image, or a false value.
+    """
+    if decode is None:
+      return 'normal'
+    if not isinstance(decode, str) or decode[:1] != '[' or decode[-1:] != ']':
+      return 'non-array'
+    short_decode = filter(None, cls.PDF_WHITESPACES_RE.split(decode[1 : -1]))
+    s = len(short_decode) >> 1
+    if indexed_bpc:
+      high = (1 << indexed_bpc) - 1
+    else:
+      high = 1
+    high_str = str(high)
+    if short_decode:
+      if short_decode == ['0', high_str] * s:
+        return 'normal'
+      if short_decode == [high_str, '0'] * s:
+        return 'inverted'
+    parsed_decode = cls.ParseArray(decode)  # Slow.
+    if not parsed_decode:
+      return 'empty'
+    try:
+      float_decode = map(float, parsed_decode)
+    except ValueError:
+      return 'non-float'
+    if float_decode == [0, high] * s:  # Matches ints and floats.
+      return 'normal'
+    if float_decode == [high, 0] * s:  # Matches ints and floats.
+      return 'inverted'
+    return 'strange'
+
+  @classmethod
+  def GenerateImageDecode(cls, is_inverted, samples_per_pixel, indexed_bpc):
+    """Returns an image /Decode string value."""
+    if indexed_bpc:
+      high = (1 << indexed_bpc) - 1
+    else:
+      high = 1
+    if is_inverted:
+      items = [str(high), '0']
+    else:
+      items = ['0', str(high)]
+    return '[%s]' % ' '.join(items * samples_per_pixel)
+
+  @classmethod
   def GetRgbPaletteSize(cls, palette):
-    """Retrun len(palette) // 3 * 3, doing some checks."""
+    """Return len(palette) // 3 * 3, doing some checks."""
     palette_size = len(palette)
     palette_mod = len(palette) % 3
     # Some buggy PDF generators create a palette which is 1 byte longer.
@@ -3291,7 +3341,8 @@ class ImageData(object):
       return True
     return self.color_type == 'gray'
 
-  def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
+  def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True,
+                   is_inverted=False):
     """Update the /Subtype/Image PDF XObject from self."""
     if not isinstance(pdf_obj, PdfObj):
       raise TypeError
@@ -3310,18 +3361,14 @@ class ImageData(object):
       assert pdf_image_data['ColorSpace'] == '/DeviceGray'
       pdf_obj.Set('ColorSpace', None)
       image_decode = pdf_image_data.get('Decode')
+      # pdf_reference_1-7.pdf says: for /ImageMask true, /Decode must be [0 1]
+      # or [1 0]. No need to check for 1.0 etc., because GetPdfImageData
+      # doesn't generate such image_decode values.
       if image_decode in (None, '[0 1]'):
-        if pdf_obj.Get('Decode') == '[0 1]':
-          pdf_obj.Set('Decode', None)
+        pass
       elif image_decode == '[1 0]':
-        # Imp: test this
-        decode = pdf_obj.Get('Decode')
-        if decode in (None, '[0 1]'):
-          pdf_obj.Set('Decode', '[1 0]')
-        elif decode == '[1 0]':
-          pdf_obj.Set('Decode', None)
-        else:
-          assert False, 'unknown decode value in PDF: %r' % decode
+        # TODO(pts). Test this.
+        is_inverted = not is_inverted
       else:
         assert False, 'unknown decode value: %r' % image_decode
     else:
@@ -3331,7 +3378,12 @@ class ImageData(object):
     pdf_obj.Set('Filter', pdf_image_data['Filter'])
     pdf_obj.Set('DecodeParms', pdf_image_data.get('DecodeParms'))
     pdf_obj.Set('Length', len(pdf_image_data['.stream']))
-    # Don't pdf_obj.Set('Decode', ...): it is good as is.
+    if is_inverted:
+      indexed_bpc = int(self.color_type.startswith('indexed-') and self.bpc)
+      pdf_obj.Set('Decode', pdf_obj.GenerateImageDecode(
+          is_inverted, self.samples_per_pixel, indexed_bpc))
+    else:
+      pdf_obj.Set('Decode', None)  # Use the default, it's shorter.
     pdf_obj.stream = pdf_image_data['.stream']
 
   def CompressToZipPng(self):
@@ -4798,8 +4850,8 @@ class PdfData(object):
   pop
   save exch
   /_ObjNumber exch def
-  % Imp: read <streamdict> here (not with `token', but recursively), so
-  %      don't redefine `stream'
+  % TODO(pts): Read <streamdict> here (not with `token', but recursively), so
+  %            don't redefine `stream'.
 } bind def
 
 % Sort an array, from Ghostscript's prfont.ps.
@@ -6648,6 +6700,7 @@ cvx bind /LoadCff exch def
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
     force_grayscale_obj_nums = set()
+    inverted_obj_nums = set()
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
 
@@ -6782,7 +6835,7 @@ cvx bind /LoadCff exch def
       # because neither PNG nor sam2p supports it. We can convert it to
       # RGB, though.
       if not re.match(r'(?:/Device(?:RGB|Gray)\Z|\[\s*/Indexed\s*'
-                      r'/Device(?:RGB|Gray)\s)', colorspace):
+                      r'/Device(?:RGB|Gray)[\s(<\[/])', colorspace):
         continue
 
       if obj.Get('Mask') and do_remove_mask:
@@ -6790,8 +6843,9 @@ cvx bind /LoadCff exch def
           obj = PdfObj(obj)
         obj.Set('Mask', None)
 
-      # !! TODO(pts): proper PDF token sequence parsing
-      # !! add resolving of references
+      # !! TODO(pts): Proper PDF token sequence parsing.
+      # !! TODO(pts): Allow references in fields we don't care about.
+      # !! TODO(pts): add resolving of references
       if re.match(r'\b\d+\s+\d+\s+R\b', obj.head):
         continue
 
@@ -6809,6 +6863,17 @@ cvx bind /LoadCff exch def
         gs_device = 'pnggray'
       else:
         gs_device = 'pngmono'
+
+      decode_kind = PdfObj.ClassifyImageDecode(
+          obj.Get('Decode'),
+          int('/Indexed' in colorspace and bpc))
+      if decode_kind not in ('normal', 'inverted'):
+        print >>sys.stderr, (
+            'warning: ignoring image XObject %d with %s /Decode value: %s' %
+            (obj_num, decode_kind, obj.Get('Decode')))
+        continue
+      if decode_kind == 'inverted':
+        inverted_obj_nums.add(obj_num)
 
       image_count += 1
       image_total_size += obj.size
@@ -6949,8 +7014,8 @@ cvx bind /LoadCff exch def
 
         image_tuple = obj_images[-1][1].ToDataTuple()
         target_image = by_image_tuple.get(image_tuple)
-        assert image_tuple[00] == obj.Get('Width')
-        assert image_tuple[01] == obj.Get('Height')
+        assert image_tuple[0] == obj.Get('Width')
+        assert image_tuple[1] == obj.Get('Height')
         target_image = by_image_tuple.get(image_tuple)
         if target_image is not None:  # We have already optimized this image.
           # For testing: pts2.ziplzw.pdf
@@ -7042,7 +7107,8 @@ cvx bind /LoadCff exch def
                  obj_num))
           continue
         new_obj = PdfObj(obj)
-        image_data.UpdatePdfObj(new_obj)
+        image_data.UpdatePdfObj(
+            new_obj, is_inverted=obj_num in inverted_obj_nums)
         obj_infos.append((new_obj.size, cmd_name, image_data.file_name,
                           new_obj, image_data))
       del obj_images[:]  # Free memory.

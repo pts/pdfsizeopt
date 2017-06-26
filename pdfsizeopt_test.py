@@ -1051,6 +1051,34 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(True, f('<<>>'))
     self.assertEqual(True, f('<</Differences[5/foo]>>'))
 
+  def testClassifyImageDecode(self):
+    f = pdfsizeopt.PdfObj.ClassifyImageDecode
+    self.assertEqual('normal', f(None, 0))
+    self.assertEqual('non-array', f(42, 0))
+    self.assertEqual('non-array', f('', 0))
+    self.assertEqual('non-float', f('[/a 5]', 0))
+    self.assertEqual('empty', f('[]', 0))
+    self.assertEqual('empty', f('[\r]', 0))
+    self.assertEqual('inverted', f('[  1\t0\n]', 0))
+    self.assertEqual('normal', f('[  0\f1\n]', 0))
+    self.assertEqual('normal', f('[  0\f1\0 0 1\n]', 0))
+    self.assertEqual('inverted', f('[  7\t0\n]', 3))
+    self.assertEqual('normal', f('[  0\f7\n]', 3))
+    self.assertEqual('strange', f('[  7\t0\n]', 4))
+    self.assertEqual('strange', f('[  0\f7\n]', 4))
+    self.assertEqual('inverted', f('[1.0 0 1 0e5]', 0))
+    self.assertEqual('strange', f('[1.0 0 1 0e5 1]', 0))
+    self.assertEqual('strange', f('[0]', 0))
+    self.assertEqual('strange', f('[1 0 0 1]', 0))
+
+  def testGenerateImageDecode(self):
+    f = pdfsizeopt.PdfObj.GenerateImageDecode
+    self.assertEqual('[]', f(0, 0, 0))
+    self.assertEqual('[0 1]', f(False, 1, 0))
+    self.assertEqual('[0 1 0 1 0 1]', f(False, 3, 0))
+    self.assertEqual('[0 15 0 15 0 15]', f(False, 3, 4))
+    self.assertEqual('[15 0 15 0]', f(True, 2, 4))
+
 
 if __name__ == '__main__':
   unittest.main(argv=[sys.argv[0], '-v'] + sys.argv[1:])
