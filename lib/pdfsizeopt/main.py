@@ -3341,8 +3341,7 @@ class ImageData(object):
       return True
     return self.color_type == 'gray'
 
-  def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True,
-                   is_inverted=False):
+  def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
     if not isinstance(pdf_obj, PdfObj):
       raise TypeError
@@ -3355,6 +3354,9 @@ class ImageData(object):
     else:
       pdf_obj.Set('Width', pdf_image_data['Width'])
       pdf_obj.Set('Height', pdf_image_data['Height'])
+
+    is_inverted = False
+
     if pdf_obj.Get('ImageMask'):
       assert self.CanUpdateImageMask()
       assert pdf_image_data['BitsPerComponent'] == 1
@@ -6558,13 +6560,7 @@ cvx bind /LoadCff exch def
   dup /BitsPerComponent get /BitsPerComponent exch def
   dup /Width get /Width exch def
   dup /Height get /Height exch def
-  %dup /Decode .knownget {/Decode exch def} if
-  dup /ColorSpace get dup type /arraytype eq {
-    dup 0 get /Indexed eq {
-      % For /Indexed, set /Decode [0 x], where x == (1 << BitsPerComponent) - 1
-      /Decode [0 4 index /BitsPerComponent get 1 exch bitshift 1 sub] def
-    } if
-  } if pop
+  dup /Decode .knownget {/Decode exch def} if
   % We cannot affect the file name of -sOutputFile=%d.png , doing a
   % ``<< /PageCount ... >> setpagedevice'' has no effect.
   % It's OK to change /PageSize for each page.
@@ -6589,8 +6585,7 @@ cvx bind /LoadCff exch def
 '''
 
   @classmethod
-  def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern,
-                   gs_device, inverted_obj_nums):
+  def RenderImages(cls, objs, ps_tmp_file_name, png_tmp_file_pattern, gs_device):
     """Returns: dictionary mapping obj_num to PNG filename."""
     if not objs:
       return {}
@@ -6604,8 +6599,11 @@ cvx bind /LoadCff exch def
     sorted_objs = sorted(objs)
     for obj_num in sorted_objs:
       obj = objs[obj_num]
-      if (inverted_obj_nums is not None and
-          '/CCITTFaxDecode' in str(obj.Get('Filter')) and
+
+      # We can assume that OptimizeImages has simplified /ColorSpace and
+      # /BitsPerComponent for us.
+
+      if ('/CCITTFaxDecode' in str(obj.Get('Filter')) and
           '/BlackIs1' in str(obj.Get('DecodeParms'))):
         decodeparms = obj.Get('DecodeParms')
         if decodeparms.startswith('['):
@@ -6615,10 +6613,7 @@ cvx bind /LoadCff exch def
         decodeparms = map(PdfObj.ParseDict, decodeparms)
         if [1 for parm in decodeparms if parm.get('BlackIs1') is True]:
           # Invert the image later, with /Decode.
-          if obj_num in inverted_obj_nums:
-            inverted_obj_nums.remove(obj_num)
-          else:
-            inverted_obj_nums.add(obj_num)
+          obj = PdfObj(obj)
           for parm in decodeparms:
             parm.pop('BlackIs1', None)
           decodeparms = map(PdfObj.SerializeDict, decodeparms)
@@ -6626,6 +6621,24 @@ cvx bind /LoadCff exch def
             obj.Set('DecodeParms', decodeparms[0])
           else:
             obj.Set('DecodeParms', '[%s]' % ' '.join(decodeparms))
+          if '/Indexed' in str(obj.Get('ColorSpace')):
+            indexed_bpc = obj.Get('BitsPerComponent')
+            assert isinstance(indexed_bpc, int)
+          else:
+            indexed_bpc = 0
+          if str(obj.Get('ColorSpace')) == '/DeviceRGB':
+            samples_per_pixel = 3
+          else:
+            samples_per_pixel = 1
+          decode_kind = PdfObj.ClassifyImageDecode(
+              obj.Get('Decode'), indexed_bpc)
+          if decode_kind == 'inverted':
+            obj.Set('Decode', None)
+          else:
+            obj.Set('Decode', PdfObj.GenerateImageDecode(
+                True, samples_per_pixel, indexed_bpc))
+      # ImageRenderer does the inversion, image won't be inverted after
+      # rendering.
       image_size += obj.size
       obj.AppendTo(output, obj_num)
       obj = None  # Save memory.
@@ -6724,7 +6737,6 @@ cvx bind /LoadCff exch def
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
     force_grayscale_obj_nums = set()
-    inverted_obj_nums = set()
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
 
@@ -6896,8 +6908,6 @@ cvx bind /LoadCff exch def
             'warning: ignoring image XObject %d with %s /Decode value: %s' %
             (obj_num, decode_kind, obj.Get('Decode')))
         continue
-      if decode_kind == 'inverted':
-        inverted_obj_nums.add(obj_num)
 
       image_count += 1
       image_total_size += obj.size
@@ -6918,6 +6928,9 @@ cvx bind /LoadCff exch def
       # Ghostscript.
       image1 = image2 = None
       try:
+        if decode_kind == 'inverted':
+          # TODO(pts): Do the inversion in Python, without ImageRenderer. Speed?
+          raise FormatUnsupported('Cannot load inverted image directly.')
         # Both LoadPdfImageObj and CompressToZipPng raise FormatUnsupported.
         image1 = ImageData().LoadPdfImageObj(obj=obj, do_zip=False)
         if not image1.CanBePngImage(do_ignore_compression=True):
@@ -6970,8 +6983,7 @@ cvx bind /LoadCff exch def
         # Dictionary mapping object numbers to /Image PdfObj{}s.
         rendered_images = self.RenderImages(
             objs=objs, ps_tmp_file_name=ps_tmp_file_name, gs_device=gs_device,
-            png_tmp_file_pattern=TMP_PREFIX + 'img-%%04d.%s.tmp.png' % gs_device,
-            inverted_obj_nums=inverted_obj_nums)
+            png_tmp_file_pattern=TMP_PREFIX + 'img-%%04d.%s.tmp.png' % gs_device)
         os.remove(ps_tmp_file_name)
         for obj_num in sorted(rendered_images):
           # file_name will be removed by os.remove(rendered_image_file_name).
@@ -7132,8 +7144,7 @@ cvx bind /LoadCff exch def
                  obj_num))
           continue
         new_obj = PdfObj(obj)
-        image_data.UpdatePdfObj(
-            new_obj, is_inverted=obj_num in inverted_obj_nums)
+        image_data.UpdatePdfObj(new_obj)
         obj_infos.append((new_obj.size, cmd_name, image_data.file_name,
                           new_obj, image_data))
       del obj_images[:]  # Free memory.
