@@ -5825,7 +5825,7 @@ cvx bind /LoadCff exch def
         not name.startswith('/')]:
       raise ValueError
     if len(encoding) != 256:
-      raise ValueError
+      raise ValueError('Bad encoding length, expected 256: %d' % len(encoding))
     return encoding
 
   @classmethod
