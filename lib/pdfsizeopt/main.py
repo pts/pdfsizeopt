@@ -5911,6 +5911,36 @@ cvx bind /LoadCff exch def
     return encoding_dict.get('BaseEncoding') is None
 
   @classmethod
+  def _MergeBaseEncodingToFontObj(cls, font_obj, base_encoding, objs):
+    """Merges base_encoding from the font program to the /Type/Font obj."""
+    # font_obj: /Type/Font /Subtype/Type1 /Encoding
+    #     <</Type/Encoding/Differences[40/parenleft/parenright 44/comma/]>>
+    encoding_value = font_obj.ResolveReferences(
+        font_obj.Get('Encoding'), objs=objs)[0]
+    if cls.IsFontBuiltInEncodingUsed(encoding_value):
+      if isinstance(encoding_value, str) and encoding_value.startswith('<<'):
+        encoding_dict = PdfObj.ParseDict(encoding_value)
+        differences = encoding_dict.get('Differences')
+        if isinstance(differences, str) and differences.startswith('['):
+          differences = PdfObj.ParseArray(differences)
+          if differences:
+            i = differences[0]
+            if not (isinstance(i, int) and 0 <= i < 256):
+              raise ValueError('Bad initial index in /Differences: %r' % i)
+            base_encoding = list(base_encoding)
+            for x in differences:
+              if isinstance(x, int):
+                i = x
+                if not (0 <= i < 256):
+                  raise ValueError('Bad initial index in /Differences: %r' % i)
+              else:
+                if not isinstance(x, str) and x.startswith('/'):
+                  raise ValueError('Expected glyph name, got: %r' % x)
+                base_encoding[i] = x
+                i += 1
+      font_obj.Set('Encoding', cls.FormatEncoding(base_encoding))
+
+  @classmethod
   def SerializeType1CFonts(cls, parsed_fonts, target_objs, objs,
                            do_double_check_type1c_output):
     """Generates PdfObj with Type1C font data.
@@ -6241,23 +6271,27 @@ cvx bind /LoadCff exch def
 
       # TODO(pts): Merge only some of the encodings if all of them can't
       # be merged.
+      encoding_obj_nums = [obj_num for obj_num in group_obj_nums
+           if obj_num in copy_encoding_dict and
+           not [1 for font_obj_num in copy_encoding_dict[obj_num][1]
+                if self.objs[font_obj_num].Get('Encoding') is not None]]
       encoding = self.MergeEncodings(
-          [copy_encoding_dict[obj_num][0] for obj_num in group_obj_nums
-           if obj_num in copy_encoding_dict])
-      if encoding is not None:  # All encodings could be merged.
+          [copy_encoding_dict[obj_num][0] for obj_num in encoding_obj_nums])
+      if encoding is not None:  # Some encodings could be merged.
+        # TODO(pts): Test this.
         encoding = self.FormatEncoding(encoding)
-        for obj_num in group_obj_nums:
+        for obj_num in encoding_obj_nums:
           if obj_num in copy_encoding_dict:
             font_obj_nums = copy_encoding_dict.pop(obj_num)[1]
             for font_obj_num in font_obj_nums:
               self.objs[font_obj_num].Set('Encoding', encoding)
-      else:
-        for obj_num in group_obj_nums:
-          if obj_num in copy_encoding_dict:
-            encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
-            for font_obj_num in font_obj_nums:
-              self.objs[font_obj_num].Set(
-                  'Encoding', self.FormatEncoding(encoding))
+      # Merge the remaining encodings in the group.
+      for obj_num in group_obj_nums:
+        if obj_num in copy_encoding_dict:
+          encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
+          for font_obj_num in font_obj_nums:
+            self._MergeBaseEncodingToFontObj(
+                self.objs[font_obj_num], encoding, objs=self.objs)
       encoding = None
 
       # TODO(pts): If all /Encoding values are merged, unify /Widths (in
@@ -6299,8 +6333,8 @@ cvx bind /LoadCff exch def
           # properly due to a Ghostscript bug.
           encoding, font_obj_nums = copy_encoding_dict.pop(obj_num)
           for font_obj_num in font_obj_nums:
-            self.objs[font_obj_num].Set(
-                'Encoding', self.FormatEncoding(encoding))
+            self._MergeBaseEncodingToFontObj(
+                self.objs[font_obj_num], encoding, objs=self.objs)
       encoding = None  # Save memory.
     else:
       print >>sys.stderr, 'info: no Type1C fonts to serialize'
