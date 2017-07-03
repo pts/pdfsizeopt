@@ -6597,7 +6597,7 @@ cvx bind /LoadCff exch def
 
   SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
 
-  def OptimizeImages(self, use_pngout=True, use_jbig2=True):
+  def OptimizeImages(self, use_pngout=True, use_jbig2=True, use_optipng=True):
     """Optimize image XObjects in the PDF."""
     # TODO(pts): Keep output of pngout between runs, to reduce time.
     # Dictionary mapping Ghostscript -sDEVICE= names to dictionaries mapping
@@ -6981,8 +6981,19 @@ cvx bind /LoadCff exch def
 
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
+          # TODO(pts): For very small (10x10) images, try uncompressed too.
+
           # !! TODO(pts): Find better pngout binary file name.
-          # TODO(pts): Try optipng as well (-o5?)
+          if use_optipng:
+            image = self.ConvertImage(
+                sourcefn=rendered_image_file_name,
+                targetfn='pso.conv-%d.optipng.png' % obj_num,
+                cmd_pattern='optipng %(sourcefnq)s -o4 -fix -out %(targetfnq)s',
+                cmd_name='optipng')
+            if image is not None:
+              obj_images.append(image)
+              image = None
+
           if use_pngout:
             if obj_num in force_grayscale_obj_nums:
               pngout_gray_flags = '-c0 '
@@ -8541,6 +8552,7 @@ def main(argv):
 
   try:
     use_pngout = True
+    use_optipng = False
     use_jbig2 = True
     use_multivalent = False
     do_optimize_fonts = True
@@ -8585,7 +8597,7 @@ def main(argv):
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
     opts, args = getopt.gnu_getopt(argv[1:], '+', [
         'version', 'help', 'stats',
-        'use-pngout=', 'use-jbig2=', 'use-multivalent=',
+        'use-pngout=', 'use-optipng=', 'use-jbig2=', 'use-multivalent=',
         'do-ignore-generation-numbers=',
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
@@ -8612,6 +8624,9 @@ def main(argv):
       elif key == '--use-pngout':
         # !! add =auto (detect binary on path)
         use_pngout = ParseBoolFlag(key, value)
+      elif key == '--use-optipng':
+        # !! add =auto (detect binary on path)
+        use_optipng = ParseBoolFlag(key, value)
       elif key == '--use-jbig2':
         # !! add =auto (detect binary on path)
         use_jbig2 = ParseBoolFlag(key, value)
@@ -8753,7 +8768,7 @@ def main(argv):
         do_regenerate_all_fonts=do_regenerate_all_fonts)
   if do_optimize_images:
     pdf.ConvertInlineImagesToXObjects()
-    pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
+    pdf.OptimizeImages(use_pngout=use_pngout, use_optipng=use_optipng, use_jbig2=use_jbig2)
   may_obj_heads_contain_comments = True
   if do_optimize_objs or do_remove_generational_objs:
     # TODO(pts): Do only a simpler optimization with renumbering if
