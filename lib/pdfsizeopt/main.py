@@ -2816,7 +2816,7 @@ class PdfObj(object):
     elif off_size == 4:
       offsets = struct.unpack('>%dL' % (count + 1),
                               buffer(data, 3, (count + 1) << 2))
-      j = ((count + 1) << 4) + 2
+      j = ((count + 1) << 2) + 2
     else:
       raise ValueError('CFF off_size not supported: %d' % off_size)
     buffers = []
