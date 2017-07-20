@@ -1110,6 +1110,7 @@ class PdfSizeOptTest(unittest.TestCase):
                        '[66/BB/CC 100/dd 101/ee]>>>>endobj'))
 
   CFF_FONT_PROGRAM_FONT_NAME = 'Obj000009'
+  CFF_FONT_PROGRAM_STRINGS = ['Computer Modern Roman', 'Computer Modern']
   CFF_FONT_PROGRAM = '''
       01000402000101010a4f626a3030303030390001010128f81b02f81c038bfb61
       f9d5f961051d004e31850df7190ff610f74a11961c0e10128b0c038b0c040002
@@ -1241,31 +1242,59 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('/FlateDecode', font_obj.Get('Filter'))
 
   def testFixFontNameInCff(self):
+    def CheckFont(font_program, font_name):
+      charstrings_op = 17
+      (cff_header_buf, cff_font_name, cff_font_name_idx, cff_top_dict_buf,
+       cff_string_bufs, cff_rest_buf,
+      ) = pdfsizeopt.PdfObj.ParseCffHeader(font_program)
+      self.assertEqual(font_name, cff_font_name)
+      cff_top_dict = pdfsizeopt.PdfObj.ParseCffDict(cff_top_dict_buf)
+      self.assertEqual(self.CFF_FONT_PROGRAM_STRINGS, map(str, cff_string_bufs))
+      # TODO(pts): Why do we have to subtract 1 here? Is CFF file offset
+      # 1-based? Probably so, but we need to run this on other fonts. The test
+      # fotn has CharStrings at offset 181 in the file, but the op says 182.
+      # Nothing else (other than the string index) looks like an index.
+      _, _, charstring_bufs = pdfsizeopt.PdfObj.ParseCffIndex(
+          buffer(font_program, cff_top_dict[charstrings_op][-1] - 1))
+      self.assertEqual(25, len(charstring_bufs))
+      #self.assertEqual(188, len(charstring_bufs[-1]))
+      #good_is = []
+      #for i in xrange(len(font_program) - len(cff_rest_buf),
+      #                len(font_program)):
+      #  try:
+      #    pdfsizeopt.PdfObj.ParseCffIndex(buffer(font_program, i))
+      #    good_is.append(i)
+      #  except ValueError:
+      #    pass
 
     def Check(new_font_name, expected_len_deltas):
-      font_program = self.CFF_FONT_PROGRAM
-      old_font_name = pdfsizeopt.PdfObj.ParseCffHeader(font_program)[1]
-      self.assertEqual(self.CFF_FONT_PROGRAM_FONT_NAME, old_font_name)
+      CheckFont(self.CFF_FONT_PROGRAM, self.CFF_FONT_PROGRAM_FONT_NAME)
+
       len_deltas = []
       new_font_program = pdfsizeopt.PdfObj.FixFontNameInCff(
-          font_program, new_font_name, len_deltas_out=len_deltas)
+          self.CFF_FONT_PROGRAM, new_font_name, len_deltas_out=len_deltas)
       new_font_program2 = pdfsizeopt.PdfObj.FixFontNameInCff(
           new_font_program, new_font_name, len_deltas_out=len_deltas)
       self.assertEqual(new_font_program, new_font_program2)
       self.assertEqual(expected_len_deltas, len_deltas)
-      cff_header_buf, cff_font_name, cff_top_dict_buf, cff_rest_buf = (
-          pdfsizeopt.PdfObj.ParseCffHeader(new_font_program))
-      self.assertEqual(new_font_name, cff_font_name)
-      cff_top_dict = pdfsizeopt.PdfObj.ParseCffDict(cff_top_dict_buf)
-      #print cff_top_dict
+      CheckFont(new_font_program, new_font_name)
 
     Check('N', [-8])
     Check('N' + 'a' * 7, [-1])
     Check('N' + 'a' * 8, [])
-    Check('N' + 'a' * 9, [1, 1])
-    Check('N' + 'a' * 11, [3, 1])
-    Check('N' + 'a' * 99, [91, 1])
-    # Check('B' * 100000, [91, 1])
+    # It's a pity unforunate that we have to do 2 iterations here below when
+    # the font name gets just a bit longer.
+    #
+    # TODO(pts): Check with real-world CFF fonts that typically 1 iteration is
+    #            sufficient.
+    Check('N' + 'a' * 9, [1, 2])
+    Check('N' + 'a' * 10, [2, 3])
+    Check('N' + 'a' * 11, [3, 4])
+    Check('N' + 'a' * 12, [4, 5])
+    Check('N' + 'a' * 13, [5, 6])
+    Check('N' + 'a' * 99, [91, 92])
+    Check('B' * 260, [251, 254])
+    Check('B' * 100000, [99991, 100007])
 
 
 if __name__ == '__main__':
