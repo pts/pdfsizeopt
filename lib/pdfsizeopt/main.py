@@ -2783,6 +2783,9 @@ class PdfObj(object):
   @classmethod
   def ParseCffHeader(cls, data):
     """Parse the (single) font name and the top DICT of a CFF font."""
+    # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
+    # was used to write this function.
+
     # TODO(pts): Test this. It has never been used.
     # !! unify this with FixFontNameInType1C.
     assert ord(data[2]) >= 4
@@ -2800,7 +2803,13 @@ class PdfObj(object):
     assert offset2 > offset1
     i += offset1 - 1
     j = i + offset2 - offset1
-    assert j < 255, 'font name %r... too long' % data[i : i + 20]
+    # It's OK to have long font names. 5176.CFF.pdf says that the maximum
+    # ``should be'' 127.
+    #
+    # assert j - i < 255, 'font name %r... too long' % data[i : i + 20]
+    #
+    # TODO(pts): Check that fontname doesn't contain '[](){}<>/%\0 \t\r\n\f',
+    #            5176.CFF.pdf says ``should not contain''.
     font_name = data[i : j]
     i = j
     count, off_size = struct.unpack('>HB', data[i : i + 3])
@@ -2830,30 +2839,12 @@ class PdfObj(object):
     else:
       raise NotImplementedError
 
-  def FixFontNameInType1C(self, new_font_name='F', objs=None,
-                          len_deltas_out=None):
-    """Fix the FontName in a /Subtype/Type1C object (self).
-
-    self will be modified in place.
-
-    Args:
-      new_font_name: Font name to change the original font name to.
-      objs: None or a dict mapping object numbers to PdfObj objects. It will be
-        passed to ResolveReferences.
-      len_deltas_out: Output list of len_delta values applied, or None.
-    """
-    assert len(new_font_name) < 255, 'new font name %r too long' % (
-        new_font_name,)
+  @classmethod
+  def FixFontNameInCff(cls, data, new_font_name, len_deltas_out):
+    """Returns the new CFF font program data."""
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
-    assert self.Get('Subtype') == '/Type1C'
-    data = self.GetUncompressedStream(objs=objs)
-    # Since in Ghostscript 6.54 it is not possible to specify the ZIP
-    # compression level in -sDEVICE=pdfwrite, we recompress with maximum
-    # effort here.
-    # TODO(pts): Add generic recompression of all /FlateDecode filters
-    # (because Ghostscript is suboptimal everywhere)
-    is_changed = self.Get('Filter') != '/FlateDecode'
+
     assert ord(data[2]) >= 4
     i0 = i = ord(data[2])  # Skip header.
     count, off_size = struct.unpack('>HB', data[i : i + 3])
@@ -2866,87 +2857,101 @@ class PdfObj(object):
       i += 7
       offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
     else:
-      assert False, 'unsupported off_size=%d' % off_size
+      assert False, 'unsupported off_size=%d' % off_size  # !! allow 3 and 4.
     assert offset1 == 1  # TODO(pts): Shrink this to 1 if it was not 1.
     assert offset2 > offset1
     i += offset1 - 1
     j = i + offset2 - offset1
-    assert j < 255, 'font name %r... too long' % data[i : i + 20]
     old_font_name = data[i : j]
-    # TODO(pts): What if off_size has to be increased because new_font_name is
-    # too long?
-    if old_font_name != new_font_name:
-      is_changed = True
-      len_delta = len(new_font_name) - (j - i)
+    # !! TODO(pts): What if off_size has to be increased because new_font_name
+    # is too long?
+    if old_font_name == new_font_name:
+      return data
+    len_delta = len(new_font_name) - (j - i)
+    if len_delta == 0:
+      return ''.join((data[:i], new_font_name, data[j:]))
+
+    output = [data[:i0]]
+    # CFF INDEX header.
+    output.append(cls.SerializeCffIndexHeader(
+        off_size, 1, len(new_font_name) + 1))
+    output.append(new_font_name)
+    i = j
+    count, off_size = struct.unpack('>HB', data[i : i + 3])
+    assert count == 1, 'Type1C top dict index count should be 1, got %d' % (
+        count)
+    if off_size == 1:
+      i += 5
+      offset1 = ord(data[i - 2])
+      offset2 = ord(data[i - 1])
+    elif off_size == 2:
+      i += 7
+      offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
+    assert offset1 == 1  # TODO(pts): Shrink this to 1.
+    assert offset2 > offset1
+    i += offset1 - 1
+    j = i + offset2 - offset1
+    cff_dict = cls.ParseCffDict(data=data, start=i, end=j)
+
+    old_cff_dict_data_len = j - i
+    while True:
+      if len_deltas_out is not None:
+        len_deltas_out.append(len_delta)
+      # Add len_data to the appropriate fields.
+      for cff_operator in sorted(cff_dict):
+        if cff_operator in cls.CFF_OFFSET0_OPERATORS:
+          # Except for cff_operator == 18.
+          # assert len(cff_dict[cff_operator]) == 1,
+          #     (cff_operator, len(cff_dict[cff_operator]))
+          assert isinstance(cff_dict[cff_operator][-1], int)
+          cff_dict[cff_operator][-1] += len_delta
+
+      cff_dict_data = cls.SerializeCffDict(cff_dict=cff_dict)
+      cff_dict_parsed2 = cls.ParseCffDict(data=cff_dict_data)
+      assert cff_dict == cff_dict_parsed2, (
+          'CFF dict serialize mismatch: new=%r parsed=%r' %
+          (cff_dict, cff_dict_parsed2))
+      len_delta = len(cff_dict_data) - old_cff_dict_data_len
       if len_delta == 0:
-        output = [data[:i], new_font_name, data[j:]]
-      else:
-        # This branch is tested using
-        # http://code.google.com/p/pdfsizeopt/issues/detail?id=52 .
+        break
+      # Since cff_dict_data is shorter than the old dict data,
+      # we have to decrease the offsets even more.
+      old_cff_dict_data_len = len(cff_dict_data)
 
-        output = [data[:i0]]
-        # CFF INDEX header.
-        output.append(self.SerializeCffIndexHeader(
-            off_size, 1, len(new_font_name) + 1))
-        output.append(new_font_name)
-        i = j
-        count, off_size = struct.unpack('>HB', data[i : i + 3])
-        assert count == 1, 'Type1C top dict index count should be 1, got %d' % (
-            count)
-        if off_size == 1:
-          i += 5
-          offset1 = ord(data[i - 2])
-          offset2 = ord(data[i - 1])
-        elif off_size == 2:
-          i += 7
-          offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
-        assert offset1 == 1  # TODO(pts): Shrink this to 1.
-        assert offset2 > offset1
-        i += offset1 - 1
-        j = i + offset2 - offset1
-        cff_dict = self.ParseCffDict(data=data, start=i, end=j)
+    # Append the modified CFF dict and the rest to output.
+    assert (off_size >= 4 or
+            (1 << (off_size << 3)) > len(cff_dict_data) + 1), (
+        'new CFF dict too large, length=%d off_size=%d' % (
+            len(cff_dict_data), off_size))
+    output.append(cls.SerializeCffIndexHeader(
+        off_size, 1, len(cff_dict_data) + 1))
+    output.append(cff_dict_data)
+    output.append(data[j:])
 
-        old_cff_dict_data_len = j - i
-        while True:
-          if len_deltas_out is not None:
-            len_deltas_out.append(len_delta)
-          # Add len_data to the appropriate fields.
-          for cff_operator in sorted(cff_dict):
-            if cff_operator in self.CFF_OFFSET0_OPERATORS:
-              # Except for cff_operator == 18.
-              # assert len(cff_dict[cff_operator]) == 1,
-              #     (cff_operator, len(cff_dict[cff_operator]))
-              assert isinstance(cff_dict[cff_operator][-1], int)
-              cff_dict[cff_operator][-1] += len_delta
+    return ''.join(output)
 
-          cff_dict_data = self.SerializeCffDict(cff_dict=cff_dict)
-          cff_dict_parsed2 = self.ParseCffDict(data=cff_dict_data)
-          assert cff_dict == cff_dict_parsed2, (
-              'CFF dict serialize mismatch: new=%r parsed=%r' %
-              (cff_dict, cff_dict_parsed2))
-          len_delta = len(cff_dict_data) - old_cff_dict_data_len
-          if len_delta == 0:
-            break
-          # Since cff_dict_data is shorter than the old dict data,
-          # we have to decrease the offsets even more.
-          old_cff_dict_data_len = len(cff_dict_data)
+  def FixFontNameInType1C(self, new_font_name='F', objs=None,
+                          len_deltas_out=None):
+    """Fix the FontName in a /Subtype/Type1C object (self).
 
-        # Append the modified CFF dict and the rest to output.
-        assert (off_size >= 4 or
-                (1 << (off_size << 3)) > len(cff_dict_data) + 1), (
-            'new CFF dict too large, length=%d off_size=%d' % (
-                len(cff_dict_data), off_size))
-        output.append(self.SerializeCffIndexHeader(
-            off_size, 1, len(cff_dict_data) + 1))
-        output.append(cff_dict_data)
-        output.append(data[j:])
+    self will be modified in place.
 
-      data = ''.join(output)
-      is_changed = True
-      #print 'REN', new_font_name, data.encode('hex')
-
-    if is_changed:
-      self.stream = zlib.compress(data, 9)
+    Args:
+      new_font_name: Font name to change the original font name to.
+      objs: None or a dict mapping object numbers to PdfObj objects. It will be
+        passed to ResolveReferences.
+      len_deltas_out: Output list of len_delta values applied, or None.
+    """
+    assert self.Get('Subtype') == '/Type1C'
+    data = self.GetUncompressedStream(objs=objs)
+    new_data = self.FixFontNameInCff(data, new_font_name, len_deltas_out)
+    # Since in Ghostscript 6.54 it is not possible to specify the ZIP
+    # compression level in -sDEVICE=pdfwrite, we recompress with maximum
+    # effort here.
+    # TODO(pts): Add generic recompression of all /FlateDecode filters
+    #            (because Ghostscript is suboptimal everywhere).
+    if self.Get('Filter') != '/FlateDecode' or new_data != data:
+      self.stream = zlib.compress(new_data, 9)
       self.Set('Filter', '/FlateDecode')
       self.Set('DecodeParms', None)
       self.Set('Length', len(self.stream))
