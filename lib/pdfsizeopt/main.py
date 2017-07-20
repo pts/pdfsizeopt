@@ -2590,7 +2590,7 @@ class PdfObj(object):
             raise PdfReferenceRecursiveError(
                 'recursive reference chain: %r' % current_obj_nums)
           current_obj_nums.append(obj_num)
-          if '%' in new_data or '(' in new_data:
+          if '%' in new_data or '(' in new_data:  # ')'
             new_data = cls.CompressValue(new_data, do_emit_strings_as_hex=True)
             new_data = cls.PDF_REF_RE.sub(Replacement, new_data)
             new_data = cls.CompressValue(new_data)
@@ -2608,7 +2608,7 @@ class PdfObj(object):
         return obj.EscapeString(obj.GetUncompressedStream(objs=objs))
 
     data0 = data
-    if '(' in data or '%' in data:
+    if '(' in data or '%' in data:  # ')'
       data = cls.CompressValue(data, do_emit_strings_as_hex=True)
       # Compress strings back to non-hex once the references are
       # resolved.
@@ -2631,6 +2631,8 @@ class PdfObj(object):
       '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
       '8': 8, '9': 9, '.': 10, 'E': 11, 'F': 12, '?': 13, '-': 14}
 
+  # The local subrs offset (19, Subrs) is relative to the
+  # beginning of the private dict data, so it's not offset (0).
   CFF_OFFSET0_OPERATORS = (
       15,  # charset
       16,  # Encoding
@@ -2639,7 +2641,7 @@ class PdfObj(object):
       12036,  # FDArray
       12037,  # FDSelect
   )
-  """List of CFF DICT operators containing absolute offsets: (0).
+  """List of CFF DICT operators containing absolute offsets: offset (0).
   """
 
   @classmethod
@@ -2650,6 +2652,11 @@ class PdfObj(object):
     signifying operators (range 0..21 and 12000..12256). Values are arrays
     signifying operand lists. Each operand is an integer or a string of a
     floating point real number.
+
+    Args:
+      data: str or buffer.
+      start: Start offset.
+      end: End offset or None to mean end of data.
     """
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
     # was used to write this function.
@@ -2781,6 +2788,45 @@ class PdfObj(object):
     return ''.join(output)
 
   @classmethod
+  def ParseCffIndex(cls, data):
+    """Parses a CFF index.
+
+    A CFF index is just a fancy name for a list of byte strings.
+
+    Args:
+      data: str or buffer starting with the CFF index.
+    Returns:
+      (offset_after_the_cff_index, list_of_buffers).
+    """
+    count, off_size = struct.unpack('>HB', buffer(data, 0, 3))
+    if off_size == 1:
+      offsets = struct.unpack('>%dB' % (count + 1), buffer(data, 3, count + 1))
+      j = count + 3
+    elif off_size == 2:
+      offsets = struct.unpack('>%dH' % (count + 1),
+                              buffer(data, 3, (count + 1) << 1))
+      j = ((count + 1) << 1) + 2
+    elif off_size == 3:
+      j, offsets = 3, []
+      for i in xrange(count + 1):
+        a, b = struct.unpack('>BH', buffer(data, j, 3))
+        offsets.append(a << 16 | b)
+        j += 3
+      j -= 1
+    elif off_size == 4:
+      offsets = struct.unpack('>%dL' % (count + 1),
+                              buffer(data, 3, (count + 1) << 2))
+      j = ((count + 1) << 4) + 2
+    else:
+      raise ValueError('CFF off_size not supported: %d' % off_size)
+    buffers = []
+    for i in xrange(count):
+      if not (1 <= offsets[i] <= offsets[i + 1]):
+        raise ValueError('Invalid CFF index offset: %d' % offsets[i])
+      buffers.append(buffer(data, j + offsets[i], offsets[i + 1] - offsets[i]))
+    return j + offsets[count], buffers
+
+  @classmethod
   def ParseCffHeader(cls, data):
     """Parse the (single) font name and the top DICT of a CFF font."""
     # The documentation http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
@@ -2788,21 +2834,14 @@ class PdfObj(object):
 
     # TODO(pts): Test this. It has never been used.
     # !! unify this with FixFontNameInType1C.
-    assert ord(data[2]) >= 4
-    i = ord(data[2])  # skip header
-    count, off_size = struct.unpack('>HB', data[i : i + 3])
-    assert count == 1, 'Type1C name index count should be 1, got %d' % count
-    if off_size == 1:
-      i += 5
-      offset1 = ord(data[i - 2])
-      offset2 = ord(data[i - 1])
-    elif off_size == 2:
-      i += 7
-      offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
-    assert offset1 >= 1
-    assert offset2 > offset1
-    i += offset1 - 1
-    j = i + offset2 - offset1
+    ai0 = header_size = ord(data[2])  # Skip header.
+    if header_size < 4:
+      raise ValueError('CFF header too short, got: %d' % header_size)
+    ai1, font_name_bufs = cls.ParseCffIndex(buffer(data, ai0))
+    if len(font_name_bufs) != 1:
+      raise ValueError(
+          'CFF name index count should be 1, got %d' % len(font_name_bufs))
+    font_name = str(font_name_bufs[0])
     # It's OK to have long font names. 5176.CFF.pdf says that the maximum
     # ``should be'' 127.
     #
@@ -2810,34 +2849,60 @@ class PdfObj(object):
     #
     # TODO(pts): Check that fontname doesn't contain '[](){}<>/%\0 \t\r\n\f',
     #            5176.CFF.pdf says ``should not contain''.
-    font_name = data[i : j]
-    i = j
-    count, off_size = struct.unpack('>HB', data[i : i + 3])
-    assert count == 1, 'Type1C top dict index count should be 1, got %d' % (
-        count)
-    if off_size == 1:
-      i += 5
-      offset1 = ord(data[i - 2])
-      offset2 = ord(data[i - 1])
-    elif off_size == 2:
-      i += 7
-      offset1, offset2 = struct.unpack('>HH', data[i - 4 : i])
-    assert offset1 >= 1
-    assert offset2 > offset1
-    i += offset1 - 1
-    j = i + offset2 - offset1
-    # TODO(pts): Test this call.
-    cff_dict = cls.ParseCffDict(data=data, start=i, end=j)
-    return (data[:ord(data[2])], font_name, cff_dict, data[j:])
+    ai2, top_dict_bufs = cls.ParseCffIndex(buffer(data, ai0 + ai1))
+    if len(top_dict_bufs) != 1:
+       raise ValueError(
+           'CFF top dict index count should be 1, got %d' % len(top_dict_bufs))
+    return (buffer(data, 0, ai0),  # CFF header.
+            font_name,
+            buffer(data, ai0 + ai1, ai2),  # CFF top dict.
+            buffer(data, ai0 + ai1 + ai2))  # Rest of CFF.
 
   @classmethod
-  def SerializeCffIndexHeader(cls, off_size, offset1, offset2):
-    if off_size == 1:
-      return struct.pack('>HBBB', 1, 1, offset1, offset2)
-    elif off_size == 2:
-      return struct.pack('>HBHH', 1, 2, offset1, offset2)
+  def SerializeCffIndexHeader(cls, off_size, buffers):
+    offsets = [1]
+    for buf in buffers:
+      offsets.append(offsets[-1] + len(buf))
+    count = len(offsets) - 1
+    if count >= 65535:
+      raise ValueError('CFF index too long: %d' % count)
+    largest_offset = offsets[-1]
+
+    if off_size is None:
+      if largest_offset < (1 << 8):
+        off_size = 1
+      elif largest_offset < (1 << 16):
+        off_size = 2
+      elif largest_offset < (1 << 24):
+        off_size = 3
+      elif largest_offset < (1 << 32):
+        off_size = 4
+      else:
+        raise ValueError('CFF index too large: %d' % largest_offset)
+    elif off_size in (1, 2, 3, 4):
+      if largest_offset >> (off_size * 8):
+        raise ValueError('CFF index too large (%d) for off_size %d' %
+                         (largest_offset, off_size))
     else:
-      raise NotImplementedError
+      raise ValueError('Invalid off_size: %d' % off_size)
+
+    if off_size == 1:
+      data = struct.pack('>HB%dB' % len(offsets), count, 1, *offsets)
+    elif off_size == 2:
+      data = struct.pack('>HB%dH' % len(offsets), count, 2, *offsets)
+    elif off_size == 3:
+      def emit3():
+        yield struct.pack('>HB', count, 3)
+        for offset in offsets:
+          yield struct.pack('>BH', offset >> 16, offset & 65535)
+      data = ''.join(emit3())
+    elif off_size == 4:
+      data = struct.pack('>HB%dL' % len(offsets), count, 4, *offsets)
+    else:
+      raise ValueError
+
+    return off_size, data
+
 
   @classmethod
   def FixFontNameInCff(cls, data, new_font_name, len_deltas_out):
@@ -2872,10 +2937,11 @@ class PdfObj(object):
       return ''.join((data[:i], new_font_name, data[j:]))
 
     output = [data[:i0]]
-    # CFF INDEX header.
-    output.append(cls.SerializeCffIndexHeader(
-        off_size, 1, len(new_font_name) + 1))
+    # CFF name index.
+    off_size2, idxhdr = cls.SerializeCffIndexHeader(off_size, [new_font_name])
+    output.append(idxhdr)
     output.append(new_font_name)
+
     i = j
     count, off_size = struct.unpack('>HB', data[i : i + 3])
     assert count == 1, 'Type1C top dict index count should be 1, got %d' % (
@@ -2919,12 +2985,10 @@ class PdfObj(object):
       old_cff_dict_data_len = len(cff_dict_data)
 
     # Append the modified CFF dict and the rest to output.
-    assert (off_size >= 4 or
-            (1 << (off_size << 3)) > len(cff_dict_data) + 1), (
-        'new CFF dict too large, length=%d off_size=%d' % (
-            len(cff_dict_data), off_size))
-    output.append(cls.SerializeCffIndexHeader(
-        off_size, 1, len(cff_dict_data) + 1))
+    # !! Accommodate changes in off_size.
+    # CFF top dict index.
+    off_size2, idxhdr = cls.SerializeCffIndexHeader(off_size, [cff_dict_data])
+    output.append(idxhdr)
     output.append(cff_dict_data)
     output.append(data[j:])
 

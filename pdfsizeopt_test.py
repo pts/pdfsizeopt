@@ -1249,10 +1249,15 @@ class PdfSizeOptTest(unittest.TestCase):
       len_deltas = []
       new_font_program = pdfsizeopt.PdfObj.FixFontNameInCff(
           font_program, new_font_name, len_deltas_out=len_deltas)
+      new_font_program2 = pdfsizeopt.PdfObj.FixFontNameInCff(
+          new_font_program, new_font_name, len_deltas_out=len_deltas)
+      self.assertEqual(new_font_program, new_font_program2)
       self.assertEqual(expected_len_deltas, len_deltas)
-      self.assertEqual(
-          new_font_name,
-          pdfsizeopt.PdfObj.ParseCffHeader(new_font_program)[1])
+      cff_header_buf, cff_font_name, cff_top_dict_buf, cff_rest_buf = (
+          pdfsizeopt.PdfObj.ParseCffHeader(new_font_program))
+      self.assertEqual(new_font_name, cff_font_name)
+      cff_top_dict = pdfsizeopt.PdfObj.ParseCffDict(cff_top_dict_buf)
+      #print cff_top_dict
 
     Check('N', [-8])
     Check('N' + 'a' * 7, [-1])
