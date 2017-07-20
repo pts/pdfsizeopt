@@ -1087,26 +1087,26 @@ class PdfSizeOptTest(unittest.TestCase):
         ['/.notdef'] * 175)
     objs = {}
 
-    def f(obj_str):
+    def F(obj_str):
       font_obj = pdfsizeopt.PdfObj(obj_str)
       pdfsizeopt.PdfData._MergeBaseEncodingToFontObj(
           font_obj, base_encoding, objs)
       return font_obj.Get('Encoding')
 
     # Unchanged.
-    self.assertEqual('/Foo', f('1 0 obj<</Encoding/Foo>>endobj'))
+    self.assertEqual('/Foo', F('1 0 obj<</Encoding/Foo>>endobj'))
     self.assertEqual('<</Differences[65/AAA]/BaseEncoding/WinAnsiEncoding>>',
-                     f('1 0 obj<<>>endobj'))
+                     F('1 0 obj<<>>endobj'))
     # Unchanged.
     self.assertEqual('<</BaseEncoding  /Foo>>',
-                     f('1 0 obj<</Encoding<</BaseEncoding  /Foo>>>>endobj'))
+                     F('1 0 obj<</Encoding<</BaseEncoding  /Foo>>>>endobj'))
     # Unchanged.
     self.assertEqual('<</BaseEncoding/Foo/Differences[66/BB/CC 100/dd  101/ee]>>',
-                     f('1 0 obj<</Encoding<</BaseEncoding/Foo/Differences'
+                     F('1 0 obj<</Encoding<</BaseEncoding/Foo/Differences'
                        '[66/BB/CC 100/dd  101/ee]>>>>endobj'))
     self.assertEqual('<</Differences[65/AAA/BB/CC'
                      '/D/E/F/G/H/I/J/K/L/M/N/O/P 100/dd/ee]>>',
-                     f('1 0 obj<</Encoding<</Differences'
+                     F('1 0 obj<</Encoding<</Differences'
                        '[66/BB/CC 100/dd 101/ee]>>>>endobj'))
 
 
