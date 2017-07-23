@@ -1013,7 +1013,7 @@ class PdfObj(object):
     if end is None:
       end = len(data)
     scanner = cls.PDF_FIND_END_OBJ_RE.scanner(data, start, end)
-    while True:
+    while 1:
       match = scanner.search()
       if not match:
         raise PdfTokenParseError(
@@ -1152,7 +1152,7 @@ class PdfObj(object):
     end = len(data) - 2
     dict_obj = {}
     scanner = cls.PDF_SIMPLEST_KEY_VALUE_RE.scanner(data, start, end)
-    while True:
+    while 1:
       match = scanner.match()
       if not match:
         break
@@ -1201,7 +1201,7 @@ class PdfObj(object):
 
     dict_obj = {}
     scanner = cls.PDF_SIMPLEST_KEY_VALUE_RE.scanner(data, start, end)
-    while True:
+    while 1:
       match = scanner.match()
       if not match:
         break  # Match the rest with PDF_SIMPLE_VALUE_RE.
@@ -2363,7 +2363,7 @@ class PdfObj(object):
           #   was a carriage return, a line feed, or both).''
           string_output = ["'"]
           j = i
-          while True:
+          while 1:
             if j == data_size:
               raise PdfTokenTruncated
             c = data[j]
@@ -3278,7 +3278,7 @@ class ImageData(object):
     self.Clear()
     idats = []
     need_plte = False
-    while True:
+    while 1:
       data = f.read(8)
       if not data:  # EOF
         break
@@ -3532,7 +3532,7 @@ class PdfData(object):
     # Contains (compressed_obj_num, stream_obj_num) pairs.
     compressed_objects_to_ignore = set()
 
-    while True:
+    while 1:
       if xref_generation:
         if not do_ignore_generation_numbers:
           raise NotImplementedError(
@@ -3774,7 +3774,7 @@ class PdfData(object):
     obj_starts_rev = {}
     # Set of object numbers not to be overwritten.
     keep_obj_nums = set()
-    while True:
+    while 1:
       xref_head = data[xref_ofs : xref_ofs + 128]
       # Maybe PDF doesn't allow multiple consecutive `xref's,
       # but we accept that.
@@ -3782,7 +3782,7 @@ class PdfData(object):
       if not match:
         raise PdfXrefError('xref table not found at %s' % xref_ofs)
       xref_ofs += match.end(1)
-      while True:
+      while 1:
         xref_head = data[xref_ofs : xref_ofs + 128]
         # Start a new subsection.
         # For testing whitespace before trailer: enc.pdf
@@ -6342,7 +6342,7 @@ cvx bind /LoadCff exch def
 
     # Remove old PNG output files.
     i = 0
-    while True:
+    while 1:
       i += 1
       png_tmp_file_name = png_tmp_file_pattern % i
       if not os.path.exists(png_tmp_file_name):
@@ -8276,7 +8276,7 @@ def ParseBoolFlag(flag_name, flag_value):
 def GetDir(file_name):
   readlink = getattr(os, 'readlink', None)  # Not available on Windows.
   if readlink:
-    while True:
+    while 1:
       try:
         target_name = readlink(file_name)
       except OSError:  # Happens on Linux if file_name is not a symlink.
