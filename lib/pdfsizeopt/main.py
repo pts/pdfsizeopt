@@ -5194,6 +5194,25 @@ cvx bind /LoadCff exch def
     print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(parsed_fonts)
     assert sorted(parsed_fonts) == sorted(objs), (
         'Data object number list mismatch.')
+
+    def MoveToPrivate(parsed_font, key):
+      if key not in parsed_font:
+        return
+      if 'Private' not in parsed_font:
+        parsed_font['Private'] = {key: parsed_font.pop(key)}
+        return
+      private_dict = parsed_font['Private']
+      if key not in private_dict:
+        private_dict[key] = parsed_font.pop(key)
+        return
+      # String list comparison for /Subrs and /GlobalSubrs.
+      if parsed_font[key] == private_dict[key]:
+        parsed_font.pop(key)
+        return
+      raise ValueError(
+          'Conflicting value in /Private and top for key /%s in CFF font.' %
+          key)
+
     objs_size = len(objs)
     unparsable_obj_nums = []
     big_charstrings_obj_nums = []
@@ -5217,11 +5236,17 @@ cvx bind /LoadCff exch def
              parsed_font.get('FontType'),
              parsed_font.get('FontMatrix'),
              parsed_font.get('PaintType')))
+        continue
       if len(parsed_font['CharStrings']) > 256:
         big_charstrings_obj_nums.append(obj_num)
         if obj_num in parsed_fonts:
           del parsed_fonts[obj_num]
           del objs[obj_num]
+        continue
+      # These moves shouldn't be needed, Ghostscript 9.10 generates
+      # /Subrs and /GlobalSubrs in /Private already.
+      MoveToPrivate(parsed_font, 'Subrs')
+      MoveToPrivate(parsed_font, 'GlobalSubrs')
     if unparsable_obj_nums:
       print >>sys.stderr, (
           'warning: found unparsable Type1C fonts, obj nums are: %s' %
@@ -5368,16 +5393,27 @@ cvx bind /LoadCff exch def
       FontsNotMergeable: If cannot be merged. In that case, target_fd is not
         modified.
     """
-    # A /Subrs list prevents easy merging, because then we would have to
-    # renumber to calling instructions in the /CharStrings values.
+    # /Subrs must be within /Private.
+    assert 'Subrs' not in target_font
+    assert 'Subrs' not in source_font
+    # /GlobalSubrs must be within /Private.
+    assert 'GlobalSubrs' not in target_font
+    assert 'GlobalSubrs' not in source_font
+
+    # A /Subrs or /GlobalSubrs list prevents easy merging, because then we
+    # would have to renumber to calling instructions in the /CharStrings
+    # values. Currently our callers should make sure that we are not called
+    # with fonts with Subrs.
+    #
+    # TODO(pts): Merge if no renumbering needed (i.e. /Subrs and /GlobalSubrs
+    #            are the same.
     # TODO(pts): Implement this refactoring.
     #
-    # Our callers should make sure that we are not called with fonts with
-    # /Subrs.
-    assert 'Subrs' not in target_font
     assert 'Subrs' not in target_font.get('Private', ())
-    assert 'Subrs' not in source_font
     assert 'Subrs' not in source_font.get('Private', ())
+    assert 'GlobalSubrs' not in target_font.get('Private', ())
+    assert 'GlobalSubrs' not in source_font.get('Private', ())
+
     # Our caller should take care of removing FontBBox.
     assert 'FontBBox' not in source_font
     assert 'FontBBox' not in target_font
@@ -5742,8 +5778,7 @@ cvx bind /LoadCff exch def
       if not do_unify_fonts:
         continue
 
-      if ('Subrs' in parsed_font or
-          'Subrs' in parsed_font.get('Private', ())):
+      if ('Subrs' in parsed_font.get('Private', ())):
         # for testing: pdfsizeopt_charts.pdf has this for /Subrs (list of hex
         # strings: # ['<abc42>', ...]).
         # See also self.MergeTwoType1CFonts why we can't merge fonts with
@@ -5751,6 +5786,13 @@ cvx bind /LoadCff exch def
         print >>sys.stderr, (
             'info: not merging Type1C font obj %d because it has /Subrs' %
             obj_num)
+        continue
+      if ('GlobalSubrs' in parsed_font.get('Private', ())):
+        # See also self.MergeTwoType1CFonts why we can't merge fonts with
+        # /Subrs.
+        print >>sys.stderr, (
+            'info: not merging Type1C font obj %d '
+            'because it has /GlobalSubrs' % obj_num)
         continue
 
       font_name = parsed_font['FontName']
