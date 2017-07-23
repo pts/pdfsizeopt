@@ -1241,6 +1241,30 @@ class PdfSizeOptTest(unittest.TestCase):
           fontname,
           cff_data[cff_font_name_ofs : cff_font_name_ofs + len(fontname)])
 
+  def testParseCffIndex(self):
+    def Check(items):
+      header = cff.SerializeCffIndexHeader(None, items)[1]
+      eoi = 'EOI'
+      index = header + ''.join(items) + eoi
+      after_index_ofs, items2 = cff.ParseCffIndex(index)
+      items_strlist = list(items)
+      items2_strlist = map(str, items2)
+      self.assertEqual(items_strlist, items2_strlist)
+      self.assertEqual(len(index) - len(eoi), after_index_ofs)
+      self.assertEqual(after_index_ofs == 2, len(items) == 0)
+      if len(index) < 256 and items:  # True in general.
+        self.assertTrue(ord(header[2]) == 1)
+      if len(index) > 270 and items:  # Not true in general, but true here.
+        self.assertTrue(ord(header[2]) > 1)
+
+    Check(())
+    Check(('foo',))
+    Check(('foo', 'barbaz'))
+    Check(('', 'foo', '', '', 'barbaz', '', '', ''))
+    Check(('', '', ''))
+    Check(('',))
+    Check(('foo', 'barbaz' * 100))
+
   def testFixFontNameInType1C(self):
     new_font_name = 'Hello'
     font_obj = main.PdfObj('1 0 obj<</Subtype/Type1C>>endobj')

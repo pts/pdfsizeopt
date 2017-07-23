@@ -157,6 +157,8 @@ def ParseCffIndex(data):
   Returns:
     (offset_after_the_cff_index, list_of_buffers).
   """
+  if data[:2] == '\0\0':  # Empty index. (No need to check len(data).)
+    return 2, []
   if len(data) < 3:
     raise ValueError('CFF index too short for header.')
   count, off_size = struct.unpack('>HB', buffer(data, 0, 3))
@@ -181,7 +183,8 @@ def ParseCffIndex(data):
                             buffer(data, 3, (count + 1) << 2))
     j = ((count + 1) << 2) + 2
   else:
-    raise ValueError('CFF off_size not supported: %d' % off_size)
+    # 5176.CFF.pdf requires 1, 2, 3 or 4.
+    raise ValueError('Invalid CFF off_size: %d' % off_size)
   if len(data) < j + offsets[count]:
     raise ValueError('CFF index too short for strings.')
   buffers = []
@@ -255,7 +258,9 @@ def SerializeCffIndexHeader(off_size, buffers):
   largest_offset = offsets[-1]
 
   if off_size is None:
-    if largest_offset < (1 << 8):
+    if len(offsets) == 1:  # Empty index.
+      off_size = 0
+    elif largest_offset < (1 << 8):
       off_size = 1
     elif largest_offset < (1 << 16):
       off_size = 2
@@ -269,14 +274,17 @@ def SerializeCffIndexHeader(off_size, buffers):
     # FixFontNameInCff converges with larger off_size values:
     #
     #   off_size = max(off_size, 2)
-  elif off_size in (1, 2, 3, 4):
-    if largest_offset >> (off_size * 8):
+  elif off_size in (0, 1, 2, 3, 4):
+    if largest_offset >> (off_size * 8) and len(offsets) > 1:
       raise ValueError('CFF index too large (%d) for off_size %d' %
                        (largest_offset, off_size))
   else:
     raise ValueError('Invalid off_size: %d' % off_size)
 
-  if off_size == 1:
+  if off_size == 0:
+    assert len(offsets) == 1  # Empty index, guaranteed above.
+    data = '\0\0'
+  elif off_size == 1:
     data = struct.pack('>HB%dB' % len(offsets), count, 1, *offsets)
   elif off_size == 2:
     data = struct.pack('>HB%dH' % len(offsets), count, 2, *offsets)
@@ -289,7 +297,7 @@ def SerializeCffIndexHeader(off_size, buffers):
   elif off_size == 4:
     data = struct.pack('>HB%dL' % len(offsets), count, 4, *offsets)
   else:
-    raise ValueError
+    raise ValueError('Unexpected CFF off_size: %d' % off_size)
 
   return off_size, data
 
