@@ -146,6 +146,7 @@ def SerializeCffDict(cff_dict):
       output.append(chr(operator))
   return ''.join(output)
 
+
 def ParseCffIndex(data):
   """Parses a CFF index.
 
@@ -154,7 +155,7 @@ def ParseCffIndex(data):
   Args:
     data: str or buffer starting with the CFF index.
   Returns:
-    (offset_after_the_cff_index, offset_of_item_0, list_of_buffers).
+    (offset_after_the_cff_index, list_of_buffers).
   """
   if len(data) < 3:
     raise ValueError('CFF index too short for header.')
@@ -188,14 +189,38 @@ def ParseCffIndex(data):
     if not (1 <= offsets[i] <= offsets[i + 1]):
       raise ValueError('Invalid CFF index offset: %d' % offsets[i])
     buffers.append(buffer(data, j + offsets[i], offsets[i + 1] - offsets[i]))
-  return j + offsets[count], j + offsets[0], buffers
+  return j + offsets[count], buffers
+
+
+def GetCffFontNameOfs(data):
+  """Returns the offset in CFF data where the (first) font name starts.
+
+  Error reporting in this function is sparse.
+  """
+  ai0 = ord(data[2])  # Skip header.
+  count, off_size = struct.unpack('>HB', buffer(data, ai0, 3))
+  ai3 = ai0 + 3
+  if count <= 0:
+    raise ValueError('Found count == 0.')
+  if off_size == 1:
+    return ai3 + count + struct.unpack('>B', buffer(data, ai3, 1))[0]
+  elif off_size == 2:
+    return ai3 + (count << 1) + 1 + struct.unpack('>H', buffer(data, ai3, 2))[0]
+  elif off_size == 3:
+    a, b = struct.unpack('>BH', buffer(data, ai3, 3))
+    return ai3 + (count * 3) + 2 + (a << 16 | b)
+  elif off_size == 4:
+    return ai3 + (count << 2) + 3 + struct.unpack('>L', buffer(data, ai3, 4))[0]
+  else:
+    raise ValueError('CFF off_size not supported: %d' % off_size)
+
 
 def ParseCffHeader(data):
   """Parse the (single) font name and the top DICT of a CFF font."""
   ai0 = header_size = ord(data[2])  # Skip header.
   if header_size < 4:
     raise ValueError('CFF header too short, got: %d' % header_size)
-  ai1, ai1i0, font_name_bufs = ParseCffIndex(buffer(data, ai0))
+  ai1, font_name_bufs = ParseCffIndex(buffer(data, ai0))
   if len(font_name_bufs) != 1:
     raise ValueError(
         'CFF name index count should be 1, got %d' % len(font_name_bufs))
@@ -207,18 +232,18 @@ def ParseCffHeader(data):
   #
   # TODO(pts): Check that fontname doesn't contain '[](){}<>/%\0 \t\r\n\f',
   #            5176.CFF.pdf says ``should not contain''.
-  ai2, ai2i0, top_dict_bufs = ParseCffIndex(buffer(data, ai0 + ai1))
+  ai2, top_dict_bufs = ParseCffIndex(buffer(data, ai0 + ai1))
   if len(top_dict_bufs) != 1:
      raise ValueError(
          'CFF top dict index count should be 1, got %d' % len(top_dict_bufs))
   cff_rest_buf = buffer(data, ai0 + ai1 + ai2)
-  ai3, ai3i0, cff_string_bufs = ParseCffIndex(cff_rest_buf)
+  ai3, cff_string_bufs = ParseCffIndex(cff_rest_buf)
   return (buffer(data, 0, ai0),  # CFF header.
           font_name,
-          ai0 + ai1i0,
           top_dict_bufs[0],  # CFF top dict.
           cff_string_bufs,
           cff_rest_buf)
+
 
 def SerializeCffIndexHeader(off_size, buffers):
   offsets = [1]
@@ -271,17 +296,19 @@ def SerializeCffIndexHeader(off_size, buffers):
 
 def FixFontNameInCff(data, new_font_name, len_deltas_out=None):
   """Returns the new CFF font program data."""
-  (cff_header_buf, cff_font_name, cff_font_name_idx, cff_top_dict_buf,
+  (cff_header_buf, cff_font_name, cff_top_dict_buf,
    cff_string_bufs, cff_rest_buf) = ParseCffHeader(data)
-  assert data[cff_font_name_idx : cff_font_name_idx + len(cff_font_name)] == cff_font_name
 
   if cff_font_name == new_font_name:
     return data
   len_delta = len(new_font_name) - len(cff_font_name)
   if len_delta == 0:
+    cff_font_name_ofs = GetCffFontNameOfs(data)
+    assert data[cff_font_name_ofs : cff_font_name_ofs + len(cff_font_name)] == (
+        cff_font_name)
     return ''.join((
-        data[:cff_font_name_idx], new_font_name,
-        data[cff_font_name_idx + len(cff_font_name):]))
+        data[:cff_font_name_ofs], new_font_name,
+        data[cff_font_name_ofs + len(cff_font_name):]))
   old_rest_ofs = len(data) - len(cff_rest_buf)
   cff_dict = ParseCffDict(cff_top_dict_buf)
   # It doesn't matter how we set this as long as it's nonnegative. A value of
@@ -297,14 +324,14 @@ def FixFontNameInCff(data, new_font_name, len_deltas_out=None):
       # We need to modify the `offset (0)' fields, because old_rest_ofs is
       # changing to rest_ofs (which is not finalized yet).
       cff_dict[cff_operator][-1] += estimated_rest_ofs - old_rest_ofs
-  off_size1, idxhdrfn = SerializeCffIndexHeader(None, [new_font_name])
+  off_size1, idxhdrfn = SerializeCffIndexHeader(None, (new_font_name,))
   base_ofs = len(cff_header_buf) + len(idxhdrfn) + len(new_font_name)
 
   while 1:  # Compute rest_ofs iteratively.
     if len_deltas_out is not None:
       len_deltas_out.append(estimated_rest_ofs - old_rest_ofs)
     cff_dict_data = SerializeCffDict(cff_dict=cff_dict)
-    off_size2, idxhdrtd = SerializeCffIndexHeader(None, [cff_dict_data])
+    off_size2, idxhdrtd = SerializeCffIndexHeader(None, (cff_dict_data,))
     rest_ofs = base_ofs + len(idxhdrtd) + len(cff_dict_data)
     if rest_ofs == estimated_rest_ofs:
       break

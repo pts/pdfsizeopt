@@ -1228,6 +1228,19 @@ class PdfSizeOptTest(unittest.TestCase):
       a1aaa577a86b1e13dc88888a881b0eef0abd0b1e0a03963f0c090000
   '''.replace(' ', '').replace('\n', '').decode('hex')
 
+  def testCffFontNameOfs(self):
+    cff_header = '\1\0\4\1'
+    fontname = 'MyFontName'
+    for off_size in (1, 2, 3, 4):
+      cff_data = ''.join((
+          cff_header, 
+          cff.SerializeCffIndexHeader(off_size, (fontname,))[1],
+          fontname))
+      cff_font_name_ofs = cff.GetCffFontNameOfs(cff_data)
+      self.assertEqual(
+          fontname,
+          cff_data[cff_font_name_ofs : cff_font_name_ofs + len(fontname)])
+
   def testFixFontNameInType1C(self):
     new_font_name = 'Hello'
     font_obj = main.PdfObj('1 0 obj<</Subtype/Type1C>>endobj')
@@ -1245,7 +1258,7 @@ class PdfSizeOptTest(unittest.TestCase):
   def testFixFontNameInCff(self):
     def CheckFont(font_program, font_name):
       charstrings_op = 17
-      (cff_header_buf, cff_font_name, cff_font_name_idx, cff_top_dict_buf,
+      (cff_header_buf, cff_font_name, cff_top_dict_buf,
        cff_string_bufs, cff_rest_buf,
       ) = cff.ParseCffHeader(font_program)
       self.assertEqual(font_name, cff_font_name)
@@ -1255,7 +1268,7 @@ class PdfSizeOptTest(unittest.TestCase):
       # 1-based? Probably so, but we need to run this on other fonts. The test
       # fotn has CharStrings at offset 181 in the file, but the op says 182.
       # Nothing else (other than the string index) looks like an index.
-      _, _, charstring_bufs = cff.ParseCffIndex(
+      _, charstring_bufs = cff.ParseCffIndex(
           buffer(font_program, cff_top_dict[charstrings_op][-1] - 1))
       self.assertEqual(25, len(charstring_bufs))
       #self.assertEqual(188, len(charstring_bufs[-1]))
