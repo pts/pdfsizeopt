@@ -675,8 +675,47 @@ def ParseCff1(data, is_careful=False):
       raise CffUnsupportedError('CFF synthetic font not supported.')
     if op in _CFF_TOP_POSTSCRIPT_OPERATORS:
       # !! TODO(pts): Revisit this, maybe `/FSType 14 def' or others can be
-      # supported, especially for merging, if they are the same.
-      # !! SID print 'PostScript: %r'
+      #    supported, especially for merging, if they are the same.
+      #
+      #    These were found if cff.pgs:
+      #
+      #    '/FSType 0 def'
+      #    '/FSType 14 def'
+      #    '/FSType 4 def'
+      #    '/FSType 8 def'
+      #    '/OrigFontType /TrueType def'
+      #
+      #    5176.CFF.pdf says about /FSType and /OrigFontType:
+      #    When OpenType fonts are converted into CFF for embedding in
+      #    a document, the font embedding information specified by the
+      #    FSType bits, and the type of the original font, should be included
+      #    in the resulting file. (See Technical Note #5147: “Font Embedding
+      #    Guidelines for Adobe Third-party Developers,” for more
+      #    information.)
+      #
+      #    https://github.com/llimllib/personal_code/blob/master/python/ttf_parse/ttfparser.py
+      #    contains some /FSType bitmask values:
+      #
+      #    if fsType == 0:  print "0000 - Installable embedding"
+      #    if fsType & 0x0001: print "0001 - Reserved"
+      #    if fsType & 0x0002: print "0002 - Restricted license embedding (CANNOT EMBED)"
+      #    if fsType & 0x0004: print "0004 - Preview & print embedding"
+      #    if fsType & 0x0008: print "0008 - Editable embedding"
+      #    for i in range(4, 8): if fsType & (1 << i): print "%04X - Reserved" % (1 << i)
+      #    if fsType & 0x0100: print "0100 - No subsetting"
+      #    if fsType & 0x0200: print "0200 - Bitmap embeding only"
+      #
+      #    Also, when this generates CFF, it suppors only /FSType and
+      #    /OrigFontType:
+      #    https://github.com/adobe-type-tools/afdko/blob/master/FDK/Tools/Programs/public/lib/source/cffwrite/cffwrite_dict.c
+      #
+      #    TODO(pts): Write a simple, regexp-based parser which can parse these:
+      #    /OrigFontType /TrueType def
+      #    /OrigFontName <33307a686a> def
+      #    /OrigFontStyle () def
+      #    /FSType 8 def
+      #
+      #    !! In general, these fields can be removed from an optimized CFF.
       raise CffUnsupportedError('CFF font with PostScript code not supported.')
     if op in _CFF_TOP_WEIRD_OPERATORS:
       raise CffUnsupportedError('Weird CFF operator not supported.')
