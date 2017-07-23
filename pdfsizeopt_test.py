@@ -788,8 +788,6 @@ class PdfSizeOptTest(unittest.TestCase):
          1: ('<</A()/B()/C(:)/D(::@)>>', None)}, new_objs)
 
   def testParseAndSerializeCffDict(self):
-    # TODO(pts): Add more tests.
-    # TODO(pts): Add test for PdfObj.ParseCffHeader.
     cff_dict = {
         12000: [394], 1: [391], 2: [392], 3: [393], 12004: [0],
         5: [0, -270, 812, 769],
@@ -1112,6 +1110,9 @@ class PdfSizeOptTest(unittest.TestCase):
 
   CFF_FONT_PROGRAM_FONT_NAME = 'Obj000009'
   CFF_FONT_PROGRAM_STRINGS = ['Computer Modern Roman', 'Computer Modern']
+  # This is font `i: 5556' in cff.pgs, Ghostscript has failed to parse it,
+  # probably because it has incorrect CharStrings offset (hence the `- 1' in
+  # CheckFont).
   CFF_FONT_PROGRAM = '''
       01000402000101010a4f626a3030303030390001010128f81b02f81c038bfb61
       f9d5f961051d004e31850df7190ff610f74a11961c0e10128b0c038b0c040002
@@ -1282,28 +1283,20 @@ class PdfSizeOptTest(unittest.TestCase):
   def testFixFontNameInCff(self):
     def CheckFont(font_program, font_name):
       charstrings_op = 17
-      (cff_header_buf, cff_font_name, cff_top_dict_buf,
-       cff_string_bufs, cff_rest_buf,
+      (cff_version, cff_font_name, cff_font_items, cff_string_bufs,
+       cff_global_subr_bufs, cff_rest_buf, cff_off_size, cff_rest2_ofs,
       ) = cff.ParseCffHeader(font_program)
+      cff_top_dict_buf = cff_font_items[0][1]
       self.assertEqual(font_name, cff_font_name)
       cff_top_dict = cff.ParseCffDict(cff_top_dict_buf)
       self.assertEqual(self.CFF_FONT_PROGRAM_STRINGS, map(str, cff_string_bufs))
       # TODO(pts): Why do we have to subtract 1 here? Is CFF file offset
       # 1-based? Probably so, but we need to run this on other fonts. The test
-      # fotn has CharStrings at offset 181 in the file, but the op says 182.
+      # font has CharStrings at offset 181 in the file, but the op says 182.
       # Nothing else (other than the string index) looks like an index.
       _, charstring_bufs = cff.ParseCffIndex(
           buffer(font_program, cff_top_dict[charstrings_op][-1] - 1))
       self.assertEqual(25, len(charstring_bufs))
-      #self.assertEqual(188, len(charstring_bufs[-1]))
-      #good_is = []
-      #for i in xrange(len(font_program) - len(cff_rest_buf),
-      #                len(font_program)):
-      #  try:
-      #    cff.ParseCffIndex(buffer(font_program, i))
-      #    good_is.append(i)
-      #  except ValueError:
-      #    pass
 
     def Check(new_font_name, expected_len_deltas):
       CheckFont(self.CFF_FONT_PROGRAM, self.CFF_FONT_PROGRAM_FONT_NAME)
