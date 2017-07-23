@@ -56,7 +56,7 @@ from pdfsizeopt import cff
 
 
 class Error(Exception):
-  """Comon base class for exceptions defined in this file."""
+  """Comon base class for exceptions defined in this module."""
 
 
 TMP_PREFIX = '///dev/null/psotmp..'  # Will be overridden in main.
