@@ -689,8 +689,8 @@ def ParseCff1(data, is_careful=False):
       #    When OpenType fonts are converted into CFF for embedding in
       #    a document, the font embedding information specified by the
       #    FSType bits, and the type of the original font, should be included
-      #    in the resulting file. (See Technical Note #5147: “Font Embedding
-      #    Guidelines for Adobe Third-party Developers,” for more
+      #    in the resulting file. (See Technical Note #5147: ``Font Embedding
+      #    Guidelines for Adobe Third-party Developers,'' for more
       #    information.)
       #
       #    https://github.com/llimllib/personal_code/blob/master/python/ttf_parse/ttfparser.py
