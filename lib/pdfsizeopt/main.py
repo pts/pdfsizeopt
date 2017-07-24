@@ -5018,13 +5018,25 @@ cvx bind /LoadCff exch def
   ReadStreamFile DecompressStreamFileWithReusableStreamDecode
   % <streamdict> <decompressed-file>
   systemdict /FontDirectory get {pop undefinefont} forall
-  dup /MY exch LoadCff
-  % The last command in LoadCff is ReadData, which pushes the <fontset> dict
-  % to the stack for gs 8.63 or later, and doesn't push anything in gs 8.62
-  % or earlier. We just check the type and pop the value if it is a dict.
-  % There is a /filetype above.
-  dup type /dicttype eq { pop } if
-  closefile  % is this needed?
+  % CFF font loading can fail 2 ways: either LoadCff fails (caught by
+  % `stopped'), or LoadCff succeeds and TryFindFont isn't able to find the font.
+
+  /_MarkerCDS countdictstack def
+  <<>> dup /_Marker exch def  % eq will compare it by reference.
+  1 index /MY exch { LoadCff } stopped
+
+  % Now clean up the stack and the dict stack.
+  %
+  % * If there was en error (stopped returns true),
+  %   the stack looks like: _Marker false <array> true, and the dict
+  %   stack contains 2 extra dicts.
+  % * If no error with gs >=8.63, the stack looks like: <fontset> false,
+  %   <fontset> pushed by ReadData.
+  % * If no error with gs <=8.62, the stack looks like: false.
+  {_Marker eq {exit} if} loop  % Pop _Marker and everything on top.
+  _MarkerCDS 1 add 1 countdictstack {pop end} for  % Pop from the dictstack.
+
+  closefile  % Is this needed?
   % <streamdict>
   pop
   _DataFile _ObjNumber write===only
