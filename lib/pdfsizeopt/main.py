@@ -5269,7 +5269,7 @@ cvx bind /LoadCff exch def
           'warning: ignoring %d Type1C fonts with /CharStrings longer than '
           '256, obj nums are: %s' %
           (len(big_charstrings_obj_nums), big_charstrings_obj_nums))
-    if not is_permissive and obj_size != len(objs):
+    if not is_permissive and objs_size != len(objs):
       assert 0, 'Error (see warnings above) during Type1C font parsing.'
     os.remove(data_tmp_file_name)
     return parsed_fonts
