@@ -28,6 +28,7 @@ echo 'import mainrun' >lib/__main__.py
 (cd lib && zip -9r ../pdfsizeopt.zip \
     __main__.py mainrun.py \
     pdfsizeopt/__init__.py \
+    pdfsizeopt/cff.py \
     pdfsizeopt/main.py \
     pdfsizeopt/pdfsizeopt_argparse.py\
  ;) || exit "$?"
