@@ -125,11 +125,6 @@ CFF_TOP_SYNTHETIC_FONT_OPERATORS = (
 )
 """Contains CFF top dict operators for synthetic fonts."""
 
-CFF_TOP_POSTSCRIPT_OPERATORS = (
-    12021,  # PostScript, SID --, embedded PostScript language code
-)
-"""Contains CFF top dict operators with PostScript code."""
-
 CFF_TOP_WEIRD_OPERATORS = (
     12040,  # 'unknown12040',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
     12041,  # 'unknown12041',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
@@ -242,6 +237,28 @@ CFF_STANDARD_STRINGS = (  # 391 strings.
     'Light', 'Medium', 'Regular', 'Roman', 'Semibold',
 )
 """CFF standard strings."""
+
+SIMPLE_POSTSCRIPT_TOKEN_RE = re.compile(
+    r'(def)|'  # 1: def.
+    r'(true|false|null)|'  # 2: Unique values.
+    r'([-+]?(?:\d+(?:[.]\d*)?|[.]\d+)(?:[eE][+-]?\d+)?)|'  #  3: Decimal number literal.
+    r'(/[^/\[\]{}()<>%\0\t\n\r\f ]+)|'  #  4. Name literal.
+    r'\(([^\\()]*)\)|'  # 5. String literal (matches only a subset of strings).
+    r'<([a-fA-F0-9\0\t\n\r\f ]*)>|'  # 6. Hex string literal.
+    r'(%[^\r\n]*|[\0\t\n\r\f ]+)|'  #  7: Comment or whitespace.
+    r'([-+_.a-zA-Z0-9]+)|'  # 8: Invalid ASCII command.
+    r'([/(<])|' # 9: Invalid token.
+    r'([^\0\t\n\r\f %])')  # 10: 1 character of anything else, invalid.
+"""Matches a token of a simplified subset of PostScript."""
+
+SIMPLE_POSTSCRIPT_UNIQUE_VALUES = {'true': True, 'false': False, 'null': None}
+"""Maps string to Python representation of simple PostScript unique values."""
+
+POSTSCRIPT_WHITESPACE_RE = re.compile('[\0\t\n\r\f ]+')
+"""Matches 1 or more PostScript whitespace."""
+
+NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE = re.compile(r'[^-+A-Za-z0-9_.]')
+"""Matches a single character to be kept escaped internally to pdfsizeopt."""
 
 
 def ParseCffDict(data, start=0, end=None):
@@ -611,6 +628,81 @@ def FixFontNameInCff(data, new_font_name, len_deltas_out=None):
                   str(cff_rest_buf)))
 
 
+def YieldParsePostScriptTokenList(data):
+  """Returns a list of tokens, similar types as PdfObj token values."""
+  scanner = SIMPLE_POSTSCRIPT_TOKEN_RE.scanner(data)
+  _SIMPLE_POSTSCRIPT_UNIQUE_VALUES = SIMPLE_POSTSCRIPT_UNIQUE_VALUES
+  _POSTSCRIPT_WHITESPACE_RE = POSTSCRIPT_WHITESPACE_RE
+  _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE = NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
+  i, len_data, result = 0, len(data), []
+  while i < len_data:
+    match  = scanner.match()
+    assert match, 'Unexpected char: %r' % data[i]
+    i = match.end()
+    if match.group(1):
+      yield match.group(1)
+    elif match.group(2):
+      yield _SIMPLE_POSTSCRIPT_UNIQUE_VALUES[match.group(2)]
+    elif match.group(3):
+      try:
+        yield int(match.group(3))
+      except ValueError:
+        # !! TODO(pts): Better than repr on float.
+        try:
+          yield repr(float(match.group(3)))
+        except ValueError:
+          raise ValueError('Invalid PostScript number: %r' % match.group(3))
+    elif match.group(4):
+      # PostScript supports the empty name literal (/), but we don't, because
+      # it's hard to convert it to a PDF name, and then to omit the subsequent
+      # whitespace.
+      if _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(match.group(4), 1):
+        yield '/' + _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+            lambda match: '#%02X' % ord(match.group(0)), match.group(4)[1:])
+      else:
+        yield match.group(4)
+    elif match.group(5) is not None:
+      yield '<%s>' % str(match.group(5)).encode('hex')
+    elif match.group(6) is not None:
+      value = _POSTSCRIPT_WHITESPACE_RE.sub('', match.group(6))
+      if len(value) % 2:
+        raise ValueError('Odd number of PostScript hex nibbles.')
+      yield '<%s>' % value.lower()
+      del value
+    elif match.group(7):
+      pass
+    elif match.group(8):
+      raise ValueError(
+         'Invalid ASCII PostScript command: %r' % match.group(8))
+    elif match.group(9):
+      raise ValueError('Invalid PostScript token, starts with: %r' %
+                       match.group(9))
+    elif match.group(10):
+      raise ValueError('Invalid PostScript char: %r' % match.group(10))
+    else:
+      assert 0, 'Unexpected token: %r' % match.group()
+
+
+def ParsePostScriptDefs(data):
+  """Returns a dict of tokens, similar types as PdfObj token values."""
+  result = {}
+  state, key, = 0, ''
+  for token in YieldParsePostScriptTokenList(data):
+    if state == 0:
+      if not isinstance(token, str) or not token.startswith('/'):
+        raise ValueError('Unexpected PostScript key: %r' % token)
+      key, state = token[1:], 1
+    elif state == 1:
+      result[key], state = token, 2
+    else:
+      if token != 'def':
+        raise ValueError('Expected def in PostScript, got: %r' % token)
+      state = 0
+  if state:
+    raise ValueError('PostScript token list ended in the middle of def.')
+  return result
+
+
 def ParseCff1(data, is_careful=False):
   """Parses a CFF font program.
 
@@ -653,7 +745,6 @@ def ParseCff1(data, is_careful=False):
   _CFF_STANDARD_STRINGS = CFF_STANDARD_STRINGS
   _CFF_TOP_CIDFONT_OPERATORS = CFF_TOP_CIDFONT_OPERATORS
   _CFF_TOP_SYNTHETIC_FONT_OPERATORS = CFF_TOP_SYNTHETIC_FONT_OPERATORS
-  _CFF_TOP_POSTSCRIPT_OPERATORS = CFF_TOP_POSTSCRIPT_OPERATORS
   _CFF_TOP_WEIRD_OPERATORS = CFF_TOP_WEIRD_OPERATORS
   _CFF_TOP_OP_MAP = CFF_TOP_OP_MAP
   _CFF_TOP_SID_OPERATORS = CFF_TOP_SID_OPERATORS
@@ -673,50 +764,6 @@ def ParseCff1(data, is_careful=False):
       # The Top DICT may contain the following operators: FullName,
       # ItalicAngle, FontMatrix, SyntheticBase, and Encoding.
       raise CffUnsupportedError('CFF synthetic font not supported.')
-    if op in _CFF_TOP_POSTSCRIPT_OPERATORS:
-      # !! TODO(pts): Revisit this, maybe `/FSType 14 def' or others can be
-      #    supported, especially for merging, if they are the same.
-      #
-      #    These were found if cff.pgs:
-      #
-      #    '/FSType 0 def'
-      #    '/FSType 14 def'
-      #    '/FSType 4 def'
-      #    '/FSType 8 def'
-      #    '/OrigFontType /TrueType def'
-      #
-      #    5176.CFF.pdf says about /FSType and /OrigFontType:
-      #    When OpenType fonts are converted into CFF for embedding in
-      #    a document, the font embedding information specified by the
-      #    FSType bits, and the type of the original font, should be included
-      #    in the resulting file. (See Technical Note #5147: ``Font Embedding
-      #    Guidelines for Adobe Third-party Developers,'' for more
-      #    information.)
-      #
-      #    https://github.com/llimllib/personal_code/blob/master/python/ttf_parse/ttfparser.py
-      #    contains some /FSType bitmask values:
-      #
-      #    if fsType == 0:  print "0000 - Installable embedding"
-      #    if fsType & 0x0001: print "0001 - Reserved"
-      #    if fsType & 0x0002: print "0002 - Restricted license embedding (CANNOT EMBED)"
-      #    if fsType & 0x0004: print "0004 - Preview & print embedding"
-      #    if fsType & 0x0008: print "0008 - Editable embedding"
-      #    for i in range(4, 8): if fsType & (1 << i): print "%04X - Reserved" % (1 << i)
-      #    if fsType & 0x0100: print "0100 - No subsetting"
-      #    if fsType & 0x0200: print "0200 - Bitmap embeding only"
-      #
-      #    Also, when this generates CFF, it suppors only /FSType and
-      #    /OrigFontType:
-      #    https://github.com/adobe-type-tools/afdko/blob/master/FDK/Tools/Programs/public/lib/source/cffwrite/cffwrite_dict.c
-      #
-      #    TODO(pts): Write a simple, regexp-based parser which can parse these:
-      #    /OrigFontType /TrueType def
-      #    /OrigFontName <33307a686a> def
-      #    /OrigFontStyle () def
-      #    /FSType 8 def
-      #
-      #    !! In general, these fields can be removed from an optimized CFF.
-      raise CffUnsupportedError('CFF font with PostScript code not supported.')
     if op in _CFF_TOP_WEIRD_OPERATORS:
       raise CffUnsupportedError('Weird CFF operator not supported.')
     op_name = _CFF_TOP_OP_MAP.get(op)
@@ -803,7 +850,24 @@ def ParseCff1(data, is_careful=False):
   del charstring_bufs
   # !! convert from GID to glyph name
 
+  if parsed_dict.get('PostScript'):  # !! catch ValueError
+    #    !! In general, these fields can be removed from an optimized CFF:
+    #       /FSType, /OrigFontType, /OrigFontName, /OrigFontStyle.
+    #       If not removed, at least merge them if they are the same.
+    try:
+      # Silently ignore parse errors in /PostScript.
+      # !! Do the same parsing in main.ParseType1CFonts.
+      parsed_ps = ParsePostScriptDefs(
+          parsed_dict['PostScript'][1 : -1].decode('hex'))
+    except ValueError:
+      parsed_ps = ()
+    if parsed_ps is not ():
+      parsed_dict['ParsedPostScript'] = parsed_ps
+      parsed_dict.pop('PostScript')
+
   # !! test that glyph name /pedal.* is converted to /pedal.#2A
+  #    apply the reverse of PdfToPsName in /Encoding etc.
+  #    PdfObj.ParseValueRecursive
   # !! Decode deltas (_CFF_TOP_DELTA_OPERATORS).
   # !! Parse /Encoding.
   # !! Convert integer-valued op_value floats to int.

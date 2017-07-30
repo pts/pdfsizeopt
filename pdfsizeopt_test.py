@@ -64,9 +64,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' [ ]', e('[]'))
     self.assertEqual(' [ ]', e('[]<<'))
     self.assertEqual(' true', e('true '))
+    self.assertEqual(' true', e('true'))
     self.assertRaises(main.PdfTokenParseError, e, 'hi ')
-    self.assertRaises(main.PdfTokenTruncated, e, 'true')
-    self.assertRaises(main.PdfTokenTruncated, e, 'hi')
     eo = []
     self.assertEqual(' false', e('\n\t\r \f\0false true ', end_ofs_out=eo))
     self.assertEqual([11], eo)
@@ -124,8 +123,8 @@ class PdfSizeOptTest(unittest.TestCase):
                        '\\129\\239\\379\\401\\501\\601\\701)'))
     # PDF doesn't have \x
     self.assertEqual(' <786661786243784445f8>', e('(\\xfa\\xbC\\xDE\xF8)'))
-    self.assertRaises(main.PdfTokenTruncated, e, '42')
-    self.assertRaises(main.PdfTokenTruncated, e, '.')
+    self.assertEqual(' 0', e('.'))
+    self.assertEqual(' 42', e('42'))
     self.assertEqual(' 42', e('42 '))
     self.assertEqual(' 0', e('00000 '))
     self.assertEqual(' 0', e('+00000 '))
@@ -163,11 +162,23 @@ class PdfSizeOptTest(unittest.TestCase):
                      e(' 5 endobz\t',
                        end_ofs_out=end_ofs_out, do_terminate_obj=True))
     self.assertEqual([10], end_ofs_out)
+    self.assertRaises(main.PdfTokenParseError, e, '/#')
+    self.assertRaises(main.PdfTokenTruncated, e, '/')
+    self.assertRaises(main.PdfTokenTruncated, e, '/ ')
+    # TODO(pts): PdfTokenParseError instead?
+    self.assertRaises(main.PdfTokenTruncated, e, '/%')
+    self.assertEqual(' /#2A', e('/*'))
+    self.assertEqual(' /STROZ#2F', e('/STR#4fZ#2f'))
+    self.assertEqual(' /STROZ', e('/STR#4FZ\r\n\t\t\t \t'))
     end_ofs_out = []
-    self.assertEqual(' 5 STROZ',
-                     e(' 5 STR#4FZ\r\n\t\t\t \t',
+    self.assertEqual(' 5 /STROZ hi',
+                     e(' 5 /STR#4FZ hi\r\n\t\t\t \t',
                        end_ofs_out=end_ofs_out, do_terminate_obj=True))
-    self.assertEqual([12], end_ofs_out)
+    self.assertEqual([16], end_ofs_out)
+    end_ofs_out = []
+    self.assertRaises(main.PdfTokenParseError, e,
+                      ' 5 STR#4FZ\r\n\t\t\t \t',
+                      end_ofs_out=end_ofs_out, do_terminate_obj=True)
     end_ofs_out = []
     self.assertEqual(' /Size', e('/Size 42 ', end_ofs_out=end_ofs_out))
     self.assertEqual([5], end_ofs_out)
@@ -374,6 +385,13 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({1: 2}, e('<<1 2>>'))
     self.assertEqual({'bar': '/baz', 5: {'A': [67, '<>', 'foo']}},
                      e('<<5<</A[67()foo]>>bar /baz>>'))
+    self.assertEqual(['/pedal.#2A', '/pedal.#2A'], e('[/pedal.*/pedal.#2a]'))
+    self.assertEqual(
+        ['/pedal.#2A', '/pedal.#232a'],
+        e('[/pedal.*/pedal.#2a]', do_expect_postscript_name_input=True))
+    self.assertEqual(
+        ['/pedal.#2A', '<>', '/pedal.#232a'],
+        e('[/pedal.*()/pedal.#2a]', do_expect_postscript_name_input=True))
     self.assertRaises(main.PdfTokenParseError, e, '1 2')
     self.assertRaises(main.PdfTokenParseError, e, '[')
     self.assertRaises(main.PdfTokenParseError, e, '[[]')
@@ -390,6 +408,9 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(main.PdfTokenParseError, e, '<<1>>')
     self.assertRaises(main.PdfTokenParseError, e, '<<%>>')
     self.assertRaises(main.PdfTokenParseError, e, '[%]')
+    self.assertRaises(main.PdfTokenParseError, e, '/')
+    self.assertRaises(main.PdfTokenParseError, e, '//')
+    self.assertRaises(main.PdfTokenParseError, e, '//foo')
 
   def testCompressValue(self):
     e = main.PdfObj.CompressValue
@@ -412,6 +433,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('( hello\t\n)world', e(' ( hello\t\n)world'))
     self.assertEqual('(\\)((hi))\\\\)world', e(' (\\)(\\(hi\\))\\\\)world'))
     self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
+    self.assertRaises(main.PdfTokenParseError, e, '/#')
     s = '/Kids[041\t 0\rR\f43\n0% 96 0 R\rR 42 0 R 97 0 Rs 42 0 R]( 98 0 R )\f'
     t = '/Kids[041 0 R 43 0 R 42 0 R 97 0 Rs 42 0 R]( 98 0 R )'
     self.assertEqual(t, e(s))
@@ -1016,20 +1038,31 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(['<<>>', 51], f('<<%]\r>>51'))
     self.assertEqual(['[]', -3], f('[%<<\n]-3'))
 
+    self.assertRaises(main.PdfTokenParseError, f, '//')
+    self.assertRaises(main.PdfTokenParseError, f, '/')
+    self.assertRaises(main.PdfTokenParseError, f, '/#xy')
+    self.assertRaises(main.PdfTokenParseError, f, '/#')
+    self.assertEqual(['/pedal.#2A', '/pedal.#2A'], f('/pedal.*/pedal.#2a'))
+    self.assertEqual(['/#2F#23'], f('/#2f#23'))
+
   def testPdfToPsName(self):
     f = main.PdfObj.PdfToPsName
     self.assertEqual('/foo!', f('/foo#21'))
     self.assertEqual('pedal.*', f('pedal.*'))
     self.assertEqual('/pedal.*', f('/pedal.*'))
     self.assertEqual('/pedal.*', f('/pedal.#2A'))
+    self.assertEqual('/pedal.*', f('/pedal.#2a'))
     self.assertEqual('pedal.*', f('pedal.#2A'))
     self.assertEqual('/pedal.*B+', f('/pedal.#2AB#2b'))
     self.assertEqual('/pedal.#2A', f('/peda#6c.#232A'))
     self.assertEqual('/\xFEeD', f('/#fEeD'))
     self.assertRaises(ValueError, f, '')
     self.assertRaises(ValueError, f, '/')
-    self.assertRaises(ValueError, f, '//')
-    self.assertRaises(ValueError, f, '//foo')
+    self.assertRaises(main.PdfTokenParseError, f, '//')
+    self.assertRaises(main.PdfTokenParseError, f, '//foo')
+    self.assertRaises(main.PdfTokenParseError, f, '/#')
+    # Starts with double /. Will raise: Char not allowed in PostScript name
+    self.assertRaises(ValueError, f, '/#2F')
     self.assertRaises(ValueError, f, '/foo#20')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, '/foo#28')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, '/foo#25')  # PDF_NONNAME_CHARS.
@@ -1234,7 +1267,7 @@ class PdfSizeOptTest(unittest.TestCase):
     fontname = 'MyFontName'
     for off_size in (1, 2, 3, 4):
       cff_data = ''.join((
-          cff_header, 
+          cff_header,
           cff.SerializeCffIndexHeader(off_size, (fontname,))[1],
           fontname))
       cff_font_name_ofs = cff.GetCffFontNameOfs(cff_data)
@@ -1265,6 +1298,57 @@ class PdfSizeOptTest(unittest.TestCase):
     Check(('', '', ''))
     Check(('',))
     Check(('foo', 'barbaz' * 100))
+
+  def testYieldParsePostScriptTokenList(self):
+    def F(data):
+      return list(cff.YieldParsePostScriptTokenList(data))
+
+    self.assertEqual([], F(''))
+    self.assertEqual([], F(' \t\r\n\f\0\t  '))
+    self.assertEqual(['/Foo', '/Bar'], F('/Foo/Bar'))
+    self.assertEqual(['/Foo', '/B#24a#2Ar'], F('\n/Foo \t/B$a*r\f'))
+    # Treat #2A as PostScript (not escaped) in the input token name.
+    self.assertEqual(['/pedal.#2A', '/pedal.#232a', '/pedal.#232A'],
+                      F('/pedal.*/pedal.#2a/pedal.#2A'))
+    self.assertRaises(ValueError, F, '/')  # OK in regular PostScript
+    self.assertRaises(ValueError, F, '<')
+    self.assertRaises(ValueError, F, '>')
+    self.assertRaises(ValueError, F, '<xy>')
+    self.assertRaises(ValueError, F, '<a')
+    self.assertRaises(ValueError, F, '<a>')
+    self.assertRaises(ValueError, F, '<ab')
+    self.assertRaises(ValueError, F, '<ab ')
+    self.assertRaises(ValueError, F, 'quit')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '(')
+    self.assertRaises(ValueError, F, ')')
+    self.assertRaises(ValueError, F, '{}')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '[]')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '(())')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '8#77')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '16#ab')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '<~ab~>')  # OK in regular PostScript.
+    self.assertEqual(repr(['def', True, False, None]),
+                     repr(F('def true false null')))
+    self.assertEqual(repr([42, 5, -42, '425.0', '-4.25']),
+                     repr(F('42 +5 -42 +42.5e+1 -42.5E-1')))
+    self.assertEqual(repr(['def', True, '/false', '<>', None, 42]),
+                     repr(F('def true/false<>null%foo\r42%')))
+    self.assertEqual(['<>', '<>', '<202a>', '<2a3b>'],
+                     F('()<\f\t>( *)<\r2 A\t3\nb\r>'))
+
+  def testParsePostScriptDefs(self):
+    F = cff.ParsePostScriptDefs
+    self.assertEqual({}, F('\t'))
+    self.assertEqual({'FSType': 14}, F('/FSType 14 def'))
+    self.assertRaises(ValueError, F, '/FSType')
+    self.assertRaises(ValueError, F, '/FSType 14')
+    self.assertRaises(ValueError, F, '/FSType 14 def /OrigFontType')
+    self.assertRaises(ValueError, F, '/FSType 14 15')
+    self.assertRaises(ValueError, F, '13 14 def')
+    self.assertEqual({'FSType': 8, 'OrigFontType': '/TrueType',
+                      'OrigFontName': '<33307b686a>', 'OrigFontStyle': '<>'},
+                     F('/FSType 8 def\n/OrigFontType /TrueType def\n'
+                       '/OrigFontName <33307B686a> def/OrigFontStyle () def'))
 
   def testFixFontNameInType1C(self):
     new_font_name = 'Hello'

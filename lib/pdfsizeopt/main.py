@@ -920,8 +920,8 @@ class PdfObj(object):
       r'[\0\t\n\r\f ]+|(<<)|<(?!<)([^>]*)>')
   """Matches whitespace (1 or more) or a hex string constant or <<."""
 
-  PDF_NAME_HEX_RE = re.compile(r'#([0-9a-fA-F]{2})')
-  """Matches a hex escape (#AB) in a PDF name."""
+  PDF_NAME_HEX_OR_HASHMARK_RE = re.compile(r'#([0-9a-fA-F]{2})?')
+  """Matches a hex escape (#AB) in a PDF name token."""
 
   PDF_NONNAME_CHARS = '/[]{}()<>%\0\t\n\r\f '
   """Characters that can't be part of a PDF name.
@@ -934,12 +934,6 @@ class PdfObj(object):
 
   PDF_NAME_LITERAL_TO_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
-
-  PDF_INVALID_NAME_CHAR_RE = re.compile(r'[^-+A-Za-z0-9_.]')
-  """Matches a PDF data character which is not valid in a plain name."""
-
-  PDF_NAME_HASHMARK_HEX_RE = re.compile(r'#([0-9a-f-A-F]{2})')
-  """Matches a hashmark hex escape in a PDF name token."""
 
   PDF_INT_RE = re.compile(r'-?\d+\Z')
   """Matches a PDF integer token."""
@@ -968,17 +962,16 @@ class PdfObj(object):
 
   PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
       r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
-  """Matches a single character which needs a hex escape."""
+  """Matches a single character which has to be hex-escaped in the output.
 
-  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = re.compile(
-      r'[^-+A-Za-z0-9_.]')
-  """Matches a single character which should be kept escaped."""
+  A superset (subset) of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.
+  """
+
+  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
+  """Matches a single character to be kept escaped internally to pdfsizeopt."""
 
   PDF_COMMENT_RE = re.compile(r'%[^\r\n]*')
   """Matches a single comment line without a terminator."""
-
-  PDF_HEX_CHAR_RE = re.compile('#([0-9a-fA-F]{2})')
-  """Matches a character escaped as # + hex."""
 
   PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b')
   """Matches `<obj> 0 R', not allowing comments."""
@@ -1332,14 +1325,15 @@ class PdfObj(object):
         # It's OK that we don't apply this normalization recursively to
         # [/?Foo] etc.
         if '#' in value:
-          value = cls.PDF_NAME_HASHMARK_HEX_RE.sub(
-              lambda match: chr(int(match.group(1), 16)), value)
-          if '#' in value:
+          try:
+            value = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+                lambda match: chr(int(match.group(1), 16)), value)
+          except TypeError:  # In int(...) if match.group(1) is None.
             raise PdfTokenParseError(
                 'hex error in literal name %r at %d' %
                 (value, match.start(1)))
-        if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
-          value = '/' + cls.PDF_INVALID_NAME_CHAR_RE.sub(
+        if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(value, 1):
+          value = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
               lambda match: '#%02X' % ord(match.group(0)), value[1:])
       elif kind == '(':
         if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
@@ -1427,7 +1421,7 @@ class PdfObj(object):
         else:
           match = None
         if not match:
-          if cls.PDF_INVALID_NAME_CHAR_RE.search(value):
+          if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(value):
             raise PdfTokenParseError(
                 'syntax error in non-literal name %r at %d' %
                 (value, match0.start(1)))
@@ -1575,7 +1569,8 @@ class PdfObj(object):
 
   @classmethod
   def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None,
-                    do_emit_strings_as_hex=False):
+                    do_emit_strings_as_hex=False,
+                    do_expect_postscript_name_input=False):
     """Return shorter representation of a PDF token sequence.
 
     This method doesn't optimize integer constants starting with 0.
@@ -1591,14 +1586,16 @@ class PdfObj(object):
         TODO(pts): Write a simpler method which returns only this.
       do_emit_strings_as_hex: Boolean indicating whether to emit strings as
         hex <...>.
+      do_expect_postscript_name_input: boolean indicating where to expect
+        PostScript names on the input, i.e. don't do #AB hex escaping.
     Returns:
       The most compact PDF token sequence form of data: without superfluous
       whitespace; with '(' string literals. It may contain \n only in
       string literals.
     Raises:
-      PdfTokenParseError
+      PdfTokenParseError: .
     """
-    if '(' in data:
+    if '(' in data:  # Remove comments, replace strings with hex.
       output = []
       i = 0
       scanner = cls.PDF_COMMENT_OR_STRING_RE.scanner(data, 0, len(data))
@@ -1614,7 +1611,9 @@ class PdfObj(object):
           try:
             # Ignore return value (the parsable string).
             output.append(cls.RewriteToParsable(
-                data=data, start=match.start(), end_ofs_out=end_ofs_out))
+                data=data, start=match.start(), end_ofs_out=end_ofs_out,
+                do_expect_postscript_name_input=
+                    do_expect_postscript_name_input))
           except PdfTokenTruncated, exc:
             raise PdfTokenParseError(
                 'could not find end of string in %r: %s' %
@@ -1632,13 +1631,19 @@ class PdfObj(object):
       data = cls.PDF_COMMENT_RE.sub(' ', data)
 
     def ReplacementHexEscape(match):
-      char = chr(int(match.group(1), 16))
+      try:
+        char = chr(int(match.group(1), 16))
+      except TypeError:  # In int(...) if match.group(1) is None.
+        raise PdfTokenParseError('Invalid hex escape in PDF name.')
       if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.match(char):
-        return match.group(0).upper()  # keep escaped
+        return match.group(0).upper()  # Keep it escaped.
       else:
         return char
 
-    data = cls.PDF_HEX_CHAR_RE.sub(ReplacementHexEscape, data)
+    if do_expect_postscript_name_input:
+      data = data.replace('#', '#23')
+    else:
+      data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
     data = cls.PDF_CHAR_TO_HEX_ESCAPE_RE.sub(
         lambda match: '#%02X' % ord(match.group(0)), data)
     # TODO(pts): Optimize integer constants starting with 0.
@@ -1805,24 +1810,28 @@ class PdfObj(object):
     Raises:
       ValueError: If there is no PostScript name which can represent this
         PDF name. (Maybe keep it escaped then, in a separate function?)
+      PdfTokenParseError: If data is not a valid PDF name.
     """
     data_size = len(data)
     data = data.lstrip('/')
     slash_count = data_size - len(data)
     if slash_count > 1:
-      raise ValueError('Too many leading slashes in name: %r' % data)
+      raise PdfTokenParseError('Too many leading slashes in name: %r' % data)
     if not data:
       raise ValueError('Empty name: %r' % data)
-    data = cls.PDF_NAME_HEX_RE.sub(
-        lambda match: chr(int(match.group(1), 16)), data)
+    try:
+      data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+          lambda match: chr(int(match.group(1), 16)), data)
+    except TypeError:  # In int(...) if match.group(1) is None.
+      raise PdfTokenParseError('Invalid hex escape in PDF name.')
     match = cls.PDF_NONNAME_CHAR_RE.search(data)
     if match:
       raise ValueError(
-          'Char not allowed in PDF name: %r' % match.group())
+          'Char not allowed in PostScript name: %r' % match.group())
     return '/' * slash_count + data
 
   @classmethod
-  def ParseValueRecursive(cls, data):
+  def ParseValueRecursive(cls, data, do_expect_postscript_name_input=False):
     """Parse PDF token sequence data to a recursive Python structure.
 
     As a relaxation, numbers are allowed as dict keys.
@@ -1831,6 +1840,8 @@ class PdfObj(object):
 
     Args:
       data: String containing a PDF token sequence.
+      do_expect_postscript_name_input: boolean indicating where to expect
+        PostScript names on the input, i.e. don't do #AB hex escaping.
     Returns:
       A recursive Python data structure.
     Raises:
@@ -1838,7 +1849,9 @@ class PdfObj(object):
     """
     # PdfObj.CompressValue converts some characters in names to hex,
     # thus e.g. /pedal.* becomes /pedal.#2A.
-    data = PdfObj.CompressValue(data, do_emit_strings_as_hex=True)
+    data = PdfObj.CompressValue(
+        data, do_emit_strings_as_hex=True,
+        do_expect_postscript_name_input=do_expect_postscript_name_input)
     scanner = PdfObj.PDF_SIMPLE_TOKEN_RE.scanner(data)
     match = scanner.match()
     last_end = 0
@@ -1902,7 +1915,7 @@ class PdfObj(object):
     if not token:
       raise PdfTokenParseError('no values received')
     if len(token) > 1:
-      raise PdfTokenParseError('multiple value received')
+      raise PdfTokenParseError('multiple values received')
     return token[0]
 
   def HasImageToHide(self):
@@ -2134,7 +2147,8 @@ class PdfObj(object):
   @classmethod
   def RewriteToParsable(
       cls, data, start=0,
-      end_ofs_out=None, do_terminate_obj=False):
+      end_ofs_out=None, do_terminate_obj=False,
+      do_expect_postscript_name_input=False):
     """Rewrite PDF token sequence so it will be easier to parse by regexps.
 
     Please note that this method is very slow. Use ParseSimpleValue or
@@ -2168,6 +2182,8 @@ class PdfObj(object):
         `stream' or `endobj' (or any other non-literal name)
         plus one whitespace (or \\r\\n) at end_ofs_out
         (and in the string).
+      do_expect_postscript_name_input: boolean indicating where to expect
+        PostScript names on the input, i.e. don't do #AB hex escaping.
     Returns:
       Nonempty string containing a PDF token sequence which is easier to
       parse with regexps, because it has additional whitespace, it has no
@@ -2216,19 +2232,26 @@ class PdfObj(object):
         j = i
         p = o == 18
         i += 1
-        if p:
-          if i >= data_size:
-            raise PdfTokenTruncated
-          i += 1  # Accept e.g. /% as a token.
         while i < data_size and cls.PDF_CLASSIFY[ord(data[i])] == 40:
           i += 1
-        if i == data_size:
-          raise PdfTokenTruncated
-        token = re.sub(
-            r'#([0-9a-f-A-F]{2})',
-            lambda match: chr(int(match.group(1), 16)), data[j : i])
-        if token[0] == '/' and data[j] != '/':
-          raise PdfTokenParseError('bad slash-name token')
+        if data[j] == '/':
+          token = data[j + 1 : i]
+          if not token:
+            raise PdfTokenTruncated('Empty PDF name token.')
+          if not do_expect_postscript_name_input:
+            try:
+              token = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+                  lambda match: chr(int(match.group(1), 16)), token)
+            except TypeError:  # In int(...) if match.group(1) is None.
+              raise PdfTokenParseError(
+                  'Invalid hex escape in PDF name %r' % ('/' + token))
+          token = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+              lambda match: '#%02X' % ord(match.group(0)), token)
+        else:
+          token = data[j : i]
+          if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(token):
+            raise PdfTokenParseError(
+                'Invalid character in non-literal name token %r' % token)
 
         number_match = cls.PDF_NUMBER_RE.match(token)
         if number_match:
@@ -2245,17 +2268,7 @@ class PdfObj(object):
           if token in ('', '-'):
             token = '0'
 
-        # Append token with special characters escaped.
-        if token[0] == '/':
-          # TODO(pts): test this
-          output.append(
-              ' /' + re.sub(r'[^-+A-Za-z0-9_.]',
-              lambda match: '#%02X' % ord(match.group(0)), token[1:]))
-        else:
-          # TODO(pts): test this
-          output.append(
-              ' ' + re.sub(r'[^-+A-Za-z0-9_.]',
-              lambda match: '#%02X' % ord(match.group(0)), token))
+        output.append(' ' + token)
 
         if (number_match or token[0] == '/' or
             token in ('true', 'false', 'null', 'R')):
@@ -2285,7 +2298,9 @@ class PdfObj(object):
             raise PdfTokenParseError(
                 'invalid operator %r with stack %r' % (token, stack))
           stack.pop()
-          if data[i] == '\r':
+          if i == len(data):
+            raise PdfTokenTruncated
+          elif data[i] == '\r':
             i += 1
             if i == data_size:
               if output[-1] == ' stream':
@@ -5201,7 +5216,8 @@ cvx bind /LoadCff exch def
     # Dict keys are numbers, which is not valid PDF, but ParseValueRecursive
     # accepts it.
     # TODO(pts): This ParseValueRecursive call is a bit slow, speed it up.
-    parsed_fonts = PdfObj.ParseValueRecursive('<<%s>>' % data)
+    parsed_fonts = PdfObj.ParseValueRecursive(
+        '<<%s>>' % data, do_expect_postscript_name_input=True)
     assert isinstance(parsed_fonts, dict)
     print >>sys.stderr, 'info: parsed %s Type1C fonts' % len(parsed_fonts)
     assert sorted(parsed_fonts) == sorted(objs), (
