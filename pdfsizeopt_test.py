@@ -1324,6 +1324,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(ValueError, F, '{}')  # OK in regular PostScript.
     self.assertRaises(ValueError, F, '[]')  # OK in regular PostScript.
     self.assertRaises(ValueError, F, '(())')  # OK in regular PostScript.
+    self.assertRaises(ValueError, F, '(\\n)')  # OK in regular PostScript.
     self.assertRaises(ValueError, F, '8#77')  # OK in regular PostScript.
     self.assertRaises(ValueError, F, '16#ab')  # OK in regular PostScript.
     self.assertRaises(ValueError, F, '<~ab~>')  # OK in regular PostScript.

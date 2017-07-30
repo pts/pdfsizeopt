@@ -7,12 +7,14 @@ http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
 import re
 import struct
 
+
 class Error(Exception):
   """Comon base class for exceptions defined in this module."""
 
 
 class CffUnsupportedError(Exception):
   """Raised if a CFF font program contains a feature we don't support."""
+
 
 CFF_NON_FONTNAME_CHARS = '/[]{}()<>%\0\t\n\r\f '
 """Characters that shouldn't be part of a CFF font name.
@@ -48,49 +50,44 @@ CFF_PRIVATE_OP = 18
 CFF_SUBRS_OP = 19
 
 CFF_TOP_OP_MAP = {
-    0: 'version',  # SID --, FontInfo
-    1: 'Notice',  # SID --, FontInfo
-    12000: 'Copyright',  # SID --, FontInfo
-    2: 'FullName',  # SID --, FontInfo
-    3: 'FamilyName',  # SID --, FontInfo
-    4: 'Weight',  # SID --, FontInfo
-    12001: 'isFixedPitch',  # boolean 0 (false), FontInfo
-    12002: 'ItalicAngle',  # number 0, FontInfo
-    12003: 'UnderlinePosition',  # number -100, FontInfo
-    12004: 'UnderlineThickness',  # number 50, FontInfo
-    12005: 'PaintType',  # number 0
-    12006: 'CharstringType',  # number 2
-    12007: 'FontMatrix',  # array 0.001 0 0 0.001 0 0
-    13: 'UniqueID',  # number --
-    5: 'FontBBox',  # array 0 0 0 0
-    12008: 'StrokeWidth',  # number 0
-    14: 'XUID',  # array --
-    15: 'charset',  # number 0, charset offset (0)
-    16: 'Encoding',  # number 0, encoding offset (0)
-    17: 'CharStrings',  # number --, CharStrings offset (0)
-    18: 'Private',  # number number --, Private DICT size and offset (0)
-    12021: 'PostScript',  # SID --, embedded PostScript language code
-    12022: 'BaseFontName',  # SID --, (added as needed by Adobe-based technology)
-    12023: 'BaseFontBlend',  # delta --, (added as needed by Adobe-based technology)
-    12020: 'SyntheticBase',  # number --, synthetic base font index (starts)
-    12030: 'ROS',  # SID SID number --, Registry Ordering Supplement (starts)
-    12031: 'CIDFontVersion',  # number 0
-    12032: 'CIDFontRevision',  # number 0
-    12033: 'CIDFontType',  # number 0
-    12034: 'CIDCount',  # number 8720
-    12035: 'UIDBase',  # number --
-    12036: 'FDArray',  # number --, Font DICT (FD) INDEX offset (0)
-    12037: 'FDSelect',  # number --, FDSelect offset (0)
-    12038: 'FDFontName',  # SID --, FD FontName; 5176.CFF.pdf says FontName, but we reserve FontName for something else.
-    12040: 'unknown12040',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
-    12041: 'unknown12041',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
+    0: ('version', 's', None),  # FontInfo
+    1: ('Notice', 's', None),  # FontInfo
+    12000: ('Copyright', 's', None),  # FontInfo
+    2: ('FullName', 's', None),  # FontInfo
+    3: ('FamilyName', 's', None),  # FontInfo
+    4: ('Weight', 's', None),  # FontInfo
+    12001: ('isFixedPitch', 'b', False),  # FontInfo
+    12002: ('ItalicAngle', 'n', '0'),
+    12003: ('UnderlinePosition', 'n', '-100'),  # FontInfo
+    12004: ('UnderlineThickness', 'n', '50'),  # FontInfo
+    12005: ('PaintType', 'i', 0),
+    12006: ('CharstringType', 'i', 2),
+    12007: ('FontMatrix', 'm', ('0.001', '0', '0', '0.001', '0', '0')),
+    13: ('UniqueID', 'i', None),
+    5: ('FontBBox', 'x', ('0', '0', '0', '0')),
+    12008: ('StrokeWidth', 'n', 0),
+    14: ('XUID', 'o', None),
+    15: ('charset', 'i', None),  # charset offset (0)
+    16: ('Encoding', 'i', None),  # encoding offset (0)
+    17: ('CharStrings', 'i', None),  # CharStrings offset (0)
+    18: ('Private', 'j', None),  # integer+integer
+    12021: ('PostScript', 's', None),  # embedded PostScript language code
+    12022: ('BaseFontName', 's', None),  # added as needed by Adobe-based technology
+    12023: ('BaseFontBlend', 'd', None),  # added as needed by Adobe-based technology
+    12020: ('SyntheticBase', 'n', None),  # synthetic base font index (starts)
+    12030: ('ROS', 'o', None),  # SID+SID+number --, Registry Ordering Supplement (starts)
+    12031: ('CIDFontVersion', 'i', 0),
+    12032: ('CIDFontRevision', 'i', 0),
+    12033: ('CIDFontType', 'i', 0),
+    12034: ('CIDCount', 'i', 8720),
+    12035: ('UIDBase', 'i', None),
+    12036: ('FDArray', 'i', None),  # Font DICT (FD) INDEX offset (0)
+    12037: ('FDSelect', 'i', None),  # FDSelect offset (0)
+    12038: ('FDFontName', 's', None),  # FD FontName; 5176.CFF.pdf says FontName, but we reserve FontName for something else.
+    12040: ('unknown12040', 'o', None),  # 'j' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
+    12041: ('unknown12041', 'o', None),  # 'i' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
 }
 """Maps CFF top dict operator numbers to their names."""
-
-CFF_TOP_DELTA_OPERATORS = (
-    12023,  # 'BaseFontBlend',  # delta --, (added as needed by Adobe-based technology)
-)
-"""Contains CFF top dict operators with delta values."""
 
 CFF_TOP_CIDFONT_OPERATORS = (
     12030,  # ROS, SID SID number --, Registry Ordering Supplement (starts)
@@ -105,52 +102,31 @@ CFF_TOP_CIDFONT_OPERATORS = (
 )
 """Contains CFF top dict operators for CIDFonts."""
 
-CFF_TOP_SID_OPERATORS = (
-    0,  # 'version',  # SID --, FontInfo
-    1,  # 'Notice',  # SID --, FontInfo
-    12000,  # 'Copyright',  # SID --, FontInfo
-    2,  # 'FullName',  # SID --, FontInfo
-    3,  # 'FamilyName',  # SID --, FontInfo
-    4,  # 'Weight',  # SID --, FontInfo
-    12021,  # 'PostScript',  # SID --, embedded PostScript language code
-    12022,  # 'BaseFontName',  # SID --, (added as needed by Adobe-based technology)
-    #12030,  # 'ROS',  # SID SID number --, Registry Ordering Supplement (starts)
-    12038,  # 'FontName',  # SID --, FD FontName
-)
-"""Contains CFF top dict operators with a single string (SID) value."""
-
-
 CFF_TOP_SYNTHETIC_FONT_OPERATORS = (
     12020,  # SyntheticBase, number --, synthetic base font index (starts)
 )
 """Contains CFF top dict operators for synthetic fonts."""
 
-CFF_TOP_WEIRD_OPERATORS = (
-    12040,  # 'unknown12040',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
-    12041,  # 'unknown12041',  # (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
-)
-"""Contains CFF top dict operators found in the wild but unknown meaning."""
-
 CFF_PRIVATE_OP_MAP = {
-    6: 'BlueValues',  # delta --
-    7: 'OtherBlues',  # delta --
-    8: 'FamilyBlues',  # delta --
-    9: 'FamilyOtherBlues',  # delta --
-    12009: 'BlueScale',  # number 0.039625
-    12010: 'BlueShift',  # number 7
-    12011: 'BlueFuzz',  # number 1
-    10: 'StdHW',  # number --
-    11: 'StdVW',  # number --
-    12012: 'StemSnapH',  # delta --
-    12013: 'StemSnapV',  # delta --
-    12014: 'ForceBold',  # boolean false
-    12017: 'LanguageGroup',  # number 0
-    12018: 'ExpansionFactor',  # number 0.06
-    12019: 'initialRandomSeed',  # number 0
-    19: 'Subrs',  # number --, Offset (self) to local subrs
-    20: 'defaultWidthX',  # number 0, see below
-    21: 'nominalWidthX',  # number 0, see below
-    12015: 'unknown12015',  # Looks like a single number: .5, 0.5 or .569092.
+    6: ('BlueValues', 'd', None),
+    7: ('OtherBlues', 'd', None),
+    8: ('FamilyBlues', 'd', None),
+    9: ('FamilyOtherBlues', 'd', None),
+    12009: ('BlueScale', 'n', '0.039625'),
+    12010: ('BlueShift', 'n', '7'),
+    12011: ('BlueFuzz', 'n', '1'),
+    10: ('StdHW', 'n', None),
+    11: ('StdVW', 'n', None),
+    12012: ('StemSnapH', 'd', None),
+    12013: ('StemSnapV', 'd', None),
+    12014: ('ForceBold', 'b', False),
+    12017: ('LanguageGroup', 'i', 0),
+    12018: ('ExpansionFactor', 'n', '.06'),
+    12019: ('initialRandomSeed', 'i', 0),
+    19: ('Subrs', 'i', None),  # Offset (self) to local subrs.
+    20: ('defaultWidthX', 'n', '0'),
+    21: ('nominalWidthX', 'n', '0'),
+    12015: ('unknown12015', 'n', None),  # Looks like a single number: .5, 0.5 or .569092.  54 of 8961 fonts in cff.pgs have it.
 }
 """Maps CFF private dict operator numbers to their names."""
 
@@ -326,7 +302,13 @@ def ParseCffDict(data, start=0, end=None):
         real_chars.append(CFF_REAL_CHARS[b0 & 15])
         if (b0 & 0xf) == 0xf:
           break
-      operands.append(''.join(real_chars))
+      real_chars = ''.join(real_chars)
+      # !! If '.' not in real_chars and 'e' not in real_chars and 'E' not in real_chars:
+      try:
+        float(real_chars)
+      except ValueError:
+        raise ValueError('Invalid CFF real: %r' % real_chars)
+      operands.append(real_chars)
     elif 0 <= b0 <= 21:
       if b0 == 12:
         if i >= end:
@@ -647,9 +629,8 @@ def YieldParsePostScriptTokenList(data):
       try:
         yield int(match.group(3))
       except ValueError:
-        # !! TODO(pts): Better than repr on float.
         try:
-          yield repr(float(match.group(3)))
+          yield SerializeCffFloat(float(match.group(3)))
         except ValueError:
           raise ValueError('Invalid PostScript number: %r' % match.group(3))
     elif match.group(4):
@@ -703,6 +684,138 @@ def ParsePostScriptDefs(data):
   return result
 
 
+def SerializeCffFloat(op_value):
+  if not isinstance(op_value, float):
+    raise TypeError
+  # !! Emit an integer instead of 72.0 or 12e66? Make it configurable.
+  op_value = repr(op_value)  # !! Emit shortest float repr, fewest digits.
+  if op_value.startswith('-0.'):
+    return op_value[2:]
+  elif op_value.startswith('0.'):
+    return op_value[1:]
+  else:
+    return op_value
+
+
+def ParseCffNumber(op, number):
+  if isinstance(number, float):
+    return SerializeCffFloat(number)
+  elif isinstance(number, str):
+    try:
+      number = float(number)
+    except ValueError:
+      raise ValueError('Invalid CFF float value for op %d: %r' %
+                       (op, number))
+    return SerializeCffFloat(number)
+  elif isinstance(number, (int, long)):
+    return int(number)
+  else:
+    raise ValueError('Invalid CFF number value for op %d: %r' %
+                     (op, number))
+
+
+def ParseCffOp(op, op_value, op_name, op_type, op_default):
+  """Parses a single CFF operator value.
+
+  Args:
+    op: Operator number, key in the result of ParseCffDict.
+    op_value; Value to parse, value in the result of ParseCffDict.
+    op_name: Name of the dict entry, without the leading '/'.
+    op_type: Expected type of the value:
+      'd': delta
+      'x': bbox: number+number+number+number
+      'm': matrix: number+number+number+number+number+number
+      'n': number  !! which number must be an integer?
+      'i': integer
+      'j': integer+integer
+      'b': boolean
+      's': SID  (Will fail with AssertionError.)
+      'u': unknown  (Will fail with AssertionError.)
+      'o': original  (Keep op_value.)
+    op_default: Default value if entry missing. Unused here.
+  Returns:
+    The parsed value.
+  Raises:
+    ValueError: .
+  """
+  # !! Apply op_default somewhere.
+  if op_type == 'd':  # A delta.
+    assert op_default is None, repr(op_default)
+    result = []
+    prev_number = 0
+    for number in op_value:
+      if isinstance(number, float):
+        prev_number += number
+      elif isinstance(number, str):
+        try:
+          prev_number += float(number)
+        except ValueError:
+          raise ValueError('Invalid CFF float delta value for op %d: %r' %
+                           (op, number))
+      elif isinstance(number, (int, long)):
+        prev_number += int(number)
+      else:
+        raise ValueError('Invalid CFF number delta value for op %d: %r' %
+                         (op, number))
+      if isinstance(prev_number, float):
+        result.append(SerializeCffFloat(prev_number))
+      else:
+        result.append(prev_number)
+    return result
+  elif op_type == 'n':  # A number.
+    if len(op_value) != 1:
+      raise ValueError('Invalid size for CFF number value for op %d: %d' %
+                       (op, op_value))
+    return ParseCffNumber(op, op_value[0])
+  elif op_type == 'x':  # A bbox.
+    if len(op_value) != 4:
+      raise ValueError('Invalid size for CFF bbox value for op %d: %d' %
+                       (op, op_value))
+    return [ParseCffNumber(op, number) for number in op_value]
+  elif op_type == 'm':  # A matrix.
+    if len(op_value) != 6:
+      raise ValueError('Invalid size for CFF matrix value for op %d: %d' %
+                       (op, op_value))
+    return [ParseCffNumber(op, number) for number in op_value]
+  elif op_type == 'i':  # An integer.
+    if len(op_value) != 1:
+      raise ValueError('Invalid size for CFF integer value for op %d: %d' %
+                       (op, op_value))
+    op_value = op_value[0]
+    if not isinstance(op_value, (int, long)):
+      raise ValueError('Invalid CFF integer value for op %d: %r' %
+                       (op, op_value))
+    return int(op_value)
+  elif op_type == 'j':  # Two integers.
+    if len(op_value) != 2:
+      raise ValueError('Invalid size for CFF integer2 value for op %d: %d' %
+                       (op, op_value))
+    result = []
+    for number in op_value:
+      if not isinstance(number, (int, long)):
+        raise ValueError('Invalid CFF integer value for op %d: %r' %
+                         (op, number))
+      result.append(int(number))
+    return result
+  elif op_type == 'b':  # A boolean.
+    if len(op_value) != 1:
+      raise ValueError('Invalid size for CFF boolean value for op %d: %d' %
+                       (op, op_value))
+    op_value = op_value[0]
+    if op_value == 0:
+      return False
+    elif op_value == 1:
+      return True
+    else:
+      raise ValueError('Invalid CFF boolean value for op %d: %r' %
+                       (op, op_value))
+  elif op_type == 'o':  # An original.
+    assert op_default is None, repr(op_default)
+    return list(op_value)  # Create a new list.
+  else:
+    assert 0, 'Unknown CFF op_type=%r op_value=%r' % (op_type, op_value)
+
+
 def ParseCff1(data, is_careful=False):
   """Parses a CFF font program.
 
@@ -738,21 +851,21 @@ def ParseCff1(data, is_careful=False):
     assert top_dict == top_dict2, (top_dict, top_dict_2)
     del top_dict_ser, top_dict2
   # !! remove /BaseFontName and /BaseFontBlend? are they optional? Does cff.pgs have it?
-  # !! List operators missin from cff.pgs
+  # !! List operators missing from cff.pgs (i.e. untested).
   # !! font merge fail on GlobalSubrs, Subrs and defaultWidthX and nominalWidthX
 
   # Make it faster for the loops below.
   _CFF_STANDARD_STRINGS = CFF_STANDARD_STRINGS
   _CFF_TOP_CIDFONT_OPERATORS = CFF_TOP_CIDFONT_OPERATORS
   _CFF_TOP_SYNTHETIC_FONT_OPERATORS = CFF_TOP_SYNTHETIC_FONT_OPERATORS
-  _CFF_TOP_WEIRD_OPERATORS = CFF_TOP_WEIRD_OPERATORS
   _CFF_TOP_OP_MAP = CFF_TOP_OP_MAP
-  _CFF_TOP_SID_OPERATORS = CFF_TOP_SID_OPERATORS
   _CFF_PRIVATE_OP_MAP = CFF_PRIVATE_OP_MAP
+  _ParseCffOp = ParseCffOp
 
   string_index_limit = len(cff_string_bufs) + len(_CFF_STANDARD_STRINGS)
   parsed_dict = {'FontName': '/' + cff_font_name}
   for op, op_value in sorted(top_dict.iteritems()):
+    # !! decode numbers, deltas, etc. with _ParseCffOp
     if op in _CFF_TOP_CIDFONT_OPERATORS:
       # First such operator must be /ROS in the top dict, but we don't care
       # about the order.
@@ -764,17 +877,17 @@ def ParseCff1(data, is_careful=False):
       # The Top DICT may contain the following operators: FullName,
       # ItalicAngle, FontMatrix, SyntheticBase, and Encoding.
       raise CffUnsupportedError('CFF synthetic font not supported.')
-    if op in _CFF_TOP_WEIRD_OPERATORS:
-      raise CffUnsupportedError('Weird CFF operator not supported.')
-    op_name = _CFF_TOP_OP_MAP.get(op)
-    if op_name is None:
+    op_entry = _CFF_TOP_OP_MAP.get(op)
+    if op_entry is None:
       raise ValueError('Unknown CFF top dict op: %d' % op)
-    if op in _CFF_TOP_SID_OPERATORS:
+    op_name = op_entry[0]
+    if op_entry[1] == 's':  # SID.
+      assert op_entry[2] is None  # op_default.
       if (len(op_value) != 1 or not isinstance(op_value[0], int) or
           op_value[0] <= 0):
         raise ValueError('Invalid SID value for CFF /%s: %r' %
                          (op_name, value))
-      op_value = op_value[0]  # !! Parse SID.
+      op_value = op_value[0]
       if op_value < len(_CFF_STANDARD_STRINGS):
         op_value = _CFF_STANDARD_STRINGS[op_value]
       elif op_value < string_index_limit:
@@ -782,17 +895,16 @@ def ParseCff1(data, is_careful=False):
         #            Is it worth it?
         op_value = str(cff_string_bufs[op_value - len(_CFF_STANDARD_STRINGS)])
       else:
-        raise ValueError('CFF string index value too large.')
-      op_value = '<%s>' % op_value.encode('hex')
-    parsed_dict[op_name] = op_value
+        raise ValueError('CFF string index value too large: %d' % op_value)
+      parsed_dict[op_name] = '<%s>' % op_value.encode('hex')
+    else:
+      parsed_dict[op_name] = _ParseCffOp(op, op_value, *op_entry)
+  del top_dict
 
-  if CFF_PRIVATE_OP not in top_dict:
+  op_value = parsed_dict.get('Private')
+  if op_value is None:
     raise ValueError('Missing /Private dict from CFF font.')
-  if len(top_dict[CFF_PRIVATE_OP]) != 2:
-    raise ValueError(
-        'Invalid /Private dict op size in CFF font: %d' %
-        len(top_dict[CFF_PRIVATE_OP]))
-  private_size, private_ofs = top_dict[CFF_PRIVATE_OP]
+  private_size, private_ofs = op_value
   if not isinstance(private_size, int) or private_size < 0:
     raise ValueError('Invalid CFF /Private size.')
   parsed_private_dict = {}
@@ -803,42 +915,37 @@ def ParseCff1(data, is_careful=False):
                        (private_ofs, cff_rest2_ofs))
     private_dict = ParseCffDict(data, private_ofs, private_ofs + private_size)
     for op, op_value in sorted(private_dict.iteritems()):
-      op_name = _CFF_PRIVATE_OP_MAP.get(op)
-      if op_name is None:
+      op_entry = _CFF_PRIVATE_OP_MAP.get(op)
+      op_name = op_entry[0]
+      if op_entry is None:
         raise ValueError('Unknown CFF private dict op: %d' % op)
-      parsed_private_dict[op_name] = op_value
-    # !! decode numbers, deltas, etc.
-    # !! Decode deltas (_CFF_PRIVATE_DELTA_OPERATORS).
-    # !! how many fonts have 12015? 54 of 8961 in cff.pgs
-    if CFF_SUBRS_OP in private_dict:
-      if len(private_dict[CFF_SUBRS_OP]) != 1:
-        raise ValueError(
-            'Invalid /Subrs dict op size in CFF font: %d' %
-            len(private_dict[CFF_SUBRS_OP]))
-      subrs_ofs, = private_dict[CFF_SUBRS_OP]
-      subrs_ofs += private_ofs
+      parsed_private_dict[op_name] = _ParseCffOp(op, op_value, *op_entry)
+    del private_dict
+    if 'Subrs' in parsed_private_dict:
+      subrs_ofs = parsed_private_dict['Subrs'] + private_ofs
       if not (isinstance(subrs_ofs, int) and
               cff_rest2_ofs <= subrs_ofs < len(data)):
         raise ValueError(
             'Invalid CFF /Subrs offset %d, expected at least %d.' %
             (subrs_ofs, cff_rest2_ofs))
       _, subr_bufs = ParseCffIndex(buffer(data, subrs_ofs))
-      # Ghostscript also puts /Subrs into /Private.
-      parsed_private_dict['Subrs'] = [
-          '<%s>' % str(buf).encode('hex') for buf in subr_bufs]
+      op_value = ['<%s>' % str(buf).encode('hex') for buf in subr_bufs]
       del subr_bufs
+      if op_value:
+        # Ghostscript also puts /Subrs into /Private.
+        parsed_private_dict['Subrs'] = op_value
+      else:
+        del parsed_private_dict['Subrs']
   # Ghostscript also puts /GlobalSubrs into /Private.
-  parsed_private_dict['GlobalSubrs'] = [
-      '<%s>' % str(buf).encode('hex') for buf in cff_global_subr_bufs]
+  op_value = ['<%s>' % str(buf).encode('hex') for buf in cff_global_subr_bufs]
+  if op_value:
+    parsed_private_dict['GlobalSubrs'] = op_value
   parsed_dict['Private'] = parsed_private_dict
 
-  if CFF_CHARSTRINGS_OP not in top_dict:
+  op_value = parsed_dict.get('CharStrings')
+  if op_value is None:
     raise ValueError('Missing /CharStrings index from CFF font.')
-  if len(top_dict[CFF_CHARSTRINGS_OP]) != 1:
-    raise ValueError(
-        'Invalid /CharStrings dict op size in CFF font: %d' %
-        len(top_dict[CFF_CHARSTRINGS_OP]))
-  charstrings_ofs, = top_dict[CFF_CHARSTRINGS_OP]
+  charstrings_ofs = op_value
   if not (isinstance(charstrings_ofs, int) and
           cff_rest2_ofs <= charstrings_ofs < len(data)):
     raise ValueError(
@@ -868,11 +975,11 @@ def ParseCff1(data, is_careful=False):
   # !! test that glyph name /pedal.* is converted to /pedal.#2A
   #    apply the reverse of PdfToPsName in /Encoding etc.
   #    PdfObj.ParseValueRecursive
-  # !! Decode deltas (_CFF_TOP_DELTA_OPERATORS).
   # !! Parse /Encoding.
   # !! Convert integer-valued op_value floats to int.
-  # !! Parse everything.
   # !! convert floats: 'BlueScale': ['.0526316'], to 0.0526316.
+  # !! when serializing: /OtherBlues must occur right after /BlueValues
+  # !! when serializing: /FamilyOtherBlues must occur right after /FamilyBlues
 
   #print parsed_dict
   return parsed_dict
