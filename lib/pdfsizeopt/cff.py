@@ -863,7 +863,12 @@ def ParseCff1(data, is_careful=False):
   _ParseCffOp = ParseCffOp
 
   string_index_limit = len(cff_string_bufs) + len(_CFF_STANDARD_STRINGS)
-  parsed_dict = {'FontName': '/' + cff_font_name}
+  parsed_dict = {}
+  if NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(cff_font_name):
+    parsed_dict['FontName'] = '/' + NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+        lambda match: '#%02X' % ord(match.group(0)), cff_font_name)
+  else:
+    parsed_dict['FontName'] = '/' + cff_font_name
   for op, op_value in sorted(top_dict.iteritems()):
     # !! decode numbers, deltas, etc. with _ParseCffOp
     if op in _CFF_TOP_CIDFONT_OPERATORS:
