@@ -50,42 +50,46 @@ CFF_PRIVATE_OP = 18
 CFF_SUBRS_OP = 19
 
 CFF_TOP_OP_MAP = {
-    0: ('version', 's', None),  # FontInfo
-    1: ('Notice', 's', None),  # FontInfo
-    12000: ('Copyright', 's', None),  # FontInfo
-    2: ('FullName', 's', None),  # FontInfo
-    3: ('FamilyName', 's', None),  # FontInfo
-    4: ('Weight', 's', None),  # FontInfo
-    12001: ('isFixedPitch', 'b', False),  # FontInfo
-    12002: ('ItalicAngle', 'n', '0'),
-    12003: ('UnderlinePosition', 'n', '-100'),  # FontInfo
-    12004: ('UnderlineThickness', 'n', '50'),  # FontInfo
-    12005: ('PaintType', 'i', 0),
-    12006: ('CharstringType', 'i', 2),
-    12007: ('FontMatrix', 'm', ('0.001', '0', '0', '0.001', '0', '0')),
-    13: ('UniqueID', 'i', None),
-    5: ('FontBBox', 'x', ('0', '0', '0', '0')),
-    12008: ('StrokeWidth', 'n', 0),
-    14: ('XUID', 'o', None),
-    15: ('charset', 'i', None),  # charset offset (0)
-    16: ('Encoding', 'i', None),  # encoding offset (0)
-    17: ('CharStrings', 'i', None),  # CharStrings offset (0)
-    18: ('Private', 'j', None),  # integer+integer
-    12021: ('PostScript', 's', None),  # embedded PostScript language code
-    12022: ('BaseFontName', 's', None),  # added as needed by Adobe-based technology
-    12023: ('BaseFontBlend', 'd', None),  # added as needed by Adobe-based technology
+    # The x/y values indicate: out of the y parsable CFF fonts in the cff.pgs
+    # corpus, x had this field explicitly specified.
+    # 'FontName': 8958/8958; .
+    # 'ParsedPostScript': 216/8958; .
+    0: ('version', 's', None),  # 688/8958; FontInfo
+    1: ('Notice', 's', None),  # 7919/8958; FontInfo
+    12000: ('Copyright', 's', None),  # 524/8958; FontInfo
+    2: ('FullName', 's', None),  # 7281/8958; FontInfo
+    3: ('FamilyName', 's', None),  # 7588/8958; FontInfo
+    4: ('Weight', 's', None),  # 1325/8958; FontInfo
+    12001: ('isFixedPitch', 'b', False),  # 343/8958; FontInfo
+    12002: ('ItalicAngle', 'n', '0'),  # 254/8958; .
+    12003: ('UnderlinePosition', 'n', '-100'),  # 6618/8958; FontInfo
+    12004: ('UnderlineThickness', 'n', '50'),  # 6618/8958; FontInfo
+    12005: ('PaintType', 'i', 0),  # 37/8958; .
+    12006: ('CharstringType', 'i', 2),  # 0/8958; .
+    12007: ('FontMatrix', 'm', ('0.001', '0', '0', '0.001', '0', '0')),  # 410/8958; .
+    13: ('UniqueID', 'i', None),  # 1694/8958; .
+    5: ('FontBBox', 'x', ('0', '0', '0', '0')),  # 8863/8958; .
+    12008: ('StrokeWidth', 'n', 0),  # 147/8958; .
+    14: ('XUID', 'o', None),  # 306/8958; .
+    15: ('charset', 'i', 0),  # 8940/8958; charset offset (0) or std
+    16: ('Encoding', 'i', 0),  # 8300/8958; encoding offset (0) or std
+    17: ('CharStrings', 'i', None),  # 8958/8958; CharStrings offset (0)
+    18: ('Private', 'j', None),  # 8958/8958; integer+integer
+    12021: ('PostScript', 's', None),  # 216/8958; (in fact 0, because all moved to ParsedPostScript) embedded PostScript language code
+    12022: ('BaseFontName', 's', None),  # 1214/8958; added as needed by Adobe-based technology
+    12023: ('BaseFontBlend', 'd', None),  # 17/8958; added as needed by Adobe-based technology
     12020: ('SyntheticBase', 'n', None),  # synthetic base font index (starts)
-    12030: ('ROS', 'o', None),  # SID+SID+number --, Registry Ordering Supplement (starts)
-    12031: ('CIDFontVersion', 'i', 0),
-    12032: ('CIDFontRevision', 'i', 0),
-    12033: ('CIDFontType', 'i', 0),
-    12034: ('CIDCount', 'i', 8720),
-    12035: ('UIDBase', 'i', None),
-    12036: ('FDArray', 'i', None),  # Font DICT (FD) INDEX offset (0)
-    12037: ('FDSelect', 'i', None),  # FDSelect offset (0)
-    12038: ('FDFontName', 's', None),  # FD FontName; 5176.CFF.pdf says FontName, but we reserve FontName for something else.
-    12040: ('unknown12040', 'o', None),  # 'j' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
-    12041: ('unknown12041', 'o', None),  # 'i' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
+    12030: ('ROS', 'o', None),  # 0/8958; SID+SID+number --, Registry Ordering Supplement (starts)
+    12031: ('CIDFontVersion', 'i', 0),  # 0/8958; .
+    12032: ('CIDFontRevision', 'i', 0),  # 0/8958; .
+    12033: ('CIDFontType', 'i', 0),  # 0/8958; .
+    12034: ('CIDCount', 'i', 8720),  # 0/8958; .
+    12035: ('UIDBase', 'i', None),  # 0/8958; .
+    12036: ('FDArray', 'i', None),  # 0/8958; Font DICT (FD) INDEX offset (0)
+    12037: ('FDSelect', 'i', None),  # 0/8958; FDSelect offset (0)
+    12038: ('FDFontName', 's', None),  # 0/8958; FD FontName; 5176.CFF.pdf says FontName, but we reserve FontName for something else.
+    12040: ('unknown12040', 'o', None),  # 0/8958; 'j' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
+    12041: ('unknown12041', 'o', None),  # 0/8958; 'i' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
 }
 """Maps CFF top dict operator numbers to their names."""
 
@@ -108,25 +112,26 @@ CFF_TOP_SYNTHETIC_FONT_OPERATORS = (
 """Contains CFF top dict operators for synthetic fonts."""
 
 CFF_PRIVATE_OP_MAP = {
-    6: ('BlueValues', 'd', None),
-    7: ('OtherBlues', 'd', None),
-    8: ('FamilyBlues', 'd', None),
-    9: ('FamilyOtherBlues', 'd', None),
-    12009: ('BlueScale', 'n', '0.039625'),
-    12010: ('BlueShift', 'n', '7'),
-    12011: ('BlueFuzz', 'n', '1'),
-    10: ('StdHW', 'n', None),
-    11: ('StdVW', 'n', None),
-    12012: ('StemSnapH', 'd', None),
-    12013: ('StemSnapV', 'd', None),
-    12014: ('ForceBold', 'b', False),
-    12017: ('LanguageGroup', 'i', 0),
-    12018: ('ExpansionFactor', 'n', '.06'),
-    12019: ('initialRandomSeed', 'i', 0),
-    19: ('Subrs', 'i', None),  # Offset (self) to local subrs.
-    20: ('defaultWidthX', 'n', '0'),
-    21: ('nominalWidthX', 'n', '0'),
-    12015: ('unknown12015', 'n', None),  # Looks like a single number: .5, 0.5 or .569092.  54 of 8961 fonts in cff.pgs have it.
+    # 'GlobalSubrs': 61/8958; .
+    6: ('BlueValues', 'd', None),  # 7956/8958; .
+    7: ('OtherBlues', 'd', None),  # 5271/8958; .
+    8: ('FamilyBlues', 'd', None),  # 442/8958; .
+    9: ('FamilyOtherBlues', 'd', None),  # 443/8958; .
+    12009: ('BlueScale', 'n', '0.039625'),  # 5133/8958; .
+    12010: ('BlueShift', 'n', '7'),  # 1433/8958; .
+    12011: ('BlueFuzz', 'n', '1'),  # 877/8958; .
+    10: ('StdHW', 'n', None),  # 7664/8958; .
+    11: ('StdVW', 'n', None),  # 7758/8958; .
+    12012: ('StemSnapH', 'd', None),  # 6455/8958; .
+    12013: ('StemSnapV', 'd', None),  # 5577/8958; .
+    12014: ('ForceBold', 'b', False),  # 943/8958; .
+    12017: ('LanguageGroup', 'i', 0),  # 0/8958; .
+    12018: ('ExpansionFactor', 'n', '.06'),  # 0/8958; .
+    12019: ('initialRandomSeed', 'i', 0),  # 0/8958; .
+    19: ('Subrs', 'i', None),  # 1347/8958; Offset (self) to local subrs.
+    20: ('defaultWidthX', 'n', '0'),  # 3307/8958; .
+    21: ('nominalWidthX', 'n', '0'),  # 3119/8958; .
+    12015: ('unknown12015', 'n', None),  # 54/8958; Looks like a single number: .5, 0.5 or .569092.
 }
 """Maps CFF private dict operator numbers to their names."""
 
@@ -851,7 +856,6 @@ def ParseCff1(data, is_careful=False):
     assert top_dict == top_dict2, (top_dict, top_dict_2)
     del top_dict_ser, top_dict2
   # !! remove /BaseFontName and /BaseFontBlend? are they optional? Does cff.pgs have it?
-  # !! List operators missing from cff.pgs (i.e. untested).
   # !! font merge fail on GlobalSubrs, Subrs and defaultWidthX and nominalWidthX
 
   # Make it faster for the loops below.
@@ -870,10 +874,11 @@ def ParseCff1(data, is_careful=False):
   else:
     parsed_dict['FontName'] = '/' + cff_font_name
   for op, op_value in sorted(top_dict.iteritems()):
-    # !! decode numbers, deltas, etc. with _ParseCffOp
     if op in _CFF_TOP_CIDFONT_OPERATORS:
       # First such operator must be /ROS in the top dict, but we don't care
       # about the order.
+      #
+      # Untested, the cff.pgs corpus doesn't have a CIDFont.
       raise CffUnsupportedError('CFF CIDFont not supported.')
     if op in _CFF_TOP_SYNTHETIC_FONT_OPERATORS:
       # First such operator must be /SyntheticBase in the top dict, but we
@@ -881,6 +886,8 @@ def ParseCff1(data, is_careful=False):
       #
       # The Top DICT may contain the following operators: FullName,
       # ItalicAngle, FontMatrix, SyntheticBase, and Encoding.
+      #
+      # Untested, the cff.pgs corpus doesn't have a synthetic font.
       raise CffUnsupportedError('CFF synthetic font not supported.')
     op_entry = _CFF_TOP_OP_MAP.get(op)
     if op_entry is None:
@@ -962,10 +969,17 @@ def ParseCff1(data, is_careful=False):
   del charstring_bufs
   # !! convert from GID to glyph name
 
-  if parsed_dict.get('PostScript'):  # !! catch ValueError
-    #    !! In general, these fields can be removed from an optimized CFF:
-    #       /FSType, /OrigFontType, /OrigFontName, /OrigFontStyle.
-    #       If not removed, at least merge them if they are the same.
+  if parsed_dict.get('PostScript'):
+    # Statistics from the cff.pgs corpus (all tested in pdfsizeopt_test.py):
+    #
+    # * 'FSType': 215//8958; an integer (nonnegative, bit field).
+    # * 'OrigFontType': 1/8958; a name literal or string (?).
+    # * 'OrigFontName': 0/8958; a string.
+    # * 'OrigFontStyle': 0//8958; a string.
+    #
+    # !! In general, these fields can be removed from an optimized CFF:
+    #    /FSType, /OrigFontType, /OrigFontName, /OrigFontStyle.
+    #    If not removed, at least merge them if they are the same.
     try:
       # Silently ignore parse errors in /PostScript.
       # !! Do the same parsing in main.ParseType1CFonts.
