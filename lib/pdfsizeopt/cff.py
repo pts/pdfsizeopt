@@ -4,6 +4,7 @@ CFF file format documentation:
 http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
 """
 
+import itertools
 import re
 import struct
 
@@ -489,7 +490,7 @@ def ParseCffHeader(data, do_need_single_font=True, do_parse_rest=True):
     cff_rest2_ofs = rest_ofs
   return ((major, minor),
           cff_font_name,
-          tuple(zip(font_name_bufs, top_dict_bufs)),
+          tuple(itertools.izip(font_name_bufs, top_dict_bufs)),
           cff_string_bufs,
           cff_global_subr_bufs,
           cff_rest_buf,
@@ -615,6 +616,74 @@ def FixFontNameInCff(data, new_font_name, len_deltas_out=None):
                   str(cff_rest_buf)))
 
 
+def GetParsedCffDifferences(a, b):
+  """Detects if two parsed CFF fonts are equivalent.
+
+  CFF fonts differing only in default values are equivalent.
+
+  Args:
+    a: First parsed CFF font to compare, must be a dict. Typically it comes
+        from ParseCff1 or ParseType1CFonts.
+    b: Other parsed CFF font to compare, must be a dict.
+  Returns:
+    list of str describing the differences.
+  """
+
+  def NormalizeEncoding(encoding, charset_set):
+    encoding = list(encoding)
+    for i, glyph_name in enumerate(encoding):
+      if glyph_name != '/.notdef' and glyph_name[1:] not in charset_set:
+        encoding[i] = '/.notdef'
+    return encoding
+
+  def IsDictOptEqual(a, b):
+    if a is None and b is None:
+      return True
+    if type(a) != dict or type(b) != dict:
+      return false
+    # !! Better compare floats etc.
+    return sorted(a.iteritems()) == sorted(b.iteritems())
+
+  diff = []
+  if type(a.get('Private')) != dict or type(b.get('Private')) != dict:
+    diff.append('/Private')
+    return diff
+  if a['CharStrings'] != b['CharStrings']:
+    print a['CharStrings']
+    print b['CharStrings']
+    diff.append('/CharStrings')
+  if a['Encoding'] != b['Encoding']:
+    a_encoding = NormalizeEncoding(a['Encoding'], set(a['CharStrings']))
+    b_encoding = NormalizeEncoding(b['Encoding'], set(b['CharStrings']))
+    if a_encoding != b_encoding:
+      print a_encoding
+      print b_encoding
+      diff.append('/Encoding')
+  if a['FontName'] != b['FontName']:
+    print a['FontName']
+    print b['FontName']
+    diff.append('/FontName')
+  if a['Private'].get('Subrs') != b['Private'].get('Subrs'):
+    print a['Private'].get('Subrs')
+    print b['Private'].get('Subrs')
+    diff.append('/Subrs')
+  if a['Private'].get('GlobalSubrs') != b['Private'].get('GlobalSubrs'):
+    print a['Private'].get('GlobalSubrs')
+    print b['Private'].get('GlobalSubrs')
+    diff.append('/GlobalSubrs')
+  if a['Private'].get('PostScript') != b['Private'].get('PostScript'):
+    print a['Private'].get('PostScript')
+    print b['Private'].get('PostScript')
+    diff.append('/PostScript')
+  if not IsDictOptEqual(a['Private'].get('ParsedPostScript'), b['Private'].get('ParsedPostScript')):
+    print a['Private'].get('ParsedPostScript')
+    print b['Private'].get('ParsedPostScript')
+    diff.append('/ParsedPostScript')
+  # !! Compare all other fields as well.
+  # !! Apply defaults to missing fields.
+  return diff
+
+
 def YieldParsePostScriptTokenList(data):
   """Returns a list of tokens, similar types as PdfObj token values."""
   scanner = SIMPLE_POSTSCRIPT_TOKEN_RE.scanner(data)
@@ -717,6 +786,252 @@ def ParseCffNumber(op, number):
   else:
     raise ValueError('Invalid CFF number value for op %d: %r' %
                      (op, number))
+
+
+def CffStringToName(
+    data, _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE=NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE):
+  """Prepends '/', hex-escapes the rest."""
+  if data == '.notdef':  # Intern it to optimize for memory.
+    return '/.notdef'
+  if _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(data):
+    data = _NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+        lambda match: '#%02X' % ord(match.group(0)), data)
+  if data.startswith('/'):
+    raise ValueError('CFF name string starts with /: %s' % data)
+  return '/' + data
+
+
+_CFF_EXPERT_CHARSET_SIDS = (
+    0, 1, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 13, 14, 15, 99, 239,
+    240, 241, 242, 243, 244, 245, 246, 247, 248, 27, 28, 249, 250, 251, 252,
+    253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 109,
+    110, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280,
+    281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295,
+    296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310,
+    311, 312, 313, 314, 315, 316, 317, 318, 158, 155, 163, 319, 320, 321, 322,
+    323, 324, 325, 326, 150, 164, 169, 327, 328, 329, 330, 331, 332, 333, 334,
+    335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349,
+    350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364,
+    365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378)
+# TODO(pts): Intern the strings generated, especially '.notdef', also below.
+CFF_EXPERT_CHARSET = tuple(CffStringToName(CFF_STANDARD_STRINGS[i])
+                           for i in _CFF_EXPERT_CHARSET_SIDS)
+
+_CFF_EXPERT_SUBSET_CHARSET_SIDS = (
+    0, 1, 231, 232, 235, 236, 237, 238, 13, 14, 15, 99, 239, 240, 241, 242, 243,
+    244, 245, 246, 247, 248, 27, 28, 249, 250, 251, 253, 254, 255, 256, 257,
+    258, 259, 260, 261, 262, 263, 264, 265, 266, 109, 110, 267, 268, 269, 270,
+    272, 300, 301, 302, 305, 314, 315, 158, 155, 163, 320, 321, 322, 323, 324,
+    325, 326, 150, 164, 169, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336,
+    337, 338, 339, 340, 341, 342, 343, 344, 345, 346)
+CFF_EXPERT_SUBSET_CHARSET = tuple(CffStringToName(CFF_STANDARD_STRINGS[i])
+                                  for i in _CFF_EXPERT_SUBSET_CHARSET_SIDS)
+
+
+_CFF_ISO_ADOBE_CHARSET_SIDS = xrange(229)
+CFF_ISO_ADOBE_CHARSET = tuple(CffStringToName(CFF_STANDARD_STRINGS[i])
+                              for i in _CFF_ISO_ADOBE_CHARSET_SIDS)
+
+
+def ParseCffCharset(charset_value, data, len_charstrings, cff_all_string_bufs):
+  """Parses a CFF /charset array.
+
+  Args:
+    charset_value: a small int containing the standard charset index.
+    data: str or data containing the /Encoding array as a prefix.
+    len_charstrings: Number of elements in /CharStrings.
+    cff_all_string_bufs: Sequence of buffer or str objects containing the
+        standard and file-specific strings.
+  Returns:
+    A new list of name strings, each not starting with a '/', and
+    not hex-escaped, starting with '.notdef'. The length is the same as
+    len_charstrings.
+  """
+  if not isinstance(charset_value, (int, long)):
+    raise TypeError
+  if not isinstance(len_charstrings, int):
+    raise TypeError
+  if len_charstrings < 1:
+    raise ValueError('No charstrings in CFF, missing /.notdef')
+  if charset_value < 10:
+    if charset_value == 0:  # 18/8958; ISOAdobe.
+      charset = list(CFF_ISO_ADOBE_CHARSET)
+    elif charset_value == 1:  # 3/8958; Expert.
+      charset = list(CFF_EXPERT_CHARSET)
+    elif charset_value == 2:  # 1/8958; ExpertSubset.
+      charset = list(CFF_EXPERT_SUBSET_CHARSET)
+    else:
+      raise ValueError('Invalid small CFF /charset value: %d' % charset_value)
+    if len(charset) < len_charstrings:
+      raise ValueError('Standard CFF /charset too short.')
+    return charset[:len_charstrings]
+  if not data:
+    raise ValueError('CFF /charset too short for format.')
+  format = ord(data[0])
+  charset = ['.notdef']
+  if format == 0:  # 7920/8958; .
+    if (len_charstrings << 1) - 1 > len(data):
+      raise ValueError('CFF /charset too short for format 0.')
+    charset.extend(str(cff_all_string_bufs[sid]) for sid in struct.unpack(
+        '>%dH' % (len_charstrings - 1),
+        buffer(data, 1, (len_charstrings - 1) << 1)))
+  elif format == 1:  # 1007/8958; .
+    i = 1
+    while len(charset) < len_charstrings:
+      if i + 3 > len(data):
+        raise ValueError('CFF /charset too short for format 1.')
+      first_sid, count1 = struct.unpack('>HB', buffer(data, i, 3))
+      i += 3
+      count = count1 + 1
+      if len(charset) + count > len_charstrings:
+        raise ValueError('CFF /charset format 1 contains a too long range.')
+      charset.extend(str(cff_all_string_bufs[sid]) for sid in
+                     xrange(first_sid, first_sid + count))
+  elif format == 2:  # 9/8958; .
+    i = 1
+    while len(charset) < len_charstrings:
+      if i + 4 > len(data):
+        raise ValueError('CFF /charset too short for format 1.')
+      first_sid, count1 = struct.unpack('>HH', buffer(data, i, 4))
+      i += 4
+      count = count1 + 1
+      if len(charset) + count > len_charstrings:
+        raise ValueError('CFF /charset format 1 contains a too long range.')
+      charset.extend(str(cff_all_string_bufs[sid]) for sid in
+                     xrange(first_sid, first_sid + count))
+  else:
+    raise ValueError('Invalid CFF /charset format: %d' % format)
+  assert len(charset) == len_charstrings
+  return map(CffStringToName, charset)
+
+
+_CFF_STANDARD_ENCODING_SIDS = (
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+    36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+    55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+    74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92,
+    93, 94, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 97, 98, 99, 100, 101, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 0, 111, 112, 113, 114, 0, 115, 116, 117,
+    118, 119, 120, 121, 122, 0, 123, 0, 124, 125, 126, 127, 128, 129, 130, 131,
+    0, 132, 133, 0, 134, 135, 136, 137, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 138, 0, 139, 0, 0, 0, 0, 140, 141, 142, 143, 0, 0, 0, 0, 0, 144, 0,
+    0, 0, 145, 0, 0, 146, 147, 148, 149, 0, 0, 0, 0)
+CFF_STANDARD_ENCODING = tuple(CffStringToName(CFF_STANDARD_STRINGS[i])
+                              for i in _CFF_STANDARD_ENCODING_SIDS)
+assert len(CFF_STANDARD_ENCODING) == 256
+
+_CFF_EXPERT_ENCODING_SIDS = (
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 1, 229, 230, 0, 231, 232, 233, 234, 235, 236, 237, 238,
+    13, 14, 15, 99, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 27, 28,
+    249, 250, 251, 252, 0, 253, 254, 255, 256, 257, 0, 0, 0, 258, 0, 0, 259,
+    260, 261, 262, 0, 0, 263, 264, 265, 0, 266, 109, 110, 267, 268, 269, 0, 270,
+    271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285,
+    286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300,
+    301, 302, 303, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 304, 305, 306, 0, 0, 307, 308,
+    309, 310, 311, 0, 312, 0, 0, 313, 0, 0, 314, 315, 0, 0, 316, 317, 318, 0, 0,
+    0, 158, 155, 163, 319, 320, 321, 322, 323, 324, 325, 0, 0, 326, 150, 164,
+    169, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340,
+    341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355,
+    356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370,
+    371, 372, 373, 374, 375, 376, 377, 378)
+CFF_EXPERT_ENCODING = tuple(CffStringToName(CFF_STANDARD_STRINGS[i])
+                              for i in _CFF_EXPERT_ENCODING_SIDS)
+assert len(CFF_EXPERT_ENCODING) == 256
+
+
+def ParseCffEncoding(encoding_value, data, charset, cff_all_string_bufs):
+  """Parses a CFF /Encoding array.
+
+  Args:
+    encoding_value: a small int containing the standard encoding index.
+    data: str or data containing the /Encoding array as a prefix.
+    charset: List of glyph names, e.g. '/exclam'.
+    cff_all_string_bufs: Sequence of buffer or str objects containing the
+        standard and file-specific strings.
+  Returns:
+    A list of 256 glyph name strings, each starting with a '/', and
+    hex-escaped.
+  """
+  if not isinstance(encoding_value, (int, long)):
+    raise TypeError
+  _CffStringToName = CffStringToName
+  if encoding_value < 10:
+    if encoding_value == 0:  # 659/8958; StandardEncoding.
+      encoding = list(CFF_STANDARD_ENCODING)
+    elif encoding_value == 1:  # 25/8958; ExpertEncoding.
+      encoding = list(CFF_EXPERT_ENCODING)
+    else:
+      raise ValueError('Invalid small CFF /Encoding value: %d' % encoding_value)
+  else:
+    if not data:
+      raise ValueError('CFF /Encoding too short for format.')
+    # 0: 7626/8958; .
+    # 1: 402/8958; .
+    # 128: 174/8958; .
+    # 129: 22/8958; .
+    format_hi = ord(data[0])
+    has_supplement = bool(format_hi & 128)
+    format = format_hi & 127
+    i = 1
+    if format == 0:  # 7800/8958; .
+      if i >= len(data):
+        raise ValueError('CFF /Encoding too short for format 0 code_count.')
+      code_count = ord(data[i])
+      i += 1
+      if i + code_count > len(data):
+        raise ValueError('CFF /Encoding too short for format 0 codes.')
+      if code_count >= len(charset):
+        raise ValueError(
+            'CFF /Encoding with format 0 longer than /CharStrings.')
+      encoding = ['/.notdef'] * 256
+      for j, code in enumerate(struct.unpack(
+          '>%dB' % code_count, buffer(data, i, code_count))):
+        assert code < len(encoding)
+        encoding[code] = charset[j + 1]
+      i += code_count
+    elif format == 1:  # 524/8958; .
+      if i >= len(data):
+        raise ValueError('CFF /Encoding too short for format 1 range_count.')
+      range_count = ord(data[i])
+      i += 1
+      if i + (range_count << 1) > len(data):
+        raise ValueError('CFF /Encoding too short for format 0 codes.')
+      encoding = ['/.notdef'] * 256
+      j = 1
+      for _ in xrange(range_count):
+        first_code, count1 = struct.unpack('>BB', buffer(data, i, 2))
+        if j + count1 >= len(charset):
+          raise ValueError(
+              'CFF /Encoding with format 1 longer than /CharStrings.')
+        i += 2
+        for code in xrange(first_code, first_code + count1 + 1):
+          encoding[code] = charset[j]
+          j += 1
+    else:
+      raise ValueError('Invalid CFF /Encoding format: %d' % format)
+    assert len(encoding) == 256
+    if has_supplement:
+      if i >= len(data):
+        raise ValueError('CFF /Encoding too short for supplement length.')
+      count = ord(data[i])
+      i += 1
+      if i + 3 * count > len(data):
+        raise ValueError('CFF /Encoding too short for supplement.')
+      for _ in xrange(count):
+        code, sid = struct.unpack('>BH', buffer(data, i, 3))
+        i += 3
+        encoding[code] = _CffStringToName(str(cff_all_string_bufs[sid]))
+  assert len(encoding) == 256
+  charset_set = set(charset)
+  for i, glyph_name in enumerate(encoding):
+    if glyph_name != '/.notdef' and glyph_name not in charset_set:
+      encoding[i] = '/.notdef'
+  return encoding
 
 
 def ParseCffOp(op, op_value, op_name, op_type, op_default):
@@ -866,13 +1181,11 @@ def ParseCff1(data, is_careful=False):
   _CFF_PRIVATE_OP_MAP = CFF_PRIVATE_OP_MAP
   _ParseCffOp = ParseCffOp
 
-  string_index_limit = len(cff_string_bufs) + len(_CFF_STANDARD_STRINGS)
-  parsed_dict = {}
-  if NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(cff_font_name):
-    parsed_dict['FontName'] = '/' + NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
-        lambda match: '#%02X' % ord(match.group(0)), cff_font_name)
-  else:
-    parsed_dict['FontName'] = '/' + cff_font_name
+  parsed_dict = {'FontName': CffStringToName(cff_font_name)}
+  cff_all_string_bufs = list(_CFF_STANDARD_STRINGS)
+  cff_all_string_bufs.extend(cff_string_bufs)
+  string_index_limit = len(cff_all_string_bufs)
+  del cff_string_bufs
   for op, op_value in sorted(top_dict.iteritems()):
     if op in _CFF_TOP_CIDFONT_OPERATORS:
       # First such operator must be /ROS in the top dict, but we don't care
@@ -900,12 +1213,12 @@ def ParseCff1(data, is_careful=False):
         raise ValueError('Invalid SID value for CFF /%s: %r' %
                          (op_name, value))
       op_value = op_value[0]
-      if op_value < len(_CFF_STANDARD_STRINGS):
-        op_value = _CFF_STANDARD_STRINGS[op_value]
-      elif op_value < string_index_limit:
+      if op_value < string_index_limit:
         # TODO(pts): Deduplicate these values as both hex and regular strings.
+        #            For hex only if used as hex in the end (not for glyph
+        #            names.)
         #            Is it worth it?
-        op_value = str(cff_string_bufs[op_value - len(_CFF_STANDARD_STRINGS)])
+        op_value = str(cff_all_string_bufs[op_value])
       else:
         raise ValueError('CFF string index value too large: %d' % op_value)
       parsed_dict[op_name] = '<%s>' % op_value.encode('hex')
@@ -945,12 +1258,15 @@ def ParseCff1(data, is_careful=False):
       del subr_bufs
       if op_value:
         # Ghostscript also puts /Subrs into /Private.
+        #
+        # Minimum /Subrs subr str length is 3 in cff.pgs.
         parsed_private_dict['Subrs'] = op_value
       else:
         del parsed_private_dict['Subrs']
   # Ghostscript also puts /GlobalSubrs into /Private.
   op_value = ['<%s>' % str(buf).encode('hex') for buf in cff_global_subr_bufs]
   if op_value:
+    # Minimum /GlobalSubrs subr str length is 3 in cff.pgs.
     parsed_private_dict['GlobalSubrs'] = op_value
   parsed_dict['Private'] = parsed_private_dict
 
@@ -964,10 +1280,18 @@ def ParseCff1(data, is_careful=False):
         'Invalid CFF /CharStrings offset %d, expected at least %d.' %
         (charstrings_ofs, cff_rest2_ofs))
   _, charstring_bufs = ParseCffIndex(buffer(data, charstrings_ofs))
-  parsed_dict['CharStrings'] = [
-      '<%s>' % str(buf).encode('hex') for buf in charstring_bufs]
+  if [1 for c in charstring_bufs if not c]:
+    raise ValueError('Empty string found in CFF /CharStrings.')
+  charset = parsed_dict.get('charset', 0)  # Default same as _CFF_TOP_OP_MAP.
+  charset = ParseCffCharset(
+      charset, buffer(data, charset), len(charstring_bufs), cff_all_string_bufs)
+  parsed_dict['CharStrings'] = dict(itertools.izip(
+      (glyph_name[1:] for glyph_name in charset),
+      ('<%s>' % str(buf).encode('hex') for buf in charstring_bufs)))
   del charstring_bufs
-  # !! convert from GID to glyph name
+  encoding = parsed_dict.get('Encoding', 0)  # Default same as _CFF_TOP_OP_MAP.
+  parsed_dict['Encoding'] = ParseCffEncoding(
+      encoding, buffer(data, encoding), charset, cff_all_string_bufs)
 
   if parsed_dict.get('PostScript'):
     # Statistics from the cff.pgs corpus (all tested in pdfsizeopt_test.py):
@@ -988,13 +1312,11 @@ def ParseCff1(data, is_careful=False):
     except ValueError:
       parsed_ps = ()
     if parsed_ps is not ():
-      parsed_dict['ParsedPostScript'] = parsed_ps
+      if parsed_ps:
+        parsed_dict['ParsedPostScript'] = parsed_ps
       parsed_dict.pop('PostScript')
 
-  # !! test that glyph name /pedal.* is converted to /pedal.#2A
-  #    apply the reverse of PdfToPsName in /Encoding etc.
-  #    PdfObj.ParseValueRecursive
-  # !! Parse /Encoding.
+  # !! pdfsizeopt_test: fix CFF_FONT_PROGRAM, make it parseable; why?
   # !! Convert integer-valued op_value floats to int.
   # !! convert floats: 'BlueScale': ['.0526316'], to 0.0526316.
   # !! when serializing: /OtherBlues must occur right after /BlueValues
