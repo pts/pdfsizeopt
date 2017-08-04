@@ -50,10 +50,60 @@ CFF_CHARSTRINGS_OP = 17
 CFF_PRIVATE_OP = 18
 CFF_SUBRS_OP = 19
 
+# !! Ask on StackOverflow:
+# *  Which fields affect PDF rendering in CFF?
+#    /ItalicAngle ??
+#    /UnderlinePosition ??
+#    /UnderlineThickness ??
+#    /FontBBox ??
+#    /BaseFontName ??
+#    /BaseFontBlend ??
+#    /Private.ForceBold ??
+#    /Private.LanguageGroup ??
+#    /Private.ExpansionFactor ??
+#    /Private.initialRandomSeed ??
+#    /Private.unknown12015 ??
+#    /StrokeWidth
+#    /PaintType
+#    /CharstringType
+#    /FontMatrix
+#    /Encoding
+#    /CharStrings
+#    /Private.BlueValues
+#    /Private.OtherBlues
+#    /Private.FamilyBlues
+#    /Private.FamilyOtherBlues
+#    /Private.BlueScale
+#    /Private.BlueShift
+#    /Private.BlueFuzz
+#    /Private.StdHW
+#    /Private.StdVW
+#    /Private.StemSnapH
+#    /Private.StemSnapV
+#    /Private.Subrs
+#    /Private.GlobalSubrs
+#    /Private.defaultWidthX
+#    /Private.nominalWidthX
+# *  Which fields don't affect PDF rendering in CFF?
+#    /FontName
+#    /PostScript.FSType
+#    /PostScript.OrigFontType
+#    /PostScript.OrigFontName
+#    /PostScript.OrigFontStyle
+#    /version
+#    /Notice
+#    /Copyright
+#    /FullName
+#    /FamilyName
+#    /Weight
+#    /isFixedPitch
+#    /UniqueID
+#    /XUID
+
 CFF_TOP_OP_MAP = {
     # The x/y values indicate: out of the y parsable CFF fonts in the cff.pgs
     # corpus, x had this field explicitly specified.
-    # 'FontName': 8958/8958; .
+    # 'FontName': 8958/8958 (mandatory); .
     # 'ParsedPostScript': 216/8958; .
     0: ('version', 's', None),  # 688/8958; FontInfo
     1: ('Notice', 's', None),  # 7919/8958; FontInfo
@@ -69,13 +119,13 @@ CFF_TOP_OP_MAP = {
     12006: ('CharstringType', 'i', 2),  # 0/8958; .
     12007: ('FontMatrix', 'm', ('0.001', '0', '0', '0.001', '0', '0')),  # 410/8958; .
     13: ('UniqueID', 'i', None),  # 1694/8958; .
-    5: ('FontBBox', 'x', ('0', '0', '0', '0')),  # 8863/8958; .
+    5: ('FontBBox', 'x', ('0', '0', '0', '0')),  # 8863/8958 (!! almost mandatory); .
     12008: ('StrokeWidth', 'n', 0),  # 147/8958; .
-    14: ('XUID', 'o', None),  # 306/8958; .
+    14: ('XUID', 'o', None),  # 306/8958; . Array of integer of at least 1 element.
     15: ('charset', 'i', 0),  # 8940/8958; charset offset (0) or std
     16: ('Encoding', 'i', 0),  # 8300/8958; encoding offset (0) or std
-    17: ('CharStrings', 'i', None),  # 8958/8958; CharStrings offset (0)
-    18: ('Private', 'j', None),  # 8958/8958; integer+integer
+    17: ('CharStrings', 'i', None),  # 8958/8958 (mandatory!!); CharStrings offset (0)
+    18: ('Private', 'j', None),  # 8958/8958 (mandatory!!); integer+integer
     12021: ('PostScript', 's', None),  # 216/8958; (in fact 0, because all moved to ParsedPostScript) embedded PostScript language code
     12022: ('BaseFontName', 's', None),  # 1214/8958; added as needed by Adobe-based technology
     12023: ('BaseFontBlend', 'd', None),  # 17/8958; added as needed by Adobe-based technology
