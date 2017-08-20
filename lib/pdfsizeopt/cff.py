@@ -49,10 +49,6 @@ CFF_OFFSET0_OPERATORS = (
 )
 """Contains CFF top dict operators containing absolute offsets: offset (0)."""
 
-CFF_CHARSTRINGS_OP = 17
-CFF_PRIVATE_OP = 18
-CFF_SUBRS_OP = 19
-
 # !! Asked on StackOverflow: https://stackoverflow.com/q/45781734/97248
 # *  Which fields affect PDF rendering in CFF?
 #    /ItalicAngle ??
@@ -115,14 +111,14 @@ CFF_TOP_OP_MAP = {
     3: ('FamilyName', 's', None),  # 7588/8958; FontInfo
     4: ('Weight', 's', None),  # 1325/8958; FontInfo
     12001: ('isFixedPitch', 'b', False),  # 343/8958; FontInfo
-    12002: ('ItalicAngle', 'n', '0'),  # 254/8958; .
-    12003: ('UnderlinePosition', 'n', '-100'),  # 6618/8958; FontInfo
-    12004: ('UnderlineThickness', 'n', '50'),  # 6618/8958; FontInfo
+    12002: ('ItalicAngle', 'n', 0),  # 254/8958; .
+    12003: ('UnderlinePosition', 'n', -100),  # 6618/8958; FontInfo
+    12004: ('UnderlineThickness', 'n', 50),  # 6618/8958; FontInfo
     12005: ('PaintType', 'i', 0),  # 37/8958; .
     12006: ('CharstringType', 'i', 2),  # 0/8958; .
-    12007: ('FontMatrix', 'm', ('0.001', '0', '0', '0.001', '0', '0')),  # 410/8958; .
+    12007: ('FontMatrix', 'm', ('0.001', 0, 0, '0.001', 0, 0)),  # 410/8958; .
     13: ('UniqueID', 'i', None),  # 1694/8958; .
-    5: ('FontBBox', 'x', ('0', '0', '0', '0')),  # 8863/8958 (!! almost mandatory); .
+    5: ('FontBBox', 'x', (0, 0, 0, 0)),  # 8863/8958 (!! almost mandatory); .
     12008: ('StrokeWidth', 'n', 0),  # 147/8958; .
     14: ('XUID', 'o', None),  # 306/8958; . Array of integer of at least 1 element.
     15: ('charset', 'i', 0),  # 8940/8958; charset offset (0) or std
@@ -145,7 +141,10 @@ CFF_TOP_OP_MAP = {
     12040: ('unknown12040', 'o', None),  # 0/8958; 'j' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
     12041: ('unknown12041', 'o', None),  # 0/8958; 'i' would also work. (Google doesn't know, Ghostscript 9.18 gdevpsf2.c or zfont2.c doesn't know.)
 }
-"""Maps CFF top dict operator numbers to their names."""
+"""Maps CFF top dict operator numbers to their names.
+
+Values are: (op_name, op_type, op_default).
+"""
 
 CFF_TOP_CIDFONT_OPERATORS = (
     12030,  # ROS, SID SID number --, Registry Ordering Supplement (starts)
@@ -165,6 +164,19 @@ CFF_TOP_SYNTHETIC_FONT_OPERATORS = (
 )
 """Contains CFF top dict operators for synthetic fonts."""
 
+CFF_TOP_FONTINFO_KEYS = (
+    'version',
+    'Notice',
+    'Copyright',
+    'FullName',
+    'FamilyName',
+    'Weight',
+    'isFixedPitch',
+    'ItalicAngle',
+    'UnderlinePosition',
+    'UnderlineThickness')
+"""List of CFF_TOP_OP_MAP operator names part of FontInfo."""
+
 CFF_PRIVATE_OP_MAP = {
     # 'GlobalSubrs': 61/8958; .
     6: ('BlueValues', 'd', None),  # 7956/8958; .
@@ -172,8 +184,8 @@ CFF_PRIVATE_OP_MAP = {
     8: ('FamilyBlues', 'd', None),  # 442/8958; .
     9: ('FamilyOtherBlues', 'd', None),  # 443/8958; .
     12009: ('BlueScale', 'n', '0.039625'),  # 5133/8958; .
-    12010: ('BlueShift', 'n', '7'),  # 1433/8958; .
-    12011: ('BlueFuzz', 'n', '1'),  # 877/8958; .
+    12010: ('BlueShift', 'n', 7),  # 1433/8958; .
+    12011: ('BlueFuzz', 'n', 1),  # 877/8958; .
     10: ('StdHW', 'n', None),  # 7664/8958; .
     11: ('StdVW', 'n', None),  # 7758/8958; .
     12012: ('StemSnapH', 'd', None),  # 6455/8958; .
@@ -183,8 +195,8 @@ CFF_PRIVATE_OP_MAP = {
     12018: ('ExpansionFactor', 'n', '.06'),  # 0/8958; .
     12019: ('initialRandomSeed', 'i', 0),  # 0/8958; .
     19: ('Subrs', 'i', None),  # 1347/8958; Offset (self) to local subrs.
-    20: ('defaultWidthX', 'n', '0'),  # 3307/8958; .
-    21: ('nominalWidthX', 'n', '0'),  # 3119/8958; .
+    20: ('defaultWidthX', 'n', 0),  # 3307/8958; .
+    21: ('nominalWidthX', 'n', 0),  # 3119/8958; .
     12015: ('unknown12015', 'n', None),  # 54/8958; Looks like a single number: .5, 0.5 or .569092.
 }
 """Maps CFF private dict operator numbers to their names."""
@@ -687,6 +699,107 @@ def FixFontNameInCff(data, new_font_name, len_deltas_out=None):
                   str(cff_rest_buf)))
 
 
+def IsCffValueEqual(a, b):
+  if a == b:
+    return True
+  elif isinstance(a, (list, tuple)):
+    if not isinstance(b, (list, tuple)) or len(a) != len(b):
+      return False
+    for av, bv in itertools.izip(a, b):
+      if not IsCffValueEqual(av, bv):
+        return False
+    return True
+  elif isinstance(a, bool) or isinstance(b, bool):
+    return False
+  elif (isinstance(a, str) and isinstance(b, str) and
+        (a.startswith('<') or b.startswith('<'))):
+    return False
+  elif (isinstance(a, (str, float, int, long)) and
+        isinstance(b, (str, float, int, long))):
+    # !!! '42.9139' vs '42.913898'
+    return (float(a) - float(b)) < 1e-3  # !!! pGS has 0.04379, ParseCff1 has .043790001. for /Private.BlueScale in i=1.
+    return float(a) == float(b)
+  else:
+    return False
+
+
+CFF_TOP_OP_DEFAULTS = [
+    (op_name, op_default)
+    for op, (op_name, op_type, op_default) in
+       sorted(CFF_TOP_OP_MAP.iteritems())
+    if op_name not in ('charset', 'Encoding', 'CharStrings', 'Private') and
+        op_default is not None]
+del op, op_name, op_type, op_default
+
+CFF_PRIVATE_OP_DEFAULTS = [
+    (op_name, op_default)
+    for op, (op_name, op_type, op_default) in
+       sorted(CFF_PRIVATE_OP_MAP.iteritems())
+    if op_name not in ('Subrs', 'GlobalSubrs') and op_default is not None]
+del op, op_name, op_type, op_default
+
+
+def RemoveCffDefaults(parsed_dict):
+  """Returns a new parsed_dict dict with default values for fields removed."""
+  if not isinstance(parsed_dict, dict):
+    raise TypeError
+  if not isinstance(parsed_dict.get('Private'), dict):
+    raise TypeError
+  if not isinstance(parsed_dict.get('CharStrings'), dict):
+    raise TypeError
+  if not isinstance(parsed_dict.get('Encoding'), list):
+    raise TypeError
+  parsed_dict2 = dict(parsed_dict)
+  parsed_dict2.update(parsed_dict2.pop('FontInfo', {}))  # !!! not here
+  parsed_dict2['CharStrings'] = dict(parsed_dict2['CharStrings'])
+  # Don't remove, even though it has a default in CFF.
+  parsed_dict2['Encoding'] = list(parsed_dict2['Encoding'])
+  private2 = parsed_dict2['Private'] = dict(parsed_dict2['Private'])
+
+  # !!!
+  if isinstance(private2.get('StdHW'), list) and len(private2['StdHW']):  # !!! In pGS.
+    private2['StdHW'] = private2['StdHW'][0]
+  if isinstance(private2.get('StdVW'), list) and len(private2['StdVW']):  # !!! In pGS.
+    private2['StdVW'] = private2['StdVW'][0]
+  parsed_dict2.pop('FamilyName', None)  # !!! Missing from pGS.
+  private2.pop('unknown12015', None)  # !!! Missing from pGS.
+  parsed_dict2.pop('unknown12040', None)  # !!! Missing from pGS.
+  parsed_dict2.pop('unknown12041', None)  # !!! Missing from pGS.
+  #if parsed_dict2.get('Weight') == '<4d656469756d>':  # 'Medium'.  Default (?) in pGS i=25.
+  #  del parsed_dict2['Weight']
+  # i=66 pGS has /Weight <42656c7765> 'Belwe'.
+  parsed_dict2.pop('Weight', None)  # !! Unreliable.
+
+  if private2.get('Subrs'):
+    if not isinstance(private2['Subrs'], list):
+      raise TypeError
+    private2['Subrs'] = list(private2['Subrs'])
+  else:
+    private2.pop('Subrs', None)
+  if private2.get('GlobalSubrs'):
+    if not isinstance(private2['GlobalSubrs'], list):
+      raise TypeError
+    private2['GlobalSubrs'] = list(private2['GlobalSubrs'])
+  else:
+    private2.pop('GlobalSubrs', None)
+  if parsed_dict2.get('ParsedPostScript'):
+    if not isinstance(parsed_dict2['ParsedPostScript'], dict):
+      raise TypeError
+    # TODO(pts): Do more copying if mutable values are possible.
+    parsed_dict2['ParsedPostScript'] = dict(parsed_dict2['ParsedPostScript'])
+  else:
+    parsed_dict2.pop('ParsedPostScript', None)
+
+  for op_name, op_default in CFF_TOP_OP_DEFAULTS:
+    if op_name in parsed_dict2 and IsCffValueEqual(parsed_dict2[op_name], op_default):
+      del parsed_dict2[op_name]
+  for op_name, op_default in CFF_PRIVATE_OP_DEFAULTS:
+    if op_name in private2 and IsCffValueEqual(private2[op_name], op_default):
+      del private2[op_name]
+
+  return parsed_dict2
+
+
 def GetParsedCffDifferences(a, b):
   """Detects if two parsed CFF fonts are equivalent.
 
@@ -734,10 +847,21 @@ def GetParsedCffDifferences(a, b):
     print a['FontName']
     print b['FontName']
     diff.append('/FontName')
-  #if a.get('FontBBox') != b.get('FontBBox'):
-  #  print a.get('FontBBox')
-  #  print b.get('FontBBox')
-  #  diff.append('/FontBBox')
+
+  for op, (op_name, op_type, op_default) in sorted(CFF_TOP_OP_MAP.iteritems()):
+    if op_name not in ('charset', 'Encoding', 'CharStrings', 'Private'):
+      if not IsCffValueEqual(a.get(op_name), b.get(op_name)):
+        print '-- /%s' % op_name
+        print a.get(op_name)
+        print b.get(op_name)
+        diff.append('/%s' % op_name)
+  for op, (op_name, op_type, op_default) in sorted(CFF_PRIVATE_OP_MAP.iteritems()):
+    if op_name not in ('Subrs', 'GlobalSubrs'):
+      if not IsCffValueEqual(a['Private'].get(op_name), b['Private'].get(op_name)):
+        print '-- /Private.%s' % op_name
+        print a['Private'].get(op_name)
+        print b['Private'].get(op_name)
+        diff.append('/Private.%s' % op_name)
   if a['Private'].get('Subrs') != b['Private'].get('Subrs'):
     print a['Private'].get('Subrs')
     print b['Private'].get('Subrs')
@@ -746,10 +870,6 @@ def GetParsedCffDifferences(a, b):
     print a['Private'].get('GlobalSubrs')
     print b['Private'].get('GlobalSubrs')
     diff.append('/GlobalSubrs')
-  if a['Private'].get('PostScript') != b['Private'].get('PostScript'):
-    print a['Private'].get('PostScript')
-    print b['Private'].get('PostScript')
-    diff.append('/PostScript')
   if not IsDictOptEqual(a['Private'].get('ParsedPostScript'), b['Private'].get('ParsedPostScript')):
     print a['Private'].get('ParsedPostScript')
     print b['Private'].get('ParsedPostScript')
@@ -1288,6 +1408,7 @@ def ParseCff1(data, is_careful=False):
     else:
       parsed_dict[op_name] = _ParseCffOp(op, op_value, *op_entry)
   del top_dict
+  # !!! Move CFF_TOP_FONTINFO_KEYS to parsed_dict['FontInfo'].
 
   op_value = parsed_dict.get('Private')
   if op_value is None:
@@ -1389,6 +1510,7 @@ def ParseCff1(data, is_careful=False):
   # !! convert floats: 'BlueScale': ['.0526316'], to 0.0526316.
   # !! when serializing: /OtherBlues must occur right after /BlueValues
   # !! when serializing: /FamilyOtherBlues must occur right after /FamilyBlues
+  # !!! why? pGS (ParseType1CFonts) emits /Weight as 'FamilyName', and doesn't emit /FamilyName. This is compensated in cff.pgs by renaming to 'Weight'.
 
   #print parsed_dict
   return parsed_dict
