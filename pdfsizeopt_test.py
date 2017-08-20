@@ -42,6 +42,7 @@ import zlib
 import unittest
 
 from pdfsizeopt import cff
+from pdfsizeopt import float_util
 from pdfsizeopt import main
 
 
@@ -816,14 +817,16 @@ class PdfSizeOptTest(unittest.TestCase):
         12007: ['0.001', 0, '0.000287', '0.001', 0, 0], 15: [281], 16: [245],
         17: [350], 18: [21, 6489], 12003: [0]
     }
+    cff_dict_b = dict(cff_dict)
+    cff_dict_b[12007] = ['.001', 0, '287e-6', '.001', 0, 0]
     cff_str1 = ('f81b01f81c02f81d038bfba2f9c0f99505f81e0c008b0c038b0c'
                 '041e0a001f8b1e0a000287ff1e0a001f8b8b0c07a01c195912f7'
                 'f211f7ad0ff78910'.decode('hex'))
     cff_str2 = ('f81b01f81c02f81d038bfba2f9c0f99505f7ad0ff78910f7f211'
-                'a01c195912f81e0c008b0c038b0c041e0a001f8b1e0a000287ff'
-                '1e0a001f8b8b0c07'.decode('hex'))
-    self.assertEqual(cff_dict, cff.ParseCffDict(cff_str1))
-    self.assertEqual(cff_dict, cff.ParseCffDict(cff_str2))
+                'a01c195912f81e0c008b0c038b0c041ea001ff8b1e287c6f1ea0'
+                '01ff8b8b0c07'.decode('hex'))
+    self.assertEqual(cff_dict_b, cff.ParseCffDict(cff_str1))
+    self.assertEqual(cff_dict_b, cff.ParseCffDict(cff_str2))
     self.assertEqual(cff_str2, cff.SerializeCffDict(cff_dict))
 
   def testParseCffDifferent(self):
@@ -1330,7 +1333,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(ValueError, F, '<~ab~>')  # OK in regular PostScript.
     self.assertEqual(repr(['def', True, False, None]),
                      repr(F('def true false null')))
-    self.assertEqual(repr([42, 5, -42, '425.0', '-4.25']),
+    self.assertEqual(repr([42, 5, -42, '425.', '-4.25']),
                      repr(F('42 +5 -42 +42.5e+1 -42.5E-1')))
     self.assertEqual(repr(['def', True, '/false', '<>', None, 42]),
                      repr(F('def true/false<>null%foo\r42%')))
@@ -1411,6 +1414,64 @@ class PdfSizeOptTest(unittest.TestCase):
     Check('N' + 'a' * 99, [91, 92])
     Check('B' * 260, [251, 254])
     Check('B' * 100000, [99991, 100007])
+
+  def testFormatFloatShort(self):
+    for f, expected in (
+        (float('inf'), 'inf'),
+        (float('-inf'), '-inf'),
+        (float('nan'), 'nan'),
+        (1234., '1234.'),
+        (430., '430.'),
+        (-4300., '-43e2'),
+        (43000., '43e3'),
+        (1.0 / 10, '.1'),
+        (3.0 / 10, '.3'),
+        (1.0 / 3, '.3333333333333333'),
+        (1e42 / 3, '33333333333333336e25'),
+        (0.3, '.3'),
+        (-0.9, '-.9'),
+        (0.09, '.09'),
+        (-0.009, '-.009'),
+        (0.0009, '9e-4'),
+        (0.00009, '9e-5'),
+        (3e24, '3e24'),
+        (-3.0 / 10 * 1e25, '-3e24'),
+        (3.0 / 10 * 1e-25, '3e-26'),
+        (7., '7.'),
+        (0., '0.'),
+        (-0., '-0.'),
+        (42., '42.'),
+        (-42., '-42.'),
+        (.123, '.123'),
+        (12.3, '12.3'),
+        (1.23, '1.23'),
+        (123., '123.'),
+        (.0123, '.0123'),
+        (.00123, '.00123'),
+        (.000123, '123e-6'),
+        (0.0001234, '1234e-7'),
+        ):
+      got = float_util.FormatFloatShort(f)
+      assert repr(float(got)) == repr(f), (f, got, expected)
+      assert got == expected, (got, expected)
+
+
+    for f, expected in (
+        (3.0 / 10, '.3'),
+        (12.3, '12.3'),
+        (1234., '1234'),
+        (430., '430'),
+        (-4300., '-4300'),
+        (7., '7'),
+        (0., '0'),
+        (-0., '-0'),
+        (42., '42'),
+        (-42., '-42'),
+        (123., '123'),
+        ):
+      got = float_util.FormatFloatShort(f, is_int_ok=True)
+      assert repr(float(got)) == repr(f), (f, got, expected)
+      assert got == expected, (got, expected)
 
 
 if __name__ == '__main__':

@@ -4996,7 +4996,7 @@ class PdfData(object):
         1 index exch writehexstring
         (>) writestring
       } {
-        write===only
+        write===only  % Emits 0.0 for a float 0.
       } ifelse
     } ifelse
   } ifelse

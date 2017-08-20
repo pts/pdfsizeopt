@@ -8,6 +8,8 @@ import itertools
 import re
 import struct
 
+from pdfsizeopt import float_util
+
 
 class Error(Exception):
   """Comon base class for exceptions defined in this module."""
@@ -32,7 +34,8 @@ CFF_REAL_CHARS = {
 
 CFF_REAL_CHARS_REV = {
     '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
-    '8': 8, '9': 9, '.': 10, 'E': 11, 'F': 12, '?': 13, '-': 14}
+    '8': 8, '9': 9, '.': 10, '?': 13, '-': 14,
+    'E': 11, 'e': 11, 'F': 12, 'f': 12}
 
 # The local subrs offset (19, Subrs) is relative to the
 # beginning of the private dict data, so it's not offset (0).
@@ -50,7 +53,7 @@ CFF_CHARSTRINGS_OP = 17
 CFF_PRIVATE_OP = 18
 CFF_SUBRS_OP = 19
 
-# !! Ask on StackOverflow:
+# !! Asked on StackOverflow: https://stackoverflow.com/q/45781734/97248
 # *  Which fields affect PDF rendering in CFF?
 #    /ItalicAngle ??
 #    /UnderlinePosition ??
@@ -359,11 +362,21 @@ def ParseCffDict(data, start=0, end=None):
         if (b0 & 0xf) == 0xf:
           break
       real_chars = ''.join(real_chars)
-      # !! If '.' not in real_chars and 'e' not in real_chars and 'E' not in real_chars:
+      if '?' in real_chars:
+        raise ValueError('Unknown char in CFF real: %s' % real_chars)
+      # if '.' not in real_chars and 'E' not in real_chars:
+      #   raise ValueError('CFF real looks like an integer: %s' % real_chars)
+      #
+      # This happens in cff.pgs i=3310, i=8194, i=8195, i=8538, i=8539,
+      # i=8540, i=8891, i=8892, i=8893, i=8894, i=8895 etc.
+      #
+      # ParseType1CFonts emits an integer in this case (even though
+      # write===only emits 0.0 for a float 0).
       try:
-        float(real_chars)
+        real_chars = float(real_chars)
       except ValueError:
-        raise ValueError('Invalid CFF real: %r' % real_chars)
+        raise ValueError('Invalid CFF real: %s' % real_chars)
+      real_chars = float_util.FormatFloatShort(real_chars, is_int_ok=False)
       operands.append(real_chars)
     elif 0 <= b0 <= 21:
       if b0 == 12:
@@ -387,16 +400,24 @@ def SerializeCffDict(cff_dict):
   for operator in sorted(cff_dict):
     for operand in cff_dict[operator]:
       if isinstance(operand, str):
-        # TODO(pts): Test this.
-        operand = operand.replace('E-', 'F')
-        # TODO(pts): Raise proper exception instead of KeyError.
+        try:
+          operand = float(operand)
+        except ValueError:
+          raise ValueError('Invalid CFF float value to serialize: %r' % operand)
+
+      if isinstance(operand, float):  # TODO(pts): Test this.
+        # is_int_ok=True here, because many CFF fonts in cff.pgs are already
+        # missing the '.' and 'e' in floating point literals.
+        operand = float_util.FormatFloatShort(operand, is_int_ok=True)
+        operand = operand.replace('e-', 'f')
         nibbles = map(CFF_REAL_CHARS_REV.__getitem__, operand)
         nibbles.append(0xf)
         if (len(nibbles) & 1) != 0:
           nibbles.append(0xf)
-        output.append(chr(30) + ''.join([
+        output.append('\x1e')
+        output.append(''.join(
             chr(nibbles[i] << 4 | nibbles[i + 1])
-            for i in xrange(0, len(nibbles), 2)]))
+            for i in xrange(0, len(nibbles), 2)))
       elif isinstance(operand, int) or isinstance(operand, long):
         # This also covers bool (with False==0 and True==1). Good.
 
@@ -713,6 +734,10 @@ def GetParsedCffDifferences(a, b):
     print a['FontName']
     print b['FontName']
     diff.append('/FontName')
+  #if a.get('FontBBox') != b.get('FontBBox'):
+  #  print a.get('FontBBox')
+  #  print b.get('FontBBox')
+  #  diff.append('/FontBBox')
   if a['Private'].get('Subrs') != b['Private'].get('Subrs'):
     print a['Private'].get('Subrs')
     print b['Private'].get('Subrs')
@@ -754,9 +779,10 @@ def YieldParsePostScriptTokenList(data):
         yield int(match.group(3))
       except ValueError:
         try:
-          yield SerializeCffFloat(float(match.group(3)))
+          f = float(match.group(3))
         except ValueError:
           raise ValueError('Invalid PostScript number: %r' % match.group(3))
+        yield float_util.FormatFloatShort(f, is_int_ok=False)
     elif match.group(4):
       # PostScript supports the empty name literal (/), but we don't, because
       # it's hard to convert it to a PDF name, and then to omit the subsequent
@@ -808,29 +834,16 @@ def ParsePostScriptDefs(data):
   return result
 
 
-def SerializeCffFloat(op_value):
-  if not isinstance(op_value, float):
-    raise TypeError
-  # !! Emit an integer instead of 72.0 or 12e66? Make it configurable.
-  op_value = repr(op_value)  # !! Emit shortest float repr, fewest digits.
-  if op_value.startswith('-0.'):
-    return op_value[2:]
-  elif op_value.startswith('0.'):
-    return op_value[1:]
-  else:
-    return op_value
-
-
 def ParseCffNumber(op, number):
   if isinstance(number, float):
-    return SerializeCffFloat(number)
+    return float_util.FormatFloatShort(number, is_int_ok=False)
   elif isinstance(number, str):
     try:
       number = float(number)
     except ValueError:
       raise ValueError('Invalid CFF float value for op %d: %r' %
                        (op, number))
-    return SerializeCffFloat(number)
+    return float_util.FormatFloatShort(number, is_int_ok=False)
   elif isinstance(number, (int, long)):
     return int(number)
   else:
@@ -1128,15 +1141,15 @@ def ParseCffOp(op, op_value, op_name, op_type, op_default):
         raise ValueError('Invalid CFF number delta value for op %d: %r' %
                          (op, number))
       if isinstance(prev_number, float):
-        result.append(SerializeCffFloat(prev_number))
-      else:
+        result.append(float_util.FormatFloatShort(prev_number, is_int_ok=False))
+      else:  # prev_number is int or long.
         result.append(prev_number)
     return result
   elif op_type == 'n':  # A number.
     if len(op_value) != 1:
       raise ValueError('Invalid size for CFF number value for op %d: %d' %
                        (op, op_value))
-    return ParseCffNumber(op, op_value[0])
+    return ParseCffNumber(op, str(op_value[0]))
   elif op_type == 'x':  # A bbox.
     if len(op_value) != 4:
       raise ValueError('Invalid size for CFF bbox value for op %d: %d' %
@@ -1218,7 +1231,7 @@ def ParseCff1(data, is_careful=False):
   if is_careful:
     top_dict_ser = SerializeCffDict(top_dict)
     top_dict2 = ParseCffDict(top_dict_ser)
-    assert top_dict == top_dict2, (top_dict, top_dict_2)
+    assert top_dict == top_dict2, (top_dict, top_dict2)
     del top_dict_ser, top_dict2
   # !! remove /BaseFontName and /BaseFontBlend? are they optional? Does cff.pgs have it?
   # !! font merge fail on GlobalSubrs, Subrs and defaultWidthX and nominalWidthX
@@ -1289,6 +1302,11 @@ def ParseCff1(data, is_careful=False):
       raise ValueError('Invalid CFF /Private offset %d, expected at least %d.' %
                        (private_ofs, cff_rest2_ofs))
     private_dict = ParseCffDict(data, private_ofs, private_ofs + private_size)
+    if is_careful:
+      private_dict_ser = SerializeCffDict(private_dict)
+      private_dict2 = ParseCffDict(private_dict_ser)
+      assert private_dict == private_dict2, (private_dict, private_dict2)
+      del private_dict_ser, private_dict2
     for op, op_value in sorted(private_dict.iteritems()):
       op_entry = _CFF_PRIVATE_OP_MAP.get(op)
       op_name = op_entry[0]
@@ -1367,7 +1385,7 @@ def ParseCff1(data, is_careful=False):
       parsed_dict.pop('PostScript')
 
   # !! pdfsizeopt_test: fix CFF_FONT_PROGRAM, make it parseable; why?
-  # !! Convert integer-valued op_value floats to int.
+  # !! Convert integer-valued op_value floats to int. Should we?
   # !! convert floats: 'BlueScale': ['.0526316'], to 0.0526316.
   # !! when serializing: /OtherBlues must occur right after /BlueValues
   # !! when serializing: /FamilyOtherBlues must occur right after /FamilyBlues
