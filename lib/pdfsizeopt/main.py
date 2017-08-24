@@ -6366,6 +6366,16 @@ cvx bind /LoadCff exch def
           else:
             obj.Set('Decode', PdfObj.GenerateImageDecode(
                 True, samples_per_pixel, indexed_bpc))
+      if (obj.Get('Decode') is None and
+          '/Indexed' in str(obj.Get('ColorSpace'))):
+        obj = PdfObj(obj)
+        assert isinstance(obj.Get('BitsPerComponent'), int)
+        # We need to set `/Decode [0 255]', otherwise Ghostscript 9.05
+        # misinterprets colors in `/ColorSpace [/Indexed/DeviceGray ...]'.
+        # Example: pa8.pdf in https://github.com/pts/pdfsizeopt/issues/29 .
+        obj.Set('Decode', PdfObj.GenerateImageDecode(
+            False, 1, obj.Get('BitsPerComponent')))
+
       # ImageRenderer does the inversion, image won't be inverted after
       # rendering.
       image_size += obj.size
