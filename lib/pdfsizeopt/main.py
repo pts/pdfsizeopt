@@ -2030,22 +2030,29 @@ class PdfObj(object):
         'invalid palette size: %s' % palette_size)
     return palette_size - palette_mod
 
-  @classmethod
-  def IsIndexedRgbColorSpace(cls, colorspace):
-    return colorspace and re.match(
-        r'\[\s*/Indexed\s*/DeviceRGB\s+\d', colorspace)
+  PDF_IS_INDEXED_RGB_OR_GRAY_RE = re.compile(
+      r'\[\s*/Indexed\s*/Device(?:RGB|Gray)\s+\d')
 
   @classmethod
-  def ParseRgbPalette(cls, colorspace):
-    match = re.match(r'\[\s*/Indexed\s*/DeviceRGB\s+\d+\s*([<(](?s).*)\]\Z',
-                     colorspace)
+  def IsIndexedRgbOrGrayColorSpace(cls, colorspace):
+    return colorspace and cls.PDF_IS_INDEXED_RGB_OR_GRAY_RE.match(colorspace)
+
+  PDF_INDEXED_RGB_OR_GRAY_RE = re.compile(
+      r'\[\s*/Indexed\s*/Device(RGB|Gray)\s+\d+\s*([<(](?s).*)\]\Z')
+  @classmethod
+  def ParseRgbOrGrayPalette(cls, colorspace):
+    match = cls.PDF_INDEXED_RGB_OR_GRAY_RE.match(colorspace)
     assert match, 'syntax error in /ColorSpace %r' % colorspace
-    palette = cls.ParseString(match.group(1))
-    palette_size = cls.GetRgbPaletteSize(palette)
-    if palette_size < len(palette):
-      return palette[:palette_size]
+    base = match.group(1)
+    if base == 'RGB':
+      palette = cls.ParseString(match.group(2))
+      palette_size = min(256 * 3, cls.GetRgbPaletteSize(palette))
+    elif base == 'Gray':
+      palette = ''.join(c + c + c for c in cls.ParseString(match.group(2)))
+      palette_size = 256 * 3
     else:
-      return palette
+      assert 0, base
+    return palette[:palette_size]
 
   def DetectInlineImage(self, objs=None):
     """Detect whether self is a form XObject with an inline image.
@@ -3226,9 +3233,9 @@ class ImageData(object):
     assert colorspace
     if colorspace in ('/DeviceRGB', '/DeviceGray'):
       pass
-    elif obj.IsIndexedRgbColorSpace(colorspace):
+    elif obj.IsIndexedRgbOrGrayColorSpace(colorspace):
       # Testing info: this code is run in `1591 0 obj' eurotex2006.final.pdf
-      palette = obj.ParseRgbPalette(colorspace)
+      palette = obj.ParseRgbOrGrayPalette(colorspace)
     else:
       raise FormatUnsupported('unsupported /ColorSpace %r' % colorspace)
 
@@ -6678,7 +6685,9 @@ cvx bind /LoadCff exch def
           raise FormatUnsupported('cannot save to PNG')
         image2 = ImageData(image1).CompressToZipPng()
         # image2 won't be None here.
-      except FormatUnsupported:
+      except FormatUnsupported, e:
+        #print >>sys.stderr, (
+        #    'info: LoadPdfImageObj does not support obj: %s' % e)
         image1 = image2 = None
 
       if image1 is None:  # Impossible to save obj as PNG.
