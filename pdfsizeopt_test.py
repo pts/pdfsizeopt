@@ -1070,6 +1070,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(ValueError, f, '/foo#28')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, '/foo#25')  # PDF_NONNAME_CHARS.
     self.assertRaises(ValueError, f, 'foo/bar')
+    self.assertRaises(ValueError, f, '/foo#7b#7d')
+    self.assertRaises(ValueError, f, 'foo#7b#7d', is_nonname_char_ok=True)
+    self.assertEqual('<666f6f7b7d>cvn',
+                     f('/foo#7b#7d', is_nonname_char_ok=True))
 
   def testIsFontBuiltInEncodingUsed(self):
     f = main.PdfData.IsFontBuiltInEncodingUsed

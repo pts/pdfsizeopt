@@ -1797,7 +1797,7 @@ class PdfObj(object):
       return ''.join(output)
 
   @classmethod
-  def PdfToPsName(cls, data):
+  def PdfToPsName(cls, data, is_nonname_char_ok=False):
     """Converts a PDF name (in data) to a PostScript name.
 
     The most important conversion step is converting hex escapes (#AB) to
@@ -1805,6 +1805,8 @@ class PdfObj(object):
 
     Args:
       data: String containing a PDF name (can start with /).
+      is_nonname_char_ok: If a nonname char (e.g. '{') is encountered, emit
+          '<...>cvn' instead of raising ValueError.
     Returns:
       String containing the equivalent PostScript name.
     Raises:
@@ -1826,6 +1828,12 @@ class PdfObj(object):
       raise PdfTokenParseError('Invalid hex escape in PDF name.')
     match = cls.PDF_NONNAME_CHAR_RE.search(data)
     if match:
+      if is_nonname_char_ok and slash_count == 1:
+        # This happens in https://github.com/pts/pdfsizeopt/issues/28
+        # with /FontName/YHKXAA+#7B#7D . This shouldn't matter anyway,
+        # because /FontName gets overwritten to Obj000.... in
+        # TYPE1_GENERATOR_PROCSET.
+        return '<%s>cvn' % data.encode('hex')
       raise ValueError(
           'Char not allowed in PostScript name: %r' % match.group())
     return '/' * slash_count + data
@@ -5632,7 +5640,7 @@ cvx bind /LoadCff exch def
       else:
         value = str(value)
         if value.startswith('/'):
-          value = pdf_to_ps_name(value)
+          value = pdf_to_ps_name(value, is_nonname_char_ok=True)
         output.append(value)
         output.append(' ')
 
@@ -5975,6 +5983,10 @@ cvx bind /LoadCff exch def
           # Not doing this: del type1c_objs[obj_num]
           # ... for statistics generation by the caller.
     if parsed_fonts:
+      for obj_num in sorted(parsed_fonts):
+        # Doesn't matter much, TYPE1C_GENERATOR_CHARSET overwrites /FontName
+        # with /Obj000... anyway.
+        parsed_fonts[obj_num]['FontName'] = '/X'
       self.SerializeType1CFonts(
           parsed_fonts=parsed_fonts,
           target_objs=type1c_objs,
