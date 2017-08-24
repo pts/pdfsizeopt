@@ -3409,7 +3409,7 @@ class PdfData(object):
     if not match:
       raise PdfTokenParseError('unrecognized PDF signature %r' % data[: 16])
     self.version = match.group(1)
-    self.objs = {}
+    self.objs = objs = {}
     self.trailer = None
 
     try:
@@ -3464,11 +3464,10 @@ class PdfData(object):
       return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
 
     obj_items = []
-    preparsed_objs = {}
     for obj_num in obj_starts:
       obj_ofs = obj_starts[obj_num]
       if isinstance(obj_ofs, PdfObj):
-        preparsed_objs[obj_num] = obj_ofs
+        objs[obj_num] = obj_ofs  # Updates self.objs.
       else:
         obj_items.append((obj_ofs, obj_num))
     obj_items.sort(ComparePair)
@@ -3482,6 +3481,7 @@ class PdfData(object):
                      data[obj_items[i - 1][0] : obj_items[i][0]])
                      for i in xrange(1, len(obj_items))])
     assert '' not in obj_data.values(), 'duplicate object start offset'
+    del obj_items  # Save memory.
 
     obj_nums_with_indirect_length = set()
     for obj_num in sorted(obj_data):
@@ -3514,7 +3514,6 @@ class PdfData(object):
             'warning: cannot parse obj %d: %s.%s: %s' % (
             obj_num, e.__class__.__module__, e.__class__.__name__, e))
 
-    self.objs.update(preparsed_objs)
     return self
 
   @classmethod
@@ -3730,13 +3729,13 @@ class PdfData(object):
             compressed_obj_start != (obj_num, i) and
             (compressed_obj_num, obj_num) not in compressed_objects_to_ignore):
           raise PdfXrefStreamError(
-              'location mismatch for compressed obj %d: '
+              'location mismatch for objstm obj %d: '
               'objstm obj %d has index %d, xref stream has %r' %
               (compressed_obj_num, obj_num, i,
                compressed_obj_start))
 
-    # Parse used compressed objects, and add them to obj_starts with the
-    # PdfObj (instead of the offset) as a value.
+    # Parse used compressed objects (objstm objs), and add them to
+    # obj_starts with the PdfObj (instead of the offset) as a value.
     for obj_num in sorted(obj_starts):
       obj_start = obj_starts.get(obj_num)
       if not isinstance(obj_start, int):
@@ -3894,7 +3893,7 @@ class PdfData(object):
       data: String containing the PDF file.
     Returns:
       (obj_starts, has_generational_objs)
-      objs_starts is adict mapping object numbers (and the string
+      objs_starts is a dict mapping object numbers (and the string
       'trailer', possibly also 'xref') to their start offsets within a file.
     """
     # None, an int or 'trailer'.
