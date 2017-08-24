@@ -281,6 +281,8 @@ class PdfIndirectLengthError(PdfTokenParseError):
   length.
   """
 
+class PdfUnexpectedStreamError(PdfTokenParseError):
+  """Raised if a PDF obj with a stream is found where unexpected."""
 
 class PdfTokenTruncated(Error):
   """Raised if a string is only a prefix of a PDF token sequence."""
@@ -474,7 +476,7 @@ class PdfObj(object):
   """
 
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
-               do_ignore_generation_numbers=False):
+               do_ignore_generation_numbers=False, is_stream_ok=True):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
@@ -499,8 +501,12 @@ class PdfObj(object):
         (i.e.. after `endobj' + whitespace).
       do_ignore_generation_numbers: Boolean indicating whether to ignore
         generation numbers in references when parsing this object.
+      is_stream_ok: bool indicating whether it is OK for the obj to have a
+        stream.
     Raises:
-      PdfTokenParseError:
+      PdfTokenParseError: .
+      PdfUnexpectedStreamError: .
+      PdfIndirectLengthError: .
       Exception: Many others.
     """
     self._cache = None
@@ -571,6 +577,8 @@ class PdfObj(object):
       if stream_start_idx is None:
         self.stream = None
       else:  # has 'stream'
+        if not is_stream_ok:
+          raise PdfUnexpectedStreamError
         if not head.startswith('<<') and head.endswith('>>'):
           raise PdfTokenParseError(
               'stream must have a dict head at ofs=%s' % file_ofs)
@@ -3475,44 +3483,39 @@ class PdfData(object):
     if last_ofs <= obj_items[-1][0]:
       last_ofs = len(data)
     obj_items.append((last_ofs, 'last'))
-    # Dictionary mapping object numbers to strings of format ``X Y obj ...
+    # Pairs mapping object numbers to strings of format ``X Y obj ...
     # endobj' (+ junk).
-    obj_data = dict([(obj_items[i - 1][1],
-                     data[obj_items[i - 1][0] : obj_items[i][0]])
-                     for i in xrange(1, len(obj_items))])
-    assert '' not in obj_data.values(), 'duplicate object start offset'
+    objs_to_parse = []
+    for i in xrange(1, len(obj_items)):
+      obj_num = obj_items[i - 1][1]
+      obj_data = data[obj_items[i - 1][0] : obj_items[i][0]]
+      assert obj_data, 'duplicate object start offset'
+      objs_to_parse.append((obj_num, obj_data))
     del obj_items  # Save memory.
+    objs_to_parse.sort()
 
-    obj_nums_with_indirect_length = set()
-    for obj_num in sorted(obj_data):
-      try:
+    objs_with_stream = []
+    for is_stream_ok in (False, True):
+      for obj_num, obj_data in objs_to_parse:
         try:
           self.objs[obj_num] = PdfObj(
-              obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
-              do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-        except PdfIndirectLengthError, exc:
+              obj_data, objs=self.objs, file_ofs=obj_starts[obj_num],
+              do_ignore_generation_numbers=self.do_ignore_generation_numbers,
+              is_stream_ok=is_stream_ok)
+        except PdfUnexpectedStreamError:  # Happens with is_stream_ok=False.
           # For testing: eurotex2006.final.pdf and lme_v6.pdf
           # Defer parsing this obj later, after we have the length objects
           # parsed.
-          obj_nums_with_indirect_length.add(obj_num)
-      except PdfTokenParseError, e:
-        # We just skip unparsable objects (so we don't add them to
-        # obj_starts).
-        print >>sys.stderr, (
-            'warning: cannot parse obj %d: %s.%s: %s' % (
-            obj_num, e.__class__.__module__, e.__class__.__name__, e))
-
-    for obj_num in sorted(obj_nums_with_indirect_length):
-      try:
-        self.objs[obj_num] = PdfObj(
-            obj_data[obj_num], objs=self.objs, file_ofs=obj_starts[obj_num],
-            do_ignore_generation_numbers=self.do_ignore_generation_numbers)
-      except PdfTokenParseError, e:
-        # We just skip unparsable objects (so we don't add them to
-        # obj_starts).
-        print >>sys.stderr, (
-            'warning: cannot parse obj %d: %s.%s: %s' % (
-            obj_num, e.__class__.__module__, e.__class__.__name__, e))
+          objs_with_stream.append((obj_num, obj_data))
+        except PdfTokenParseError, e:
+          # We just skip unparsable objects (so we don't add them to
+          # obj_starts).
+          print >>sys.stderr, (
+              'warning: cannot parse obj %d: %s.%s: %s' % (
+              obj_num, e.__class__.__module__, e.__class__.__name__, e))
+      if not objs_with_stream:
+        break
+      objs_to_parse, objs_with_stream = objs_with_stream, None
 
     return self
 
