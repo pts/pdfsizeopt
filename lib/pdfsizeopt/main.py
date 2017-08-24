@@ -281,8 +281,8 @@ class PdfIndirectLengthError(PdfTokenParseError):
   length.
   """
 
-class PdfUnexpectedStreamError(PdfTokenParseError):
-  """Raised if a PDF obj with a stream is found where unexpected."""
+class PdfUnexpectedIlStreamError(PdfTokenParseError):
+  """Raised if a PDF obj with an indirect /Length is found where unexpected."""
 
 class PdfTokenTruncated(Error):
   """Raised if a string is only a prefix of a PDF token sequence."""
@@ -476,7 +476,7 @@ class PdfObj(object):
   """
 
   def __init__(self, other, objs=None, file_ofs=0, start=0, end_ofs_out=None,
-               do_ignore_generation_numbers=False, is_stream_ok=True):
+               do_ignore_generation_numbers=False, is_ilstream_ok=False):
     """Initialize from other.
 
     If other is a PdfObj, copy everything. Otherwise, if other is a string,
@@ -501,11 +501,11 @@ class PdfObj(object):
         (i.e.. after `endobj' + whitespace).
       do_ignore_generation_numbers: Boolean indicating whether to ignore
         generation numbers in references when parsing this object.
-      is_stream_ok: bool indicating whether it is OK for the obj to have a
-        stream.
+      is_ilstream_ok: bool indicating whether it is OK for the obj to have a
+        stream with an indirect length.
     Raises:
       PdfTokenParseError: .
-      PdfUnexpectedStreamError: .
+      PdfUnexpectedIlStreamError: .
       PdfIndirectLengthError: .
       Exception: Many others.
     """
@@ -577,8 +577,6 @@ class PdfObj(object):
       if stream_start_idx is None:
         self.stream = None
       else:  # has 'stream'
-        if not is_stream_ok:
-          raise PdfUnexpectedStreamError
         if not head.startswith('<<') and head.endswith('>>'):
           raise PdfTokenParseError(
               'stream must have a dict head at ofs=%s' % file_ofs)
@@ -614,6 +612,8 @@ class PdfObj(object):
                 'obj num %d >= 0 expected for indirect /Length at ofs=%s' %
                 (obj_num, file_ofs))
           if not objs or obj_num not in objs:
+            if is_ilstream_ok:
+              raise PdfUnexpectedIlStreamError
             exc = PdfIndirectLengthError(
                 'missing obj for indirect /Length %d 0 R at ofs=%s' %
                 (obj_num, file_ofs))
@@ -3494,28 +3494,28 @@ class PdfData(object):
     del obj_items  # Save memory.
     objs_to_parse.sort()
 
-    objs_with_stream = []
-    for is_stream_ok in (False, True):
+    objs_with_ilstream = []
+    for is_ilstream_ok in (True, False):
       for obj_num, obj_data in objs_to_parse:
         try:
           self.objs[obj_num] = PdfObj(
               obj_data, objs=self.objs, file_ofs=obj_starts[obj_num],
               do_ignore_generation_numbers=self.do_ignore_generation_numbers,
-              is_stream_ok=is_stream_ok)
-        except PdfUnexpectedStreamError:  # Happens with is_stream_ok=False.
+              is_ilstream_ok=is_ilstream_ok)
+        except PdfUnexpectedIlStreamError:  # Happens with is_ilstream_ok=True.
           # For testing: eurotex2006.final.pdf and lme_v6.pdf
           # Defer parsing this obj later, after we have the length objects
           # parsed.
-          objs_with_stream.append((obj_num, obj_data))
+          objs_with_ilstream.append((obj_num, obj_data))
         except PdfTokenParseError, e:
           # We just skip unparsable objects (so we don't add them to
           # obj_starts).
           print >>sys.stderr, (
               'warning: cannot parse obj %d: %s.%s: %s' % (
               obj_num, e.__class__.__module__, e.__class__.__name__, e))
-      if not objs_with_stream:
+      if not objs_with_ilstream:
         break
-      objs_to_parse, objs_with_stream = objs_with_stream, None
+      objs_to_parse, objs_with_ilstream = objs_with_ilstream, None
 
     return self
 
