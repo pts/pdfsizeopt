@@ -62,24 +62,36 @@ class Error(Exception):
 TMP_PREFIX = '///dev/null/psotmp..'  # Will be overridden in main.
 
 
-def VerifyGs(gs_cmd):
+def VerifyGs(gs_cmd, is_verbose):
   q = '\''
   if sys.platform.startswith('win'):
     q = ''
+  if is_verbose:
+    print >>sys.stderr, 'info: verifying Ghostscript: %s' % gs_cmd
   f = os.popen(gs_cmd + ' -dNODISPLAY -c %s/GSOK === quit%s' % (q, q), 'rb')
   data = f.read()
+  if is_verbose:
+    print >>sys.stderr, 'info: output from Ghostscript: %r' % data
   if f.close():
+    if is_verbose:
+      print >>sys.stderr, 'info: Ghostscript failed'
     return False
   lines = data.rstrip('\n').split('\n')
   if not lines or lines[-1] != '/GSOK':
+    if is_verbose:
+      print >>sys.stderr, 'info: missing /GSOK from Ghostscript'
     return False
   lines.pop()
   if not lines or ' Ghostscript ' not in lines[0]:
+    if is_verbose:
+      print >>sys.stderr, 'info: missing Ghostscript version info'
     return False
   lines = [line for line in lines if not line.startswith('Copyright ') and
            'NO WARRANTY' not in line]
   data = '; '.join(lines)
   # Example: data == 'GPL Ghostscript 9.02 (2011-03-30)'.
+  if is_verbose:
+    print >>sys.stderr, 'info: Ghostscript version info: %r' % data
   return data
 
 
@@ -94,7 +106,7 @@ def FindExeOnPath(prog):
   return FindOnPath(prog + exe_ext)
 
 
-def GetGsCommand():
+def GetGsCommand(is_verbose=False):
   """Return shell command-line prefix for running Ghostscript (gs)."""
   if gs_cmd_ary:
     return gs_cmd_ary[0]
@@ -109,10 +121,10 @@ def GetGsCommand():
         # wine-1.2 works with or without quoting here, but Windows XP
         # requires quoting if the path to gs_cmd contains whitespace.
         gs_cmd = ShellQuote(gs_cmd)
-        data = VerifyGs(gs_cmd)
+        data = VerifyGs(gs_cmd, is_verbose=is_verbose)
       if not data:
         gs_cmd = 'gswin32c'
-        data = VerifyGs(gs_cmd)
+        data = VerifyGs(gs_cmd, is_verbose=is_verbose)
       if not data:
         # if os.getenv('PROCESSOR_ARCHITECTURE', 'x86') != 'x86':
         if not os.getenv('PROGRAMFILES(X86)', ''):  # 32-bit Windows.
@@ -130,7 +142,7 @@ def GetGsCommand():
                   fn = os.path.join(d, entry, 'bin', 'gswin32c.exe')
                   if os.path.isfile(fn):
                     gs_cmd = ShellQuote(fn)
-                    data = VerifyGs(gs_cmd)
+                    data = VerifyGs(gs_cmd, is_verbose=is_verbose)
                     if data:
                       break
                     print >>sys.stderr, (
@@ -143,7 +155,7 @@ def GetGsCommand():
     else:
       gs_cmd = 'gs'
   if data is None:
-    data = VerifyGs(gs_cmd)
+    data = VerifyGs(gs_cmd, is_verbose=is_verbose)
   assert data, 'Ghostscript %s does not seem to work.' % gs_cmd
   print >>sys.stderr, 'info: using Ghostscript %s: %s' % (gs_cmd, data)
   gs_cmd_ary.append(gs_cmd)
@@ -8449,6 +8461,7 @@ def main(argv):
     do_compress_uncompressed_streams = True
     do_remove_generational_objs = True
     do_optimize_obj_heads = True
+    do_debug_gs = False
     mode = 'optimize'
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
@@ -8469,6 +8482,7 @@ def main(argv):
         'do-decompress-flate=',
         'do-decompress-most-streams=',
         'do-compress-uncompressed-streams=',
+        'do-debug-gs=',
         'do-optimize-fonts=',
         'do-optimize-images=',
         'do-optimize-objs=',
@@ -8522,6 +8536,8 @@ def main(argv):
         do_decompress_most_streams = ParseBoolFlag(key, value)
       elif key == '--do-compress-uncompressed-streams':
         do_compress_uncompressed_streams = ParseBoolFlag(key, value)
+      elif key == '--do-debug-gs':
+        do_debug_gs = ParseBoolFlag(key, value)
       elif key == '--help':
         print >>sys.stderr, (
             'info: usage for statistics computation: %s --stats <input.pdf>' %
@@ -8536,6 +8552,12 @@ def main(argv):
         sys.exit(0)  # printed above
       else:
         assert False, 'unknown option %s' % key
+
+    if do_debug_gs:
+      print >>sys.stderr, 'info: PATH: %s' % os.getenv('PATH', '')
+      print >>sys.stderr, 'info: getcwd: %s' % os.getcwd()
+      print >>sys.stderr, 'info: found working Ghostscript: %s' % GetGsCommand(
+          is_verbose=True)
 
     if mode == 'stats':
       if not args:
