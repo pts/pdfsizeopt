@@ -270,6 +270,10 @@ class PdfOptimizeError(Error):
   """Raised if an expected optimization couldn't be performed."""
 
 
+class PdfNoObjsError(Error):
+  """Raised if a PDF contains no objects after loading."""
+
+
 class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
@@ -3171,7 +3175,7 @@ class ImageData(object):
     The features of this method is rather limited: it can load the output of
     `sam2p -c zip' and alike, but not much more.
     """
-    pdf = PdfData().Load(f)
+    pdf = PdfData().Load(f, is_parse_error_ok=False)
     # !! TODO(pts): proper PDF token sequence parsing
     image_obj_nums = [
         obj_num for obj_num in sorted(pdf.objs)
@@ -3413,7 +3417,7 @@ class PdfData(object):
     self.file_name = None
     self.file_size = None
 
-  def Load(self, file_data):
+  def Load(self, file_data, is_no_objs_ok=False, is_parse_error_ok=True):
     """Load PDF from file_name to self, return self."""
     if isinstance(file_data, str):
       # Treat file_data as file name.
@@ -3527,6 +3531,8 @@ class PdfData(object):
           # parsed.
           objs_with_ilstream.append((obj_num, obj_data))
         except PdfTokenParseError, e:
+          if not is_parse_error_ok:
+            raise
           # We just skip unparsable objects (so we don't add them to
           # obj_starts).
           print >>sys.stderr, (
@@ -3535,6 +3541,10 @@ class PdfData(object):
       if not objs_with_ilstream:
         break
       objs_to_parse, objs_with_ilstream = objs_with_ilstream, None
+
+    if not objs and not is_no_objs_ok:
+      # Happens e.g. when no objs can be parsed.
+      raise PdfNoObjsError('No objs found in PDF.')
 
     return self
 
@@ -4954,7 +4964,8 @@ class PdfData(object):
           'info: Type1CConverter has not created output: %s' %
           pdf_tmp_file_name)
       assert False, 'Type1CConverter failed (no output)'
-    pdf = PdfData().Load(pdf_tmp_file_name)
+    pdf = PdfData().Load(
+        pdf_tmp_file_name, is_no_objs_ok=True, is_parse_error_ok=False)
     # TODO(pts): Better error reporting if the font name is wrong.
     type1c_objs = pdf.GetFonts(
         do_obj_num_from_font_name=True, where='in GS output')
@@ -5709,7 +5720,8 @@ cvx bind /LoadCff exch def
           'info: Type1CGenerator has not created output: %s' %
           pdf_tmp_file_name)
       assert False, 'Type1CGenerator failed (no output)'
-    pdf = PdfData().Load(pdf_tmp_file_name)
+    pdf = PdfData().Load(
+        pdf_tmp_file_name, is_no_objs_ok=True, is_parse_error_ok=False)
     # TODO(pts): Better error reporting if the font name is wrong.
     loaded_objs = pdf.GetFonts(do_obj_num_from_font_name=True)
     assert sorted(loaded_objs) == sorted(parsed_fonts), (
