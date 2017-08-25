@@ -407,7 +407,7 @@ class PdfObj(object):
   """Matches the beginning of a subset font name (starting with slash)."""
 
   PDF_OBJ_DEF_RE_STR = (
-      r'(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
+      r'[\0\t\n\r\f ]*(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
       r'(?=[\0\t\n\r\f %/<\[({])[\0\t\n\r\f ]*')
   PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
   """Matches an `obj' definition no leading, with trailing whitespace."""
