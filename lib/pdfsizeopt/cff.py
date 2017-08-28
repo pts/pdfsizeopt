@@ -111,7 +111,7 @@ CFF_TOP_OP_MAP = {
     3: ('FamilyName', 's', None),  # 7588/8958; FontInfo
     4: ('Weight', 's', None),  # 1325/8958; FontInfo
     12001: ('isFixedPitch', 'b', False),  # 343/8958; FontInfo
-    12002: ('ItalicAngle', 'n', 0),  # 254/8958; .
+    12002: ('ItalicAngle', 'n', 0),  # 254/8958; .; FontInfo
     12003: ('UnderlinePosition', 'n', -100),  # 6618/8958; FontInfo
     12004: ('UnderlineThickness', 'n', 50),  # 6618/8958; FontInfo
     12005: ('PaintType', 'i', 0),  # 37/8958; .
