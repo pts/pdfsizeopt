@@ -110,6 +110,20 @@ def GetGsCommand(is_verbose=False):
   """Return shell command-line prefix for running Ghostscript (gs)."""
   if gs_cmd_ary:
     return gs_cmd_ary[0]
+  prefix = ''
+  if sys.platform.startswith('win') and os.getcwd().startswith('\\\\'):
+    # Ghostscript doesn't with on Windows 8.1 if current directory is a UNC
+    # path. (It seems to work on wine-1.6.2.) See
+    # https://github.com/pts/pdfsizeopt/issues/24 for details.
+    #
+    # Please note that os.getcwd() on wine-1.6.2 returns r'UNC\...\...\...',
+    # so this doesn't match. But it would work if it was changed to
+    # r'\\...\...\...' in future Wine versions.
+    #
+    # We work it around by doing a chdir to C:\ before running Ghostscript,
+    # and converting relative paths to absolute paths in the Ghostscript
+    # command-line (done in ShellQuoteFileName(..., is_gs=True)).
+    prefix = 'c:&cd \\&'
   data = None
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
@@ -120,10 +134,10 @@ def GetGsCommand(is_verbose=False):
       else:
         # wine-1.2 works with or without quoting here, but Windows XP
         # requires quoting if the path to gs_cmd contains whitespace.
-        gs_cmd = ShellQuote(gs_cmd)
+        gs_cmd = prefix + ShellQuote(gs_cmd)
         data = VerifyGs(gs_cmd, is_verbose=is_verbose)
       if not data:
-        gs_cmd = 'gswin32c'
+        gs_cmd = prefix + 'gswin32c'
         data = VerifyGs(gs_cmd, is_verbose=is_verbose)
       if not data:
         # if os.getenv('PROCESSOR_ARCHITECTURE', 'x86') != 'x86':
@@ -141,7 +155,7 @@ def GetGsCommand(is_verbose=False):
                 if re.match(r'gs[89][.]\d\d\Z', entry):
                   fn = os.path.join(d, entry, 'bin', 'gswin32c.exe')
                   if os.path.isfile(fn):
-                    gs_cmd = ShellQuote(fn)
+                    gs_cmd = prefix + ShellQuote(fn)
                     data = VerifyGs(gs_cmd, is_verbose=is_verbose)
                     if data:
                       break
@@ -153,7 +167,7 @@ def GetGsCommand(is_verbose=False):
       if not data or gs_cmd is None:
         assert False, 'Could not find a working Ghostscript.'
     else:
-      gs_cmd = 'gs'
+      gs_cmd = prefix + 'gs'
   if data is None:
     data = VerifyGs(gs_cmd, is_verbose=is_verbose)
   assert data, 'Ghostscript %s does not seem to work.' % gs_cmd
@@ -175,15 +189,34 @@ def ShellQuote(string):
     return "'%s'" % string.replace("'", "'\\''")
 
 
-def ShellQuoteFileName(string):
+def ShellQuoteFileName(string, is_gs=False):
   # TODO(pts): Make it work on non-Unix systems.
   if string.startswith('-') and len(string) > 1:
     string = '.%s%s' % (os.sep, string)
   if sys.platform.startswith('win'):
+    # os.path.isabs and os.path.join don't work correctly.
+    if (is_gs and
+        GetGsCommand()[1 : 8] == ':&cd \\&' and
+        not string.startswith('\\\\') and not string[1 : 3] == ':\\'):
+      cwd = os.getcwd()
+      if cwd.startswith('UNC\\'):  # wine-1.6.3.
+        cwd = '\\' + cwd[3:]
+      assert cwd.startswith('\\\\') or cwd[1 : 3] == ':\\', cwd
+      if string.startswith('\\'):
+        if cwd.startswith('\\\\'):
+          raise NotImplementedError(
+              'Unable to join pathnames: %s + %s' % (cwd, string))
+        string = cwd[:2] + string
+      else:
+        string = os.path.join(cwd, string)
     # os.system on Windows XP doesn't seem to accept "..." escaping for
     # arguments. (It accepts that for the command name.)
+    #
+    # TODO(pts): Try to do it, separately for commands: Ghostscript etc.
     assert not re.search(r'\s', string), (
         'Unexpected space in filename argument: %r' % string)
+    assert '"' not in string, (
+        'Unexpected double quote in filename argument: %r' % string)
     return string
   return ShellQuote(string)
 
@@ -2579,12 +2612,12 @@ class PdfObj(object):
         f.close()
       gs_defilter_cmd = (
           '%s -dNODISPLAY -sINFN=%s -q -P- %s' %
-          (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
-           ShellQuoteFileName(ps_file_name)))
+          (GetGsCommand(), ShellQuoteFileName(tmp_file_name, is_gs=True),
+           ShellQuoteFileName(ps_file_name, is_gs=True)))
     else:
       gs_defilter_cmd = (
           '%s -dNODISPLAY -sINFN=%s -q -P- -c %s' %
-          (GetGsCommand(), ShellQuoteFileName(tmp_file_name),
+          (GetGsCommand(), ShellQuoteFileName(tmp_file_name, is_gs=True),
            ShellQuote(gs_code)))
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
@@ -4999,8 +5032,8 @@ class PdfData(object):
         '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -f %s'
-        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
-           ShellQuoteFileName(ps_tmp_file_name)))
+        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name, is_gs=True),
+           ShellQuoteFileName(ps_tmp_file_name, is_gs=True)))
     print >>sys.stderr, (
         'info: executing Type1CConverter with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
@@ -5287,8 +5320,8 @@ cvx bind /LoadCff exch def
     gs_cmd = (
         '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=nullpage '
         '-sDataFile=%s -f %s'
-        % (GetGsCommand(), ShellQuoteFileName(data_tmp_file_name),
-           ShellQuoteFileName(ps_tmp_file_name)))
+        % (GetGsCommand(), ShellQuoteFileName(data_tmp_file_name, is_gs=True),
+           ShellQuoteFileName(ps_tmp_file_name, is_gs=True)))
     print >>sys.stderr, (
         'info: executing Type1CParser with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
@@ -5767,8 +5800,8 @@ cvx bind /LoadCff exch def
         '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer '
         '-dColorConversionStrategy=/LeaveColorUnchanged '  # suppress warning
         '-sOutputFile=%s -f %s'
-        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name),
-           ShellQuoteFileName(ps_tmp_file_name)))
+        % (GetGsCommand(), ShellQuoteFileName(pdf_tmp_file_name, is_gs=True),
+           ShellQuoteFileName(ps_tmp_file_name, is_gs=True)))
     print >>sys.stderr, (
         'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
@@ -6503,8 +6536,8 @@ cvx bind /LoadCff exch def
         '%s -q -P- -dNOPAUSE -dBATCH -sDEVICE=%s '
         '-sOutputFile=%s -f %s'
         % (GetGsCommand(), ShellQuote(gs_device),
-           ShellQuoteFileName(png_tmp_file_pattern),
-           ShellQuoteFileName(ps_tmp_file_name)))
+           ShellQuoteFileName(png_tmp_file_pattern, is_gs=True),
+           ShellQuoteFileName(ps_tmp_file_name, is_gs=True)))
     print >>sys.stderr, (
         'info: executing ImageRenderer with Ghostscript: %s' % gs_cmd)
     # We could add a 3rd argument `0' to os.popen to disable buffering, but
