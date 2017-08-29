@@ -3510,18 +3510,33 @@ class PdfData(object):
     if last_ofs <= obj_items[-1][0]:
       last_ofs = len(data)
     obj_items.append((last_ofs, 'last'))
-    # Pairs mapping object numbers to strings of format ``X Y obj ...
-    # endobj' (+ junk).
-    objs_to_parse = []
+
+    # Remove objs with bad obj header from obj_items.
+    # This fixes https://github.com/pts/pdfsizeopt/issues/30 .
+    # For testing: irbookonlinereading.pdf
+    _pdf_obj_def_re = PdfObj.PDF_OBJ_DEF_RE
+    obj_items2 = []
     for i in xrange(1, len(obj_items)):
-      obj_num = obj_items[i - 1][1]
-      start_ofs = obj_items[i - 1][0]
-      # obj_data = data[obj_items[i - 1][0] : obj_items[i][0]]
+      start_ofs, obj_num = obj_items[i - 1]
       obj_data = buffer(data, start_ofs, obj_items[i][0] - start_ofs)
       assert obj_data, 'duplicate object start offset'
-      objs_to_parse.append((obj_num, obj_data))
-    del obj_items  # Save memory.
-    objs_to_parse.sort()
+      if _pdf_obj_def_re.match(obj_data):
+        obj_items2.append((start_ofs, obj_num))
+      else:
+        print >>sys.stderr, (
+            'warning: cannot parse obj %d: obj header (X Y obj) expected, '
+            'got %r at ofs=%s' %
+            (obj_num, obj_data[:32], start_ofs))
+    obj_items2.append((last_ofs, 'last'))
+    obj_items = obj_items2
+
+    # Pairs mapping object numbers to strings of format ``X Y obj ...
+    # endobj' (+ junk).
+    objs_to_parse = sorted(  # Sorted by obj_num.
+        (obj_items[i - 1][1], buffer(
+            data, obj_items[i - 1][0], obj_items[i][0] - obj_items[i - 1][0]))
+        for i in xrange(1, len(obj_items2)))
+    obj_items = None  # Save memory.
 
     objs_with_ilstream = []
     for is_ilstream_ok in (True, False):
