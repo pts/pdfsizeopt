@@ -171,7 +171,14 @@ def GetGsCommand(is_verbose=False):
   if data is None:
     data = VerifyGs(gs_cmd, is_verbose=is_verbose)
   assert data, 'Ghostscript %s does not seem to work.' % gs_cmd
-  print >>sys.stderr, 'info: using Ghostscript %s: %s' % (gs_cmd, data)
+  gs_cmd_print = gs_cmd
+  if os.sep not in gs_cmd[len(prefix):]:
+    gs_cmd_print = FindOnPath(gs_cmd)  # TODO(pts): Unquote.
+    if not gs_cmd_print:
+      gs_cmd_print = gs_cmd
+  else:
+    gs_cmd_print = gs_cmd
+  print >>sys.stderr, 'info: using Ghostscript %s: %s' % (gs_cmd_print, data)
   gs_cmd_ary.append(gs_cmd)
   return gs_cmd
 
