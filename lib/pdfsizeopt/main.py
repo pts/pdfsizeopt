@@ -4414,12 +4414,14 @@ class PdfData(object):
   } if
 } bind def
 
+% <streamdict> NeedsFilterInBetween <bool>
+%
 % Returns true iff the first filter is /JBIG2Decode.
 %
 % According to https://github.com/pts/pdfsizeopt/issues/32, such a filter
 % incorrectly produces an empty output if applied directly after
 % `/ReusableStreamDecode filter' for some input, in Ghostscript 9.05 and 9.10.
-/NeedsFilterInBetween {  % <streamdict> NeedsFilterInBetween <bool>
+/NeedsFilterInBetween {
   /Filter .knownget not {null} if
   dup type /arraytype eq {dup length 0 eq {pop null} {0 get} ifelse} if
   /JBIG2Decode eq
@@ -4457,38 +4459,63 @@ class PdfData(object):
   [ 3 1 roll forall ]
 } bind def
 
+% <streamdict> GetFilterAndDecodeParms <filter-array> <decodeparms-array>
+%
+% Ghostscript 8.61 (or earlier) raises `/typecheck in --.reusablestreamdecode--'
+% if /Filter is not an array. For testing: pdf.a9p4/lme_v6.a9p4.pdf
+%
+% Ghostscript 8.61 (or earlier) raises `/typecheck in --.reusablestreamdecode--'
+% if /DecodeParms is not an array.
+%
+% Ghostscript 8.61 (or earlier) raises ``/undefined in --filter--''
+% if there is a null in the DecodeParms.
+%
+% We add `/PDFRules true' for /ASCII85Decode, see pdf_base.ps why it's needed.
+/GetFilterAndDecodeParms {
+  dup /Filter .knownget not {null} if
+      dup null eq {pop []} if
+      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
+  1 index /DecodeParms .knownget not {null} if
+      dup null eq {pop []} if
+      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
+  3 -1 roll pop  % pop <streamdict>
+  % stack: <filter-array> <decodeparms-array>
+  1 index {type /nametype ne {
+      pop pop /FilterNotName /invalidfileaccess signalerror} if} forall
+  dup length 0 eq {  % If <decodeparms-array> is empty, fill it up with nulls.
+    pop dup length mark exch 1 exch 1 exch {pop null} for
+    counttomark array astore exch pop } if
+  dup length 2 index length ne
+      {pop pop
+       /FilterLengthNeDecodeParmsLength /invalidfileaccess signalerror} if
+  % Convert null in <decodeparms-array> to << >>.
+  [exch {dup null eq {pop 0 dict} if} forall]
+  dup {type /dicttype ne {
+      pop pop /DecodeParmNotDict /invalidfileaccess signalerror} if} forall
+  % Add `/PDFRules true' for /ASCII85Decode, see pdf_base.ps.
+  dup length 1 sub 0 exch 1 exch {
+    1 index exch dup  4 index exch get  1 index 4 index exch get
+    % stack: <filter-array> <decodeparms-array>*2 <i> <filter> <decodeparms>
+    exch /ASCII85Decode eq {
+      dup length 1 add dict copy dup /PDFRules true put
+    } if
+    % stack: <filter-array> <decodeparms-array>*2 <i> <new-decodeparms>
+    put  % We've created our own <decodeparms-array> above, we can mutate it.
+  } for
+  % stack: <filter-array> <decodeparms-array>
+} def
+
 % <streamdict> <compressed-file> DecompressStreamFile
 % <streamdict> <decompressed-file>
 /DecompressStreamFileWithReusableStreamDecode {
   exch
   % TODO(pts): Give these parameters to the /ReusableStreamDecode in
   % ReadStreamFile.
-  9 dict begin
+  5 dict begin
     /Intent 2 def  % sequential access
     /CloseSource true def
-    dup /Filter .knownget not {null} if dup null ne {
-      /Filter exch def
-      dup /DecodeParms .knownget not {null} if dup null ne {
-        % Ghostscript 8.61 (or earlier) raises
-        % ``/typecheck in --.reusablestreamdecode--''
-        % if /Filter is not an array.
-        % For testing: pdf.a9p4/lme_v6.a9p4.pdf
-        Filter type /arraytype ne { /Filter [ Filter ] def } if
-
-        % Ghostscript 8.61 (or earlier) raises
-        % ``/typecheck in --.reusablestreamdecode--''
-        % if /DecodeParms is not an array.
-        dup type /arraytype ne { [ exch ] } if
-
-        % Ghostscript 8.61 (or earlier) raises ``/undefined in --filter--''
-        % if there is a null in the DecodeParms.
-        { dup null eq {pop << >>} if } Map
-
-        dup /DecodeParms exch def
-      } if pop
-    } {
-      pop
-    } ifelse
+    dup GetFilterAndDecodeParms
+        /DecodeParms exch def  /Filter exch def
   exch currentdict end
   % stack: <streamdict> <compressed-file> <reusabledict>
   /ReusableStreamDecode filter
@@ -4496,23 +4523,14 @@ class PdfData(object):
 
 % <streamdict> <compressed-file> DecompressStreamFile
 % <streamdict> <decompressed-file>
+%
+% Same as DecompressStreamFileWithReusableStreamDecode, but we don't use
+% /ReusableStreamDecode, because that would raise errors quickly
+% (at `filter' time) with corrupt or incomplete input. Instead of that, we
+% set up a filter chain.
 /DecompressStreamFileWithIndividualFilters {
-  % We don't use /ReusableStreamDecode, because it raises errors quickly
-  % (at `filter' time) with corrupt or incomplete input. Instead of that, we
-  % set up a filter chain.
-  exch
-  dup /Filter .knownget not {null} if
-      dup null eq {pop []} if
-      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
-  1 index /DecodeParms .knownget not {null} if
-      dup null eq {pop []} if
-      dup type /arraytype ne {1 array dup 3 -1 roll 0 exch put} if
+  exch dup GetFilterAndDecodeParms
   % stack: <compressed-file> <streamdict> <filter-array> <decodeparms-array>
-  dup length 0 eq {  % If decodeparms-array is empty, fill it up with nulls.
-    pop dup length mark exch 1 exch 1 exch {pop null} for
-    counttomark array astore exch pop } if
-  dup length 2 index length ne
-      {/FilterLengthNeDecodeParmsLength /invalidfileaccess signalerror} if
   4 -1 roll
   % stack: <streamdict> <filter-array> <decodeparms-array> <compressed-file>
   1 index length 1 sub 0 exch 1 exch {
@@ -4520,7 +4538,6 @@ class PdfData(object):
     4 index exch get exch
     % stack: <streamdict> <filter-array> <decodeparms-array>
     %        <file> <filter> <decodeparms>
-    dup null eq {pop 0 dict} if  % Replace null with <<>> in decodeparms.
     exch filter
   } for
   % stack: <streamdict> <filter-array> <decodeparms-array> <decompressed-file>
