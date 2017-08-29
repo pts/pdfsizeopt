@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     i = PATH_MAX - strlen(pdfsizeopt_py0);
   }
   if (i + strlen(pdfsizeopt_py1) > PATH_MAX) {
-    i = PATH_MAX - strlen(pdfsizeopt_py0);
+    i = PATH_MAX - strlen(pdfsizeopt_py1);
   }
   prog_py[i++] = FILE_SEP;
   strcpy(prog_py + i, pdfsizeopt_py0);
