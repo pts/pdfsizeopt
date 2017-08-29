@@ -506,8 +506,8 @@ class PdfObj(object):
     This method doesn't implement a validating PDF parser.
 
     Args:
-      other: PdfObj or string (with full obj, stream, endstream, endobj +
-        garbage) or None
+      other: PdfObj, or str or buffer (with full obj, stream, endstream, endobj
+        + garbage) or None
       objs: A dictionary mapping object numbers to existing PdfObj objects.
         These can be used for resolving `R's to build self.
       file_ofs: Offset of other + start in the file. Used for error message
@@ -529,7 +529,7 @@ class PdfObj(object):
     if isinstance(other, PdfObj):
       self._head = other.head
       self.stream = other.stream
-    elif isinstance(other, str):
+    elif isinstance(other, (str, buffer)):
       if not other:
         raise PdfTokenParseError('empty PDF obj to parse at ofs=%s' % file_ofs)
       scanner = self.PDF_OBJ_DEF_RE.scanner(other, start)
@@ -646,7 +646,7 @@ class PdfObj(object):
               self._head[:match.start()], stream_length,
               self._head[match.end():])
         endstream_str = other[stream_end_idx : stream_end_idx + 128]
-        # TODO(pts): Create objs for regexps.
+        # TODO(pts): Create objs for regexps elsewhere in this .py file.
         match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
         if not match:
           # TODO(pts): Find the last match.
@@ -2211,7 +2211,7 @@ class PdfObj(object):
     http://en.wiktionary.org/wiki/parsable .
 
     Args:
-      data: String containing a PDF token sequence.
+      data: str or buffer containing a PDF token sequence.
       start: Offset in data to start the parsing at.
       end_ofs_out: None or a list for the first output byte
         (which is unparsed) offset to be appended. Terminating whitespace is
@@ -2370,6 +2370,8 @@ class PdfObj(object):
           output.append(' <<')
           i += 1
         else:  # hex string
+          if isinstance(data, buffer):
+            data = str(data)  # To make data.find work.
           j = data.find('>', i)
           if j < 0:
             hex_data = data[i :]
@@ -2389,6 +2391,8 @@ class PdfObj(object):
       elif o == 16:  # string
         depth = 1
         i += 1
+        if isinstance(data, buffer):
+          data = str(data)  # To make data.find work.
         j = data.find(')', i)
         if j > 0:
           s = data[i : j]
@@ -3511,7 +3515,9 @@ class PdfData(object):
     objs_to_parse = []
     for i in xrange(1, len(obj_items)):
       obj_num = obj_items[i - 1][1]
-      obj_data = data[obj_items[i - 1][0] : obj_items[i][0]]
+      start_ofs = obj_items[i - 1][0]
+      # obj_data = data[obj_items[i - 1][0] : obj_items[i][0]]
+      obj_data = buffer(data, start_ofs, obj_items[i][0] - start_ofs)
       assert obj_data, 'duplicate object start offset'
       objs_to_parse.append((obj_num, obj_data))
     del obj_items  # Save memory.
