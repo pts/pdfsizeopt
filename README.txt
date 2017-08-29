@@ -77,7 +77,7 @@ There is no installer, you need to run some commands in the command line
 command-line only application, there is no GUI.
 
 Create folder C:\pdfsizeopt, download
-https://github.com/pts/pdfsizeopt/releases/download/2017-01-24w/pdfsizeopt_win32exec-v4.zip
+https://github.com/pts/pdfsizeopt/releases/download/2017-08-29w/pdfsizeopt_win32exec-v5.zip
 , and extract its contents to the folder C:\pdfsizeopt, so that the file
 C:\pdfsizeopt\pdfsizeopt.exe exists.
 
