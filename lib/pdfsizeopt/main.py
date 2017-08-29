@@ -2527,6 +2527,10 @@ class PdfObj(object):
       objs = {}
     filter_value, _ = self.ResolveReferences(filter_value, objs)
     decodeparms, _ = self.ResolveReferences(decodeparms, objs)
+    if not isinstance(filter_value, str):
+      raise FilterNotImplemented('/Filter is not a str.')
+    if not isinstance(decodeparms, str):
+      raise FilterNotImplemented('/DecodeParms is not a str.')
     if ((filter_value == '/FlateDecode' or
         ('/FlateDecode' in filter_value and
          self.FLATEDECODE_ARY1_RE.match(filter_value))) and
@@ -2536,6 +2540,9 @@ class PdfObj(object):
     if not is_gs_ok:
       raise FilterNotImplementedError(
           'filter not implemented: ' + filter_value)
+    if '/JBIG2Decode' in filter_value and '/JBIG2Globals' in decodeparms:
+      raise FilterNotImplementedError('/JBIG2Globals not supported.')
+
     ps_file_name = None
     tmp_file_name = TMP_PREFIX + 'filter.tmp.bin'
     f = open(tmp_file_name, 'wb')
@@ -6417,6 +6424,11 @@ cvx bind /LoadCff exch def
       # We can assume that OptimizeImages has simplified /ColorSpace and
       # /BitsPerComponent for us.
 
+      if ('/JBIG2Decode' in str(obj.Get('Filter')) and
+          '/JBIG2Globals' in str(obj.Get('DecodeParms'))):
+        # TODO(pts): Add support for /JBIG2Globals, also elsewhere in main.py.
+        # TODO(pts): At least skip the image.
+        raise NotImplementedError('/JBIG2Globals not supported.')
       if ('/CCITTFaxDecode' in str(obj.Get('Filter')) and
           '/BlackIs1' in str(obj.Get('DecodeParms'))):
         decodeparms = obj.Get('DecodeParms')

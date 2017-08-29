@@ -523,6 +523,9 @@ additional compression may be possible with:
     Also, when this generates CFF, it supports only /FSType and
     /OrigFontType:
     https://github.com/adobe-type-tools/afdko/blob/master/FDK/Tools/Programs/public/lib/source/cffwrite/cffwrite_dict.c
+* MuPDF is a lightweight PDF, XPS and CBZ viewer and parser/rendering library.
+  git clone http://mupdf.com/repos/mupdf.git
+  it contains all the PDF decoding filters
 
 --- JPEG:
 
