@@ -2,7 +2,7 @@
  * pdfsizeopt_winstub.c: Start Python on Win32.
  * by pts@fazekas.hu at Wed Jun 27 14:07:04 CEST 2012
  *
- * Compile with: i586-mingw32msvc-gcc -mconsole -s -W -Wall -o ../pdfsizeopt.exe pdfsizeopt_winstub.c
+ * Compile with: i586-mingw32msvc-gcc -mconsole -s -Os -W -Wall -Wextra -o ../pdfsizeopt.exe pdfsizeopt_winstub.c
  */
 
 #include <errno.h>
