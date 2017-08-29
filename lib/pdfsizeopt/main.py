@@ -4414,15 +4414,31 @@ class PdfData(object):
   } if
 } bind def
 
+% Returns true iff the first filter is /JBIG2Decode.
+%
+% According to https://github.com/pts/pdfsizeopt/issues/32, such a filter
+% incorrectly produces an empty output if applied directly after
+% `/ReusableStreamDecode filter' for some input, in Ghostscript 9.05 and 9.10.
+/NeedsFilterInBetween {  % <streamdict> NeedsFilterInBetween <bool>
+  /Filter .knownget not {null} if
+  dup type /arraytype eq {dup length 0 eq {pop null} {0 get} ifelse} if
+  /JBIG2Decode eq
+} def
+
 /ReadStreamFile {  % <streamdict> ReadStreamFile <streamdict> <compressed-file>
-  dup /Length get
   % Reading to a string would fail for >65535 bytes (this is the maximum
   % string size in PostScript)
   %string currentfile exch readstring
   %not{/ReadStreamData /invalidfileaccess signalerror}if
-  currentfile exch () /SubFileDecode filter
+  currentfile
+  1 index /Length get () /SubFileDecode filter
   << /CloseSource true /Intent 0 >> /ReusableStreamDecode filter
   %dup 0 setfileposition % by default
+  1 index NeedsFilterInBetween {
+    % As a workaround, add a no-op filter between /ReusableStreamDecode and
+    % /JBIG2Decode.
+    << /CloseSource true >> 2 index /Length get () /SubFileDecode filter
+  } if
 
   currentfile SkipWhitespaceRead
   (.) dup 0 3 index put exch pop  % Convert char to 1-char string.
