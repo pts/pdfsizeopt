@@ -489,10 +489,13 @@ class PdfSizeOptTest(unittest.TestCase):
         '%s\n%s' % (s, t), start=len(s) + 1, end_ofs_out=end_ofs_out)
     self.assertEqual('ABE', obj.stream)
     self.assertEqual([len(s) + 1 + len(t)], end_ofs_out)
-    # Exception because start points to '\n', not an `X Y obj'.
+    obj = main.PdfObj('%s\n%s' % (s, t), start=len(s))
+    self.assertEqual('ABE', obj.stream)
+    self.assertEqual([len(s) + 1 + len(t)], end_ofs_out)
+    # Exception because start points to '#', not an `X Y obj'.
     self.assertRaises(
         main.PdfTokenParseError,
-        main.PdfObj, '%s\n%s' % (s, t), start=len(s))
+        main.PdfObj, '%s#%s' % (s, t), start=len(s))
 
     s = '22 0 obj<</Producer(A)/CreationDate(B)/Creator(C)>>\nendobj '
     t = '23 0 obj'
