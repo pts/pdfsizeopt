@@ -112,8 +112,8 @@ the system PATH, open a new Command Prompt window, and the command
 Depending on your environment, filenames with whitespace, double quotes or
 accented characters may not work in the Windows version of pdfsizeopt. To
 play it safe, make sure your input and output files have names with letters,
-numbers, underscore (_), dash (-) and plus (+). The backslash (\) and the
-slash (/) are both OK as the directory separator.
+numbers, underscore (_), dash (-), dot (.) and plus (+). The backslash (\)
+and the slash (/) are both OK as the directory separator.
 
 You can also put pdfsizeopt to a directory other than C:\pdfsizeopt , but it
 won't work if there is whitespace or there are accented characters in any of
@@ -235,6 +235,43 @@ PDF input file. Nevertheless, please report an issue (see above).
 Please report it on https://github.com/pts/pdfsizeopt/issues , attaching the
 input PDF file and the output PDF file (.pso.pdf) and the console output of
 pdfsizeopt. Your report is very much appreciated.
+
+6. pdfsizeopt is unable to find some input files on Windows.
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+This may happen if the filename or the full pathname contains any character
+other than the ASCII letters (a-z and A-Z), digits (0-9), underscore (_),
+ASCII dash (-), plus (+), dot (.), backslash (\) or slash (/). Typically
+these characters don't work:
+
+* accented characters (such as á and ő)
+* whitespace (such as space, tab, newline)
+* double quotes (")
+* anything which is not ASCII printable (code between 33 and 126, inclusive)
+
+This is unfortunate, and currently the workarounds are:
+
+* renaming or copying the file (and folders) in Windows Explorer, and passing
+  the renamed file to pdfsizeopt
+* using pdfsizeopt on a Unix system (e.g. Linux, FreeBSD, macOS) instead
+
+The limitation for non-ASCII characters is hard to lift, because cmd.exe
+(the Windows Command Prompt) does some destructive transformations affecting
+these filenames (especially the characters outside ISO-8859-1, gswin32c.exe
+is also affected by them), before even calling pdfsizeopt.
+
+The limitation for whitespace and double quotes is hard to lift, because
+Python and msvcrt.dll (used by pdfsizeopt.exe for argv) both do some
+destructive transformations on double-quoted argument names. The former can
+be worked around by win32api.GetCommandLine(), the latter also needs
+GetCommandLIne() to be called from C instead of using argv. These are
+doable. Once done, all commands (e.g. gs, sam2p) invoked by pdfsizeopt need
+to be updated to add proper quoting with double quotes. This may be easy for
+filenames (because only temporary files are passed to those commands, which
+don't need any quoting), but not for directory names (especially if the
+current directory is a UNC path, see
+https://github.com/pts/pdfsizeopt/issues/24). Escaping needs to be
+implemented differently for each tool (e.g. gs, sam2p). Good news:
+Ghostscript supports double quotes: -sOutputFile="foo bar.pdf"
 
 More documentation
 ~~~~~~~~~~~~~~~~~~
