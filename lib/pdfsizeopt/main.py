@@ -2864,7 +2864,7 @@ class ImageData(object):
     height: in pixels
     bpc: bit depth, BitsPerComponent value (1, 2, 4, 8 or 16)
     color_type: 'gray', 'rgb', 'indexed-rgb', 'gray-alpha', 'rgb-alpha'
-    is_interlaced: boolean
+    is_interlaced: bool
     idat: compressed binary string containing the image data (i.e. the
       IDAT chunk), or None
     plte: binary string (R0, G0, B0, R1, G1, B1) containing the PLTE chunk,
@@ -3090,7 +3090,9 @@ class ImageData(object):
       pdf_obj.Set('Decode', None)  # Use the default, it's shorter.
     pdf_obj.stream = pdf_image_data['.stream']
 
-  def CompressToZipPng(self):
+  def CompressToZipPng(
+      self, do_try_invert=False, is_high_effort=True,
+      _invert_table=''.join(chr(i) for i in xrange(255, -1, -1))):
     """Compress self.idat to self.compression == 'zip-png'."""
     assert self
     if self.compression == 'zip-png':
@@ -3110,23 +3112,32 @@ class ImageData(object):
     bytes_per_row = self.bytes_per_row
     useful_idat_size = bytes_per_row * self.height
     assert len(idat) >= useful_idat_size, 'PNG IDAT too short (truncated?)'
+    if do_try_invert and self.color_type not in ('gray', 'rgb'):
+      do_try_invert = False
 
     # For testing: ./pdfsizeopt.py --use-jbig2=false --use-pngout=false \
     #   pts2ep.pdf
     # For testing: http://code.google.com/p/pdfsizeopt/issues/detail?id=26
     # For testing: idat_size_mod == 1 in vrabimintest.pdf
     output = []
-    for i in xrange(0, useful_idat_size, bytes_per_row):
-      # We don't want to optimize here (like how libpng does) by picking the
-      # best predictor, i.e. the one which probably yields the smallest output.
-      # PdfData.OptimizeImages has much better and faster algorithms for that.
-      # For testing \0 vs \1: ./pdfsizeopt.py --use-pngout=false pts3.pdf
-      output.append('\0')  # Select PNG None predictor for this row.
-      output.append(idat[i : i + bytes_per_row])
+    if do_try_invert:
+      for i in xrange(0, useful_idat_size, bytes_per_row):
+        output.append('\0')  # Select PNG None predictor for this row.
+        output.append(idat[i : i + bytes_per_row].translate(_invert_table))
+    else:
+      for i in xrange(0, useful_idat_size, bytes_per_row):
+        # We don't want to optimize here (like how libpng does) by picking the
+        # best predictor, i.e. the one which probably yields the smallest output.
+        # PdfData.OptimizeImages has much better and faster algorithms for that.
+        # For testing \0 vs \1: ./pdfsizeopt.py --use-pngout=false pts3.pdf
+        output.append('\0')  # Select PNG None predictor for this row.
+        output.append(idat[i : i + bytes_per_row])
 
     # TODO(pts): Maybe use a smaller effort? We're not optimizing anyway.
-    self.idat = zlib.compress(''.join(output), 6)
+    self.idat = zlib.compress(''.join(output), 6 + 3 * bool(is_high_effort))
     self.compression = 'zip-png'
+    if do_try_invert:
+      self.is_inverted = not self.is_inverted
     assert self
 
     return self
@@ -3351,6 +3362,8 @@ class ImageData(object):
       decode_kind = PdfObj.ClassifyImageDecode(
           obj.Get('Decode'),
           int(palette is not None and bpc))
+      if decode_kind not in ('normal', 'inverted'):
+        raise FormatUnsupported('unsupported /Decode')
     else:
       assert decode_kind in ('normal', 'inverted')
 
@@ -6814,7 +6827,10 @@ cvx bind /LoadCff exch def
             obj=obj, do_zip=False, decode_kind=decode_kind)
         if not image1.CanBePngImage(do_ignore_compression=True):
           raise FormatUnsupported('cannot save to PNG')
-        image2 = ImageData(image1).CompressToZipPng()
+        # We try to invert (do_try_invert=True) to get rid of `/Decode [1 0]',
+        # thus saving a few bytes.
+        image2 = ImageData(image1).CompressToZipPng(
+            do_try_invert=image1.is_inverted, is_high_effort=True)
         # image2 won't be None here.
       except FormatUnsupported, e:
         #print >>sys.stderr, (
@@ -6837,19 +6853,17 @@ cvx bind /LoadCff exch def
           obj2.Set(name, obj.Get(name))
         device_image_objs[gs_device][obj_num] = obj2
       else:
-        images[obj_num].append(('parse', (image2.SavePng(
-            file_name=TMP_PREFIX + 'img-%d.parse.png' % obj_num))))
+        assert image1 is not image2
         if image1.compression == 'none':
           image1.idat = zlib.compress(image1.idat, 9)
           image1.compression = 'zip'
         if len(image1.idat) < len(image2.idat):
           # For testing: ./pdfsizeopt.py -use-pngout=false PLRM.pdf
-          # Hack to use the smaller image1 as the 'parse' image, but let
-          # other images (generated below) be generated from the image2 PNG.
-          images[obj_num][-1] = ('parse', image1)
-          image1.file_name = image2.file_name
-          # image2.file_name (*.parse.png) will be removed by
-          # os.remove(rendered_image_file_name).
+          images[obj_num].append(('parse-image1', image1))
+        # image2.file_name (*.parse.png) will be removed by
+        # os.remove(rendered_image_file_name).
+        image2.SavePng(file_name=TMP_PREFIX + 'img-%d.parse.png' % obj_num)
+        images[obj_num].append(('parse', image2))
 
     if not images:  # No images => no conversion.
       return self
@@ -6888,7 +6902,7 @@ cvx bind /LoadCff exch def
       for method, image in obj_images:
         assert obj.Get('Width') == image.width
         assert obj.Get('Height') == image.height
-      assert len(obj_images) == 1, obj_images
+      assert len(obj_images) >= 1, obj_images
       assert obj_images[-1][0] in ('parse', 'gs')
       rendered_tuple = obj_images[-1][1].ToDataTuple()
       target_image = by_rendered_tuple.get(rendered_tuple)
