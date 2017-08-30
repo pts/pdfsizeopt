@@ -6735,10 +6735,10 @@ cvx bind /LoadCff exch def
       if obj.Get('ImageMask'):
         if obj is obj0:
           obj = PdfObj(obj)
-        colorspace = '/DeviceGray'
+        assert colorspace == '/DeviceGray'  # Set above.
+        assert obj.Get('ColorSpace') == '/DeviceGray'  # Set above.
         obj.Set('ImageMask', None)
-        obj.Set('Decode', None)
-        obj.Set('ColorSpace', colorspace)
+        # We don't remove /Decode here, because /Decode [1 0] signals inversion.
         obj.Set('BitsPerComponent', 1)
 
       # Ignore images with exotic color spaces (e.g. DeviceCMYK, CalGray,
@@ -6792,9 +6792,10 @@ cvx bind /LoadCff exch def
       # predictor).
       print >>sys.stderr, (
           'info: will optimize image XObject %s; orig width=%s height=%s '
-          'colorspace=%s bpc=%s filter=%s dp=%s size=%s gs_device=%s' %
+          'colorspace=%s bpc=%s inv=%s filter=%s dp=%s size=%s '
+          'gs_device=%s' %
           (obj_num, obj.Get('Width'), obj.Get('Height'),
-           colorspace_short, bpc, obj.Get('Filter'),
+           colorspace_short, bpc, decode_kind == 'inverted', obj.Get('Filter'),
            int(bool(obj.Get('DecodeParms'))), obj.size, gs_device))
 
       # TODO(pts): Is this necessary? If so, add it back.
