@@ -3810,18 +3810,21 @@ class PdfData(object):
         del obj_starts[xref_obj_num]
 
     # Parse the object streams.
-    for obj_num in sorted(obj_streams):
-      obj_start = obj_starts.get(obj_num)
+    compressed_obj_errors = {}
+    for objstm_obj_num in sorted(obj_streams):
+      obj_start = obj_starts.get(objstm_obj_num)
       if obj_start is None:
-        raise PdfXrefStreamError('missing xref obj stream %d' % obj_num)
+        raise PdfXrefStreamError('Missing xref obj stream %d' % objstm_obj_num)
       if not isinstance(obj_start, int):
-        raise PdfXrefStreamError('in-object-stream obj stream %d' % obj_num)
+        raise PdfXrefStreamError('In-object-stream obj stream %d' %
+                                 objstm_obj_num)
       try:
         objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start)
       except PdfIndirectLengthError, e:
-        # Example: obj_num == 16 in functional-programming-python.pdf
+        # Example: objstm_obj_num == 16 in functional-programming-python.pdf
         if e.length_obj_num not in obj_starts:
-          raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
+          raise PdfXrefStreamError('Parse objstm obj %d: %s' %
+                                   (objstm_obj_num, e))
         length_obj_start = obj_starts[e.length_obj_num]
         length_obj = PdfObj(
             data, start=length_obj_start, file_ofs=length_obj_start)
@@ -3829,46 +3832,54 @@ class PdfData(object):
           objstm_obj = PdfObj(data, start=obj_start, file_ofs=obj_start,
                               objs={e.length_obj_num: length_obj})
         except PdfTokenParseError, e:
-          raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
+          raise PdfXrefStreamError('Parse objstm obj %d: %s' %
+                                   (objstm_obj_num, e))
       except PdfTokenParseError, e:
-        raise PdfXrefStreamError('parse objstm obj %d: %s' % (obj_num, e))
-      compressed_obj_nums, compressed_obj_headbufs = objstm_obj.ParseObjStm(
-          obj_num)
-      obj_streams[obj_num] = compressed_obj_headbufs
-      for i in xrange(len(compressed_obj_nums)):
-        compressed_obj_num = compressed_obj_nums[i]
-        compressed_obj_start = obj_starts.get(compressed_obj_num)
-        if (compressed_obj_start is not None and
-            compressed_obj_start != (obj_num, i) and
-            (compressed_obj_num, obj_num) not in compressed_objects_to_ignore):
-          raise PdfXrefStreamError(
-              'location mismatch for objstm obj %d: '
-              'objstm obj %d has index %d, xref stream has %r' %
-              (compressed_obj_num, obj_num, i,
-               compressed_obj_start))
+        raise PdfXrefStreamError('Parse objstm obj %d: %s' %
+                                 (objstm_obj_num, e))
+      obj_streams[objstm_obj_num] = objstm_obj.ParseObjStm(objstm_obj_num)
 
-    # Parse used compressed objects (objstm objs), and add them to
+    # Parse used compressed objs (in objstm objs), and add them to
     # obj_starts with the PdfObj (instead of the offset) as a value.
     for obj_num in sorted(obj_starts):
       obj_start = obj_starts.get(obj_num)
       if not isinstance(obj_start, int):
         objstm_obj_num, i = obj_start
-        compressed_obj_headbufs = obj_streams.get(objstm_obj_num)
-        assert compressed_obj_headbufs  # Already set above.
+        # Already populated in the loop above.
+        compressed_obj_nums, compressed_obj_headbufs = obj_streams[objstm_obj_num]
         if i >= len(compressed_obj_headbufs):
           raise PdfXrefStreamError(
-              'too few compressed objs (%d) in objstm obj %d, '
-              'needed index %d for obj %d' %
+              'Too few compressed objs (%d) in objstm obj %d, '
+              'needed index %d for obj %d.' %
               (len(compressed_obj_headbufs), objstm_obj_num, i, obj_num))
-        if isinstance(compressed_obj_headbufs[i], PdfObj):
-          obj_starts[obj_num] = compressed_obj_headbufs[i]
-        else:
-          obj_starts[obj_num] = compressed_obj_headbufs[i] = PdfObj(
-              '%d 0 obj\n%s\nendobj\n' % (obj_num, compressed_obj_headbufs[i]))
-
+        if compressed_obj_nums[i] != obj_num:
+          raise PdfXrefStreamError(
+              'Mismatch in obj_num: obj_num_in_xref_stream=%d '
+              'obj_num_in_objstm=%d objstm_obj_num=%d i=%d' %
+              (obj_num, compressed_obj_nums[i], objstm_obj_num, i))
+        compressed_obj_nums[i] = None
+        assert isinstance(compressed_obj_headbufs[i], (buffer, str))
+        obj_starts[obj_num] = compressed_obj_headbufs[i] = PdfObj(
+            '%d 0 obj\n%s\nendobj\n' % (obj_num, compressed_obj_headbufs[i]))
     for obj_num in sorted(obj_streams):
       del obj_starts[obj_num]
     obj_starts['trailer'] = trailer_obj
+
+    # Report number of unused compressed objs.
+    all_unused_obj_count = 0
+    unused_obj_items = []
+    for objstm_obj_num in sorted(obj_streams):
+      unused_obj_count = sum(1 for j in obj_streams[objstm_obj_num][0] if j is not None)
+      if unused_obj_count:
+        unused_obj_items.append((objstm_obj_num, unused_obj_count))
+        all_unused_obj_count += unused_obj_count
+    if all_unused_obj_count:
+      print >>sys.stderr, (
+          'info: ignoring %d unused compressed objs: %s' %
+          (all_unused_obj_count,
+           ', '.join('%d in objstm obj %d' % (b, a)
+                     for a, b in unused_obj_items)))
+
     return obj_starts, has_generational_objs
 
   @classmethod
