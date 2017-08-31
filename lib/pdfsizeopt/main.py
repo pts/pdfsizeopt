@@ -8713,7 +8713,17 @@ def main(argv):
     mode = 'optimize'
     img_cmds = []
 
-    # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
+    def LongHasArgs(opt, longopts):
+      if opt in longopts:
+        return False, opt
+      elif opt + '=' in longopts:
+        return True, opt
+      else:
+        raise getopt.GetoptError('option --%s not recognized' % opt, opt)
+
+    # Disable prefix matching, e.g. disable `--use-pngo=no'.
+    getopt.long_has_args = LongHasArgs
+
     opts, args = getopt.gnu_getopt(argv[1:], '+', [
         'version', 'help', 'stats',
         'use-pngout=', 'use-jbig2=', 'use-multivalent=',
