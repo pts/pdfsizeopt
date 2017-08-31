@@ -297,6 +297,19 @@ def PermissiveZlibDecompress(data):
         except zlib.error:
           return zlib.decompress(data + adler32_data)
 
+
+NONWORD_RE = re.compile(r'\W+')
+
+
+def GetCmdName(cmd_pattern):
+  cmd_name = cmd_pattern.split()  # TODO(pts): Win32 unquote "...".
+  if not cmd_name:
+    return None
+  cmd_name = os.path.basename(cmd_name[0].lower())
+  cmd_name = NONWORD_RE.sub('_', cmd_name)
+  return cmd_name
+
+
 # Allowed in /Encoding of /TypeFont, pdf_reference_1-7.pdf page 414.
 # gs -dNODISPLAY -q -P- -c '/MacRomanEncoding .findencoding === quit'
 PDF_FONT_ENCODINGS = {
@@ -6293,7 +6306,8 @@ cvx bind /LoadCff exch def
   @classmethod
   def ConvertImage(cls, sourcefn, targetfn, cmd_pattern, cmd_name,
                    do_just_read=False, return_none_if_status=None,
-                   do_remove_targetfn_on_success=True, is_inverted=False):
+                   do_remove_targetfn_on_success=True, is_inverted=False,
+                   need_gray=False):
     """Converts sourcefn to targetfn using cmd_pattern, returns ImageData."""
     if not isinstance(sourcefn, str):
       raise TypeError
@@ -6303,22 +6317,49 @@ cvx bind /LoadCff exch def
       raise TypeError
     if not isinstance(cmd_name, str):
       raise TypeError
-    sourcefnq = ShellQuoteFileName(sourcefn)
-    targetfnq = ShellQuoteFileName(targetfn)
-    cmd = cmd_pattern % locals()
-    EnsureRemoved(targetfn)
+    cmd_values_dict = {
+        'sourcefnq': ShellQuoteFileName(sourcefn),
+        'targetfnq': ShellQuoteFileName(targetfn),
+        'pngout_gray_flags': '',
+        'optipng_gray_flags': '',
+    }
+    if need_gray:
+      values_dict['pngout_gray_flags'] = '-c0 '
+      # -nc: No color type reduction.
+      values_dict['optipng_gray_flags'] = '-nc -np '
+    assert '%(targetfnq)s' in cmd_pattern, cmd_pattern
+    cmd = cmd_pattern % cmd_values_dict
+    
+    assert sourcefn != targetfn
     assert os.path.isfile(sourcefn), sourcefn
+    if '%(sourcefnq)s' not in cmd_pattern:
+      # Copy sourcefn to targetfn before in-place conversion.
+      f = open(sourcefn, 'rb')
+      try:
+        data = f.read()  # TODO(pts): Use less memory for buffers.
+      finally:
+        f.close()
+      f = open(targetfn, 'wb')
+      try:
+        f.write(data)
+      finally:
+        f.close()
+      del data  # Save memory.
+    else:
+      EnsureRemoved(targetfn)
 
     print >>sys.stderr, (
-        'info: executing image optimizer %s: %s' % (cmd_name, cmd))
+        'info: executing image converter %s: %s' % (cmd_name, cmd))
     sys.stdout.flush()
     status = os.system(cmd)
     if (return_none_if_status is not None and
         status == return_none_if_status):
+      EnsureRemoved(targetfn)
       return None
     if status:
       print >>sys.stderr, 'info: %s failed, status=0x%x' % (cmd_name, status)
-      assert False, '%s failed (status)' % cmd_name
+      raise RuntimeError(
+          'Image converter %s failed (status=0x%x)' % (cmd_name, status))
     assert os.path.exists(targetfn), (
         '%s has not created the output image %r' % (cmd_name, targetfn))
     if do_just_read:
@@ -6331,9 +6372,19 @@ cvx bind /LoadCff exch def
         os.remove(targetfn)
       return result
     else:
-      return cmd_name, ImageData().Load(
+      image = ImageData().Load(
           targetfn, do_remove_file_on_success=do_remove_targetfn_on_success,
           is_inverted=is_inverted)
+      if need_gray and image.color_type != 'gray':
+        # TODO(pts): Add relevant command-line flags (like pngout, optipng)
+        #            for other converters to produce gray.
+        print >>sys.stderr, (
+            'info: image converter %s produced non-gray output (%s), ignoring' %
+            (cmd_name, image.color_type))
+        EnsureRemoved(targetfn)
+        return None
+      return cmd_name, image
+
 
   def AddObj(self, obj):
     """Add PdfObj to self.objs, return its object number."""
@@ -6631,8 +6682,10 @@ cvx bind /LoadCff exch def
 
   SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
 
-  def OptimizeImages(self, use_pngout=True, use_jbig2=True):
+  def OptimizeImages(self, img_cmd_patterns):
     """Optimize image XObjects in the PDF."""
+    if not isinstance(img_cmd_patterns, (list, tuple)):
+      raise TypeError
     # TODO(pts): Keep output of pngout between runs, to reduce time.
     # Dictionary mapping Ghostscript -sDEVICE= names to dictionaries mapping
     # PDF object numbers to PdfObj instances.
@@ -6946,10 +6999,10 @@ cvx bind /LoadCff exch def
         #    produces)
         #    (or just add .gz support?)
         if obj_num in force_grayscale_obj_nums:
-          sam2p_mode = self.SAM2P_GRAYSCALE_MODE
+          sam2pnp_mode = self.SAM2P_GRAYSCALE_MODE
         else:
-          sam2p_mode = ('Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
-                        'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
+          sam2pnp_mode = ('Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
+                          'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
             is_inverted=is_inverted,
             sourcefn=rendered_image_file_name,
@@ -6965,7 +7018,7 @@ cvx bind /LoadCff exch def
             #    /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in
             #    empty_page.pdf from !)
             cmd_pattern=('sam2p -pdf:2 -c zip:1:9 -s ' +
-                          ShellQuote(sam2p_mode) +
+                          ShellQuote(sam2pnp_mode) +
                           ' -- %(sourcefnq)s %(targetfnq)s'),
             cmd_name='sam2p_np'))
 
@@ -6994,53 +7047,75 @@ cvx bind /LoadCff exch def
                            '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
               cmd_name='sam2p_pr',
               do_remove_targetfn_on_success=False))  # Will remove manually.
+          # pr_file_name is grayscale when needed. Good.
           pr_file_name = obj_images[-1][1].file_name
-          if (use_jbig2 and obj_images[-1][1].bpc == 1 and
-              obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
-            obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
-            gray_file_name = ''
-            if obj_images[-1][1].color_type != 'gray':
-              # This changes obj_images[-1].file_name as well.
-              gray_file_name = TMP_PREFIX + 'img-%d.gray.png' % obj_num
-              obj_images[-1][1].SavePng(
-                  file_name=gray_file_name, do_force_gray=True)
-            obj_images[-1][1].idat = self.ConvertImage(
-                sourcefn=obj_images[-1][1].file_name,  # Can be pr_file_name.
-                targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
-                cmd_pattern='jbig2 -p %(sourcefnq)s >%(targetfnq)s',
-                cmd_name='jbig2', do_just_read=True)[1]
-            if gray_file_name:
-              os.remove(gray_file_name)
-            obj_images[-1][1].compression = 'jbig2'
-            obj_images[-1][1].file_name = TMP_PREFIX + 'img-%d.jbig2' % obj_num
-          os.remove(pr_file_name)
+          # See force_grayscale_obj_nums why this image must be grayscale.
+          # Image optimizers such as optipng (in img_cmd_pattern) need
+          # grayscale input (in rendered_image_file_name) to produce
+          # grayscale output.
+          assert (not (obj_num in force_grayscale_obj_nums) or
+                  obj_images[-1][1].color_type == 'gray'), (
+              'Grayscale needed for np image, got %s' %
+              obj_images[-1][1].color_type)
 
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
-          # !! TODO(pts): Find better pngout binary file name.
-          # TODO(pts): Try optipng as well (-o5?)
-          if use_pngout:
-            if obj_num in force_grayscale_obj_nums:
-              pngout_gray_flags = '-c0 '
-            else:
-              pngout_gray_flags = ''
-            # We need the -force flag specified to pngout, because on Windows
-            # pngout without the -force flag returns with a failure exit code
-            # if it can't compress the file any further.
+          cmd_names_used = set()
+          for cmd_pattern in img_cmd_patterns:
+            cmd_name = GetCmdName(cmd_pattern)
+            if not cmd_name:
+              continue
+            if 'jbig2' in cmd_name:
+              if (obj_images[-1][1].bpc == 1 and
+                  obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
+                obj_images.append(('jbig2', ImageData(obj_images[-1][1])))
+                gray_file_name = ''
+                if obj_images[-1][1].color_type != 'gray':
+                  # This changes obj_images[-1].file_name as well.
+                  gray_file_name = TMP_PREFIX + 'img-%d.gray.png' % obj_num
+                  obj_images[-1][1].SavePng(
+                      file_name=gray_file_name, do_force_gray=True)
+                obj_images[-1][1].idat = self.ConvertImage(
+                    sourcefn=pr_file_name,
+                    targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
+                    cmd_pattern=cmd_pattern,
+                    cmd_name=cmd_name,
+                    do_just_read=True)[1]
+                if gray_file_name:
+                  os.remove(gray_file_name)
+                obj_images[-1][1].compression = 'jbig2'
+                obj_images[-1][1].file_name = (
+                    TMP_PREFIX + 'img-%d.jbig2' % obj_num)
+              continue
+            return_none_if_status = None
+            if 'pngout' in cmd_name:
+              # New pngout if: 'Unable to compress further: copying
+              # original file'
+              return_none_if_status = 0x200
+            if cmd_name in cmd_names_used:
+              i = 2
+              while 1:
+                cmd_name2 = '%s%d' % (cmd_name, i)
+                if cmd_name2 not in cmd_names_used:
+                  cmd_name = cmd_name2
+                  break
+                i += 1
+            cmd_names_used.add(cmd_name)
             image = self.ConvertImage(
-                sourcefn=rendered_image_file_name,
+                sourcefn=pr_file_name,
                 is_inverted=is_inverted,
-                targetfn=TMP_PREFIX + 'img-%d.pngout.png' % obj_num,
-                cmd_pattern='pngout -force ' + pngout_gray_flags +
-                            '%(sourcefnq)s %(targetfnq)s',
-                cmd_name='pngout',
-                # New pngout if: 'Unable to compress further: copying
-                # original file'
-                return_none_if_status=0x200)
+                need_gray=(obj_num in force_grayscale_obj_nums),
+                targetfn=TMP_PREFIX + 'img-%d.%s.png' % (obj_num, cmd_name),
+                cmd_pattern=cmd_pattern,
+                cmd_name=cmd_name,
+                return_none_if_status=return_none_if_status)
             if image is not None:
               obj_images.append(image)
               image = None
-          # TODO(pts): For very small (10x10) images, try uncompressed too.
+
+        # TODO(pts): For very small (10x10) images, try uncompressed too.
+
+        os.remove(pr_file_name)
         os.remove(rendered_image_file_name)
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
@@ -8514,6 +8589,23 @@ def GetDir(file_name):
   return os.path.dirname(file_name)
 
 
+IMAGE_OPTIMIZER_CMD_MAP = {
+    # We need the -force flag specified to pngout, because on Windows
+    # pngout without the -force flag returns with a failure exit code
+    # if it can't compress the file any further.
+    'pngout': 'pngout -force %(pngout_gray_flags)s%(sourcefnq)s %(targetfnq)s',
+    'jbig2': 'jbig2 -p %(sourcefnq)s >%(targetfnq)s',
+    'zopflipng': 'zopflipng -y -m --filters=p %(sourcefnq)s %(targetfnq)s',
+    'optipng':  'optipng %(sourcefnq)s -o4 -fix -force %(optipng_gray_flags)s-out %(targetfnq)s',
+    'optipng4': 'optipng %(sourcefnq)s -o4 -fix -force %(optipng_gray_flags)s-out %(targetfnq)s',
+    'optipng7': 'optipng %(sourcefnq)s -o7 -fix -force %(optipng_gray_flags)s-out %(targetfnq)s',  # Slowest.
+    'ect': 'ECT -9 -strip %(targetfnq)s',
+    'ECT': 'ECT -9 -strip %(targetfnq)s',
+    'advpng':  'advpng -z3 -f %(targetfnq)s',
+    'advpng3': 'advpng -z3 -f %(targetfnq)s',
+    'advpng4': 'advpng -z4 -f %(targetfnq)s',  # Slowest, this uses Zopfli.
+}
+
 zip_file = script_dir = None
 
 
@@ -8541,7 +8633,7 @@ def main(argv):
   print >>sys.stderr, 'info: This is pdfsizeopt%s r%s size=%s.' % (
       zip_msg, rev or 'UNKNOWN', size)
 
-  # Find image converters etc. in script dir first.
+  # Find image optimizers etc. in script dir first.
   if script_dir:
     used_script_dir = script_dir
   else:
@@ -8576,8 +8668,8 @@ def main(argv):
     argv.append('--help')
 
   try:
-    use_pngout = True
-    use_jbig2 = True
+    use_pngout = None
+    use_jbig2 = None
     use_multivalent = False
     do_optimize_fonts = True
     do_optimize_images = True
@@ -8616,12 +8708,16 @@ def main(argv):
     do_remove_generational_objs = True
     do_optimize_obj_heads = True
     do_debug_gs = False
+    do_debug_image_optimizers = False
+    do_require_image_optimizers = False
     mode = 'optimize'
+    img_cmds = []
 
     # TODO(pts): Don't allow long option prefixes, e.g. --use-pngo=foo
     opts, args = getopt.gnu_getopt(argv[1:], '+', [
         'version', 'help', 'stats',
         'use-pngout=', 'use-jbig2=', 'use-multivalent=',
+        'use-image-optimizer=',
         'do-ignore-generation-numbers=',
         'do-keep-font-optionals=',
         'do-double-check-missing-glyphs=',
@@ -8637,6 +8733,8 @@ def main(argv):
         'do-decompress-most-streams=',
         'do-compress-uncompressed-streams=',
         'do-debug-gs=',
+        'do-debug-image-optimizers=',
+        'do-require-image-optimizers=',
         'do-optimize-fonts=',
         'do-optimize-images=',
         'do-optimize-objs=',
@@ -8651,6 +8749,15 @@ def main(argv):
       elif key == '--use-jbig2':
         # !! add =auto (detect binary on path)
         use_jbig2 = ParseBoolFlag(key, value)
+      elif key == '--use-image-optimizer':
+        value = value.strip()
+        if not value:
+          raise getopt.GetoptError('Empty image optimizer command.')
+        if len(value.split()) < 2:
+          img_cmds.extend(filter(None, value.split(',')))
+        else:
+          # Special value 'none' and 'none' are also OK.
+          img_cmds.append(value)
       elif key == '--use-multivalent':
         # !! add =auto (detect Multivalent.jar on $CLASSPATH and $PATH)
         use_multivalent = ParseBoolFlag(key, value)
@@ -8692,6 +8799,10 @@ def main(argv):
         do_compress_uncompressed_streams = ParseBoolFlag(key, value)
       elif key == '--do-debug-gs':
         do_debug_gs = ParseBoolFlag(key, value)
+      elif key == '--do-debug-image-optimizers':
+        do_debug_image_optimizers = ParseBoolFlag(key, value)
+      elif key == '--do-require-image-optimizers':
+        do_require_image_optimizers = ParseBoolFlag(key, value)
       elif key == '--help':
         print >>sys.stderr, (
             'info: usage for statistics computation: %s --stats <input.pdf>' %
@@ -8738,6 +8849,58 @@ def main(argv):
       output_file_name = args[1]
     else:
       raise getopt.GetoptError('too many command-line args')
+
+    is_no_img_cmds = not img_cmds
+    if use_jbig2 is True or (use_jbig2 is None and is_no_img_cmds):
+      img_cmds.append('jbig2')
+    if use_pngout is True or (use_pngout is None and is_no_img_cmds):
+      img_cmds.append('pngout')
+    img_cmd_patterns = []
+    for cmd in img_cmds:
+      if cmd in ('', 'no', 'none', 'sam2p'):
+        # 'sam2p' is always used by default.
+        continue
+      cmd_pattern = IMAGE_OPTIMIZER_CMD_MAP.get(cmd, cmd).strip()
+      if not cmd_pattern:
+        continue
+      cmd_name = GetCmdName(cmd_pattern)
+      if not cmd_name:
+        raise getopt.GetoptError('command name missing from image optimizer command: %s' % cmd_pattern)
+      if '%(targetfnq)s' not in cmd_pattern:
+        raise getopt.GetoptError('targetfnq missing from image optimizer command: %s' % cmd_pattern)
+      img_cmd_patterns.append(cmd_pattern)
+    if do_debug_image_optimizers:
+      print >>sys.stderr, 'info: will use image optimizers: %r' % img_cmd_patterns
+
+    has_not_found = False
+    img_cmd_patterns_good = []
+    for cmd_pattern in img_cmd_patterns:
+      # TODO(pts): Use shlib on Linux etc.
+      if cmd_pattern.startswith('"'):  # and sys.platform.startswith('win'):
+        # TODO(pts): How is it possible to specify this on the command-line?
+        cmd_prog = cmd_pattern[1 : cmd_pattern.find('"', 1)]
+      else:
+        cmd_prog = (cmd_pattern.split() or ('',))[0]
+      if not cmd_prog:
+        raise getopt.GetoptError('empty image optimizer program: %s' % cmd_prog)
+      if os.path.isabs(cmd_prog):
+        if not os.path.isfile(cmd_prog):
+          print >>sys.stderr, 'error: image optimizer not found: %s' % cmd_prog
+          has_not_found = True
+        else:
+          img_cmd_patterns_good.append(cmd_pattern)
+      elif not FindOnPath(cmd_prog):
+        print >>sys.stderr, 'error: image optimizer not found on PATH: %s' % cmd_prog
+        has_not_found = True
+      else:
+        img_cmd_patterns_good.append(cmd_pattern)
+      if has_not_found and do_require_image_optimizers:
+        print >>sys.stderr, (
+            'error: not all image optimizers found (see above), '
+            'ignore with --do-require-image-optimizers=no')
+        sys.exit(1)
+    img_cmd_patterns = img_cmd_patterns_good
+
   except getopt.GetoptError, exc:
     print >>sys.stderr, 'error: in command line: %s' % exc
     sys.exit(1)
@@ -8789,7 +8952,7 @@ def main(argv):
         do_regenerate_all_fonts=do_regenerate_all_fonts)
   if do_optimize_images:
     pdf.ConvertInlineImagesToXObjects()
-    pdf.OptimizeImages(use_pngout=use_pngout, use_jbig2=use_jbig2)
+    pdf.OptimizeImages(img_cmd_patterns=img_cmd_patterns)
   may_obj_heads_contain_comments = True
   if do_optimize_objs or do_remove_generational_objs:
     # TODO(pts): Do only a simpler optimization with renumbering if

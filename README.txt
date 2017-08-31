@@ -165,7 +165,7 @@ Try it with:
   info: This is pdfsizeopt ZIP rUNKNOWN size=105366.
 
 pdfsizeopt has many dependencies. For full functionality, you need all of
-them. Install all of them and put them to the $PATH.
+them. Install all of them and put them to the PATH.
 
 Dependencies:
 
@@ -192,8 +192,47 @@ After installation, use pdfsizeopt as:
 
   $ ./pdfsizeopt input.pdf output.pdf
 
-You can add the directory containing pdfsizeopt to your $PATH, so the
+You can add the directory containing pdfsizeopt to the PATH, so the
 command `pdfsizeopt' will work from any directory.
+
+Image optimizers
+~~~~~~~~~~~~~~~~
+pdfsizeopt can use the following external tools to make images in embedded
+PDF files smaller:
+
+* sam2p (used by default, cannot be disabled)
+* jbig2 (used by default, disable with --use-jbgi2=no)
+* pngout (used by default, disable with --use-pngout=no)
+* zopflipng (not enabled by default)
+* optipng (not enabled by default)
+* advpng (not enabled by default)
+* ECT (not enabled by default)
+
+To enable or disable any image optimizer, specify all image optimizers you
+want to be enabled like this: --use-image-optimizer=optipng,jbig2 . This
+will also disable the default pngout.
+
+You can also specify custom image optimizer command patterns by specifying
+separate, additional --use-image-optimier= flags, like this:
+
+  --use-image-optimizer="optipng %(sourcefnq)s -o6 -fix -force %(optipng_gray_flags)s-out %(targetfnq)s"
+
+This will not work on Windows, because it contains spaces in a
+command-line flag.
+
+You always have to specify %(targetfnq) in the command pattern.
+
+Specify --do-debug-image-optimizers=yes to see which image optimizers are
+enabled (and their full command-line) for the current run.
+
+At startup, pdfsizeopt checks that the requested image optimizers are
+available (as program files), and fails if some of them are missing. To
+ignore those which are missing, specify --do-require-image-optimizers=no .
+
+It's your (the user's) responsibility to install the image optimizers and
+add them to the PATH. If you follow the installation instructions for
+Windows and Linux above, the default image optimizers (sam2p, jbig2 and
+pngout) will be installed for you.
 
 Troubleshooting
 ~~~~~~~~~~~~~~~
