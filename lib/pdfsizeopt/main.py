@@ -8709,7 +8709,7 @@ def main(argv):
     do_optimize_obj_heads = True
     do_debug_gs = False
     do_debug_image_optimizers = False
-    do_require_image_optimizers = False
+    do_require_image_optimizers = True
     mode = 'optimize'
     img_cmds = []
 
