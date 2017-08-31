@@ -8983,7 +8983,7 @@ def main(argv):
   if do_compress_uncompressed_streams and multivalent_java is None:
     pdf.CompressUncompressedStreams()
   pdf.Save(
-      output_file_name,
+      output_file_name + '.tmp',
       multivalent_java=multivalent_java,
       do_update_file_meta=True,
       do_escape_images_from_multivalent=do_escape_images_from_multivalent,
@@ -8991,3 +8991,4 @@ def main(argv):
       do_generate_object_stream=do_generate_object_stream,
       may_obj_heads_contain_comments=may_obj_heads_contain_comments,
       is_flate_ok=do_compress_uncompressed_streams)
+  os.rename(output_file_name + '.tmp', output_file_name)
