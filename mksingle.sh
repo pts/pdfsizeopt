@@ -25,13 +25,13 @@ sys.exit(main.main(sys.argv))" >lib/mainrun.py
 # and 2.3? (So that we'd reach the proper error message.)
 echo 'import mainrun' >lib/__main__.py
 
+# Not adding pdfsizeopt/pdfsizeopt_argparse.py, because it's not used.
 (cd lib && zip -9r ../pdfsizeopt.zip \
     __main__.py mainrun.py \
     pdfsizeopt/__init__.py \
     pdfsizeopt/cff.py \
     pdfsizeopt/float_util.py \
     pdfsizeopt/main.py \
-    pdfsizeopt/pdfsizeopt_argparse.py\
  ;) || exit "$?"
 test -f pdfsizeopt.zip
 ( echo '#! /bin/sh
