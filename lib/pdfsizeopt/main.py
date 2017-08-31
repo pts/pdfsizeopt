@@ -6324,9 +6324,9 @@ cvx bind /LoadCff exch def
         'optipng_gray_flags': '',
     }
     if need_gray:
-      values_dict['pngout_gray_flags'] = '-c0 '
+      cmd_values_dict['pngout_gray_flags'] = '-c0 '
       # -nc: No color type reduction.
-      values_dict['optipng_gray_flags'] = '-nc -np '
+      cmd_values_dict['optipng_gray_flags'] = '-nc -np '
     assert '%(targetfnq)s' in cmd_pattern, cmd_pattern
     cmd = cmd_pattern % cmd_values_dict
     
