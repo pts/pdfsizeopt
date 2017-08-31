@@ -5862,7 +5862,7 @@ cvx bind /LoadCff exch def
           (sorted(parsed_fonts), sorted(parsed2_fonts)))
       # Typical differences:
       # * /FontName is removed from parsed2_fonts. (Ghostscript does this,
-      #   not the code in pdfsizeopt.)
+      #   not the Python code in pdfsizeopt.)
       # * /FontBBox is added to parsed2_fonts with computed values.
       # * /version is removed from parsed2_fonts.
       # * /UnderlinePosition is reset to value 0 in parsed2_fonts.
@@ -5958,6 +5958,8 @@ cvx bind /LoadCff exch def
         # This is part of the /FontDescriptor, we don't need it in the Type1C
         # font.
         del parsed_font['FontBBox']
+        # TODO(pts): Possibly remove more fields from parsed_font:
+        # https://stackoverflow.com/q/45781734/97248
       if not do_unify_fonts:
         continue
 
