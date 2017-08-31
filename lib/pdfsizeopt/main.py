@@ -6190,7 +6190,8 @@ cvx bind /LoadCff exch def
       fontbbox, fontbbox_has_changed = PdfObj.ResolveReferences(
           obj.Get('FontBBox'), objs=self.objs)
       assert str(fontbbox).startswith('['), fontbbox
-      obj.Set('FontBBox', fontbbox)  # Resolve the reference.
+      if fontbbox_has_changed:
+        obj.Set('FontBBox', fontbbox)  # Resolve the reference.
       # These entries are important only for finding substitute fonts, so
       # we can get rid of them.
       obj.Set('FontFamily', None)
