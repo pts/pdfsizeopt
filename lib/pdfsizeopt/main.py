@@ -6183,7 +6183,14 @@ cvx bind /LoadCff exch def
       assert obj.Get('Flags') is not None
       assert obj.Get('StemV') is not None
       assert str(obj.Get('FontName')).startswith('/')
-      assert str(obj.Get('FontBBox')).startswith('[')
+      # For testing when ResolveReferences is needed:
+      # combinatorics-of-compositions-and-words.pdf
+      #
+      # TODO(pts): Find and fix more mossing-reference-resolving bugs.
+      fontbbox, fontbbox_has_changed = PdfObj.ResolveReferences(
+          obj.Get('FontBBox'), objs=self.objs)
+      assert str(fontbbox).startswith('['), fontbbox
+      obj.Set('FontBBox', fontbbox)  # Resolve the reference.
       # These entries are important only for finding substitute fonts, so
       # we can get rid of them.
       obj.Set('FontFamily', None)
