@@ -9,6 +9,7 @@ import os.path
 import re
 import subprocess
 import sys
+import time
 import token
 import tokenize
 import zipfile
@@ -119,7 +120,7 @@ def Minify(source, output_func):
 UNSUPPORTED_CHARS_RE = re.compile(r'[^\na -~]+')
 
 
-def MinifyFile(filename, code_orig):
+def MinifyFile(file_name, code_orig):
   i = code_orig.find('\n')
   if i >= 0:
     line1 = code_orig[:i]
@@ -130,12 +131,69 @@ def MinifyFile(filename, code_orig):
   match = UNSUPPORTED_CHARS_RE.search(code_orig)
   if match:
     raise ValueError('Unsupported chars in source: %r' % match.group(0))
-  compile(code_orig, filename, 'exec')  # Check for syntax errors.
+  compile(code_orig, file_name, 'exec')  # Check for syntax errors.
   output = []
   Minify(code_orig, output.append)
   code_mini = ''.join(output)
-  compile(code_mini, filename, 'exec')  # Check for syntax errors.
+  compile(code_mini, file_name, 'exec')  # Check for syntax errors.
   return code_mini
+
+# It's OK that this doesn't support the full PostScript syntax, it's enough to
+# support whatever PostScript procsets in pdfsizeopt have.
+#
+# This doesn't support string literals with unescaped nested parens, e.g.
+# '(())'.
+#
+# This doesn't support <0a> hex string literals or ASCII85 string literals.
+POSTSCRIPT_TOKEN_RE = re.compile(
+    r'%[^\r\n]*|'  # Comment.
+    r'[\0\t\n\r\f ]+|' # Whitespace.
+    r'(\((?:[^()\\]+|(?s)\\.)*\))|'  # 1: String literal.
+    r'(<<|>>|[{}\[\]])|'  # 2: Token which stops the previous token.
+    r'([^\0\t\n\r\f %(){}<>\[\]]+)|'  # 3. Multi-character token, '/' included.
+    r'(?s)(.)')  # 4. Anything else we don't recognize.
+
+
+def MinifyPostScript(pscode):
+  output = [' ']  # Sentinel for output[-1][-1].
+  for match in POSTSCRIPT_TOKEN_RE.finditer(pscode):
+    if match.group(1):
+      output.append(match.group(1))
+    elif match.group(2):
+      output.append(match.group(2))
+    elif match.group(3):
+      t = match.group(3)
+      if t[0] != '/' and output[-1][-1] not in ')<>{}[]':
+        output.append(' ')
+      output.append(t)
+    elif match.group(4):
+      i = match.start()
+      raise ValueError('Unknown PostScript syntax: %r' % pscode[i : i + 20])
+  output[0] = ''  # Remove sentinel.
+  return ''.join(output)
+
+
+def MinifyPostScriptProcsets(file_name, code_orig):
+  code_obj = compile(code_orig, file_name, 'exec')
+  globals_dict = {}
+  exec code_obj in globals_dict
+  for name in sorted(globals_dict):
+    if name.startswith('__'):
+      del globals_dict[name]
+  names, pscodes = [], []
+  for name, pscode in sorted(globals_dict.iteritems()):
+    names.append(name)
+    if not isinstance(pscode, str):
+      raise ValueError('Expected pscode as str, got: %r' % type(pscode))
+    pscode = MinifyPostScript(pscode)
+    if '%%' in pscode:
+      raise ValueError('Unexpected %% in minified pscode.')
+    pscodes.append(pscode)
+  if not pscodes:
+    return ''
+  pscodes_str = '\n%%'.join(pscodes)
+  assert "'''" not in pscodes_str
+  return "%s=r'''%s\n'''.split('%%%%')" % (','.join(names), pscodes_str)
 
 
 # We need a file other than __main__.py, because 'import __main__' in
@@ -181,26 +239,37 @@ def main(argv):
   except OSError:
     pass
 
-  # TODO(pts): Also minify PostScript code in main.py.
-
   zf = zipfile.ZipFile(zip_output_file_name, 'w', zipfile.ZIP_DEFLATED)
+  time_now = time.localtime()[:6]
   try:
-    for filename in (
+    for file_name in (
         # 'pdfsizeopt/pdfsizeopt_pargparse.py',  # Not needed.
         'pdfsizeopt/__init__.py',
         'pdfsizeopt/cff.py',
         'pdfsizeopt/float_util.py',
         'pdfsizeopt/main.py'):
-      code_orig = open('lib/' + filename, 'rb').read()
-      code_mini = MinifyFile(filename, code_orig)
-      # !! add ZipInfo with mtime
+      code_orig = open('lib/' + file_name, 'rb').read()
+      # The zip(1) command also uses localtime. The ZIP file format doesn't
+      # store the time zone.
+      file_mtime = time.localtime(os.stat('lib/' + file_name).st_mtime)[:6]
+      code_mini = MinifyFile(file_name, code_orig)
       # Compression effort doesn't matter, we run advzip below anyway.
-      zf.writestr(filename, code_mini)
+      zf.writestr(zipfile.ZipInfo(file_name, file_mtime), code_mini)
       del code_orig, code_mini  # Save memory.
-    zf.writestr('m.py', MinifyFile('m.py', M_PY_CODE))
+
     # TODO(pts): Can we use `-m m'? Does it work in Python 2.0, 2.1, 2.2 and
     # 2.3? (So that we'd reach the proper error message.)
-    zf.writestr('__main__.py', 'import m')
+    zf.writestr(zipfile.ZipInfo('m.py', time_now),
+                MinifyFile('m.py', M_PY_CODE))
+
+    zf.writestr(zipfile.ZipInfo('__main__.py', time_now),
+                'import m')
+
+    file_name = 'pdfsizeopt/psproc.py'
+    code_orig = open('lib/' + file_name, 'rb').read()
+    file_mtime = time.localtime(os.stat('lib/' + file_name).st_mtime)[:6]
+    code_mini = MinifyPostScriptProcsets(file_name, code_orig)
+    zf.writestr(zipfile.ZipInfo(file_name, file_mtime), code_mini)
   finally:
     zf.close()
 
@@ -222,8 +291,11 @@ def main(argv):
 
   os.chmod(single_output_file_name, 0755)
 
-  # The first run of this script reduced the size of pdfsizeopt.single from
-  # 115100 bytes to 68591 bytes.
+  # Size reductions of pdfsizeopt.single:
+  #
+  # * 115100 bytes: mksingle.sh, before this script.
+  # *  68591 bytes: Python minification, advzip, SCRIPT_PREFIX improvements.
+  # *  63989 bytes: PostScript minification.
   print >>sys.stderr, 'info: created %s (%d bytes)' % (
       single_output_file_name, os.stat(single_output_file_name).st_size)
 
