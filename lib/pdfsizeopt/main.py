@@ -8786,7 +8786,7 @@ def GetLibexecDir(used_script_dir):
       return libexec_dir
   xdir = os.path.join(used_script_dir, 'pdfsizeopt_libexec')
   if os.path.isdir(xdir):
-    return libexec_dir
+    return xdir
   return None
 
 
