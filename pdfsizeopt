@@ -30,8 +30,7 @@ except (OSError, AttributeError, NotImplementedError):
   pass
 if os.path.isfile(os.path.join(
     script_dir, 'lib', 'pdfsizeopt', 'main.py')):
-  sys.path[:0] = [os.path.join(script_dir, 'lib')]
+  sys.path[0] = os.path.join(script_dir, 'lib')
 
 from pdfsizeopt import main
-main.script_dir = script_dir
-sys.exit(main.main(sys.argv))
+sys.exit(main.main(sys.argv, script_dir=script_dir))

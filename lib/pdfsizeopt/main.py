@@ -8746,10 +8746,7 @@ IMAGE_OPTIMIZER_CMD_MAP = {
     'advpng4': 'advpng -z4 -f %(targetfnq)s',  # Slowest, this uses Zopfli.
 }
 
-zip_file = script_dir = None  # Set by the trampolines.
-
-
-def GetVersionSpec():
+def GetVersionSpec(zip_file):
   if zip_file and os.path.isfile(zip_file):
     main_file = zip_file
     zip_msg = ' ZIP'
@@ -8769,7 +8766,7 @@ def GetVersionSpec():
   return 'pdfsizeopt%s r%s size=%s' % (zip_msg, rev or 'UNKNOWN', size)
 
 
-def GetUsedScriptDir():
+def GetUsedScriptDir(script_dir, zip_file):
   # script_file = sys.modules['__main__'].__file__
   if script_dir:
     return script_dir
@@ -8899,8 +8896,8 @@ class Flags(object):
         assert False, 'unknown flag %s' % key  # Can't happen, getopt output.
 
 
-def main(argv):
-  print >>sys.stderr, 'info: This is %s.' % GetVersionSpec()
+def main(argv, script_dir=None, zip_file=None):
+  print >>sys.stderr, 'info: This is %s.' % GetVersionSpec(zip_file)
   if not argv:
     argv = ['pdfsizeopt']
   try:
@@ -8984,7 +8981,7 @@ def main(argv):
   else:
     assert f.mode == 'optimize'  # Implemented below.
 
-  used_script_dir = GetUsedScriptDir()
+  used_script_dir = GetUsedScriptDir(script_dir, zip_file)
   libexec_dir = GetLibexecDir(used_script_dir)
   if libexec_dir is not None:
     PrependToPath(libexec_dir)  # Find external tools in libexec_dir first...
