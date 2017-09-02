@@ -77,7 +77,7 @@ There is no installer, you need to run some commands in the command line
 command-line only application, there is no GUI.
 
 Create folder C:\pdfsizeopt, download
-https://github.com/pts/pdfsizeopt/releases/download/2017-08-29w/pdfsizeopt_win32exec-v5.zip
+https://github.com/pts/pdfsizeopt/releases/download/2017-09-02w/pdfsizeopt_win32exec-v6.zip
 , and extract its contents to the folder C:\pdfsizeopt, so that the file
 C:\pdfsizeopt\pdfsizeopt.exe exists.
 
@@ -282,35 +282,53 @@ other than the ASCII letters (a-z and A-Z), digits (0-9), underscore (_),
 ASCII dash (-), plus (+), dot (.), backslash (\) or slash (/). Typically
 these characters don't work:
 
-* accented characters (such as á and ő)
-* whitespace (such as space, tab, newline)
-* double quotes (")
-* anything which is not ASCII printable (code between 33 and 126, inclusive)
+* spaces and tabs: This is easy to fix, just wrap the filename in double
+  quotes ("), the usual way.
+* double quotes ("): This is also easy to fix. Wrap the filename in double
+  quotes ("), replace all double quotes (") with \", and replace a sequence
+  backslashes (\) and an double quote (") immediately following them by
+  duplicating the backslashes and replacing the double quote (") with \".
+  This sounds complicated, but this is the usual way for other programs as
+  well, see https://stackoverflow.com/a/4094897/97248 .
+* newlines and other non-space and non-tab whitespace: This won't
+  work, the Windows Command Prompt (cmd.exe) doesn't allow these characters in
+  filenames.
+* accented characters (such as á and ő). This won't work (or it may work for
+  only some characters, depending on the active code page), because
+  pdfsizeopt.exe and pdfsizeopt_python.exe use the single-byte API
+  (GetCommandLineA) to get the command-line, and this API returns non-ASCII
+  characters with destructive transformations already applied, so the
+  original character is already lost. Maybe it's possible to fix it in the
+  future (using GetCommandLineW in pdfsizeopt.exe), but the tricky parts are
+  the open(...) and os.popen(...) Python functions and writing to the
+  console (sys.stderr), which don't have easy 16-bit equivalents.
+* anything which is not ASCII printable (code between 33 and 126,
+  inclusive): If not covered above, this may not work. See the description
+  of accented characters.
 
-This is unfortunate, and currently the workarounds are:
+If some filenames don't work, the workarounds are:
 
 * renaming or copying the file (and folders) in Windows Explorer, and passing
   the renamed file to pdfsizeopt
 * using pdfsizeopt on a Unix system (e.g. Linux, FreeBSD, macOS) instead
 
-The limitation for non-ASCII characters is hard to lift, because cmd.exe
-(the Windows Command Prompt) does some destructive transformations affecting
-these filenames (especially the characters outside ISO-8859-1, gswin32c.exe
-is also affected by them), before even calling pdfsizeopt.
+7. Error on Windows: The application failed to initialize properly (0xc0000034). Click on OK to terminate the application.
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+This error has happened on a Windows XP system. The solution: download
+msvcr90.dll (or find it somewhere already on your system), and copy it into
+pdfsizeopt_win32exec (next to python26.dll). Any version of msvcr90.dll will
+work:
 
-The limitation for whitespace and double quotes is hard to lift, because
-Python and msvcrt.dll (used by pdfsizeopt.exe for argv) both do some
-destructive transformations on double-quoted argument names. The former can
-be worked around by win32api.GetCommandLine(), the latter also needs
-GetCommandLIne() to be called from C instead of using argv. These are
-doable. Once done, all commands (e.g. gs, sam2p) invoked by pdfsizeopt need
-to be updated to add proper quoting with double quotes. This may be easy for
-filenames (because only temporary files are passed to those commands, which
-don't need any quoting), but not for directory names (especially if the
-current directory is a UNC path, see
-https://github.com/pts/pdfsizeopt/issues/24). Escaping needs to be
-implemented differently for each tool (e.g. gs, sam2p). Good news:
-Ghostscript supports double quotes: -sOutputFile="foo bar.pdf"
+* msvcr90.dll 9.0.21022.8 (655872 bytes)
+* msvcr90.dll 9.0.30729.6161 (653136 bytes)
+* msvcr90.dll 9.0.30729.9247 (653968 bytes)
+
+8. Error on Windows: The system cannot execute the specified command.
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+This error has happened on a Windows XP system when the file
+Microsoft.VC90.CRT.manifest was missing from the pdfsizeopt_win32exec
+directory. The solution: reinstall pdfsieopt, the directory
+pdfsizeopt_win32exec in the newest version has that file.
 
 More documentation
 ~~~~~~~~~~~~~~~~~~

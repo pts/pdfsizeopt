@@ -1151,11 +1151,61 @@ class PdfSizeOptTest(unittest.TestCase):
                      F('1 0 obj<</Encoding<</Differences'
                        '[66/BB/CC 100/dd 101/ee]>>>>endobj'))
 
+  def testShellQuoteUnix(self):
+    F = main.ShellQuoteUnix
+    self.assertEqual("''", F(''))
+    self.assertEqual('/usr/BIN/i686-w64-mingw32-g++',
+                     F('/usr/BIN/i686-w64-mingw32-g++'))
+    self.assertEqual('_.,:', F('_.,:'))
+    self.assertEqual("'Hello, World!'", F('Hello, World!'))
+    self.assertEqual("'foo\'\\\'\'b\'\\\'\'ar\\baz\"x\\\"y\\\\'",
+                     F('foo\'b\'ar\\baz"x\\"y\\\\'))
+    self.assertEqual("' '", F(' '))
+    self.assertEqual("'\t'", F('\t'))
+    self.assertEqual("'%PROMPT%'", F('%PROMPT%'))
+    self.assertEqual("'\"'", F('"'))
+    self.assertEqual("'<'", F('<'))
+    self.assertEqual("'>'", F('>'))
+    self.assertEqual("'&'", F('&'))
+    self.assertEqual("'|'", F('|'))
+    self.assertEqual("'\\'", F('\\'))
+    self.assertEqual("'\\\\'", F('\\\\'))
+    self.assertEqual("'C:\\pdfsizeopt\\pdfsizeopt.exe'",
+                     F('C:\\pdfsizeopt\\pdfsizeopt.exe'))
+    self.assertEqual("'|\\'", F('|\\'))
+
+  def testShellQuoteWindows(self):
+    F = main.ShellQuoteWindows
+    self.assertEqual('""', F(''))
+    self.assertEqual('/usr/BIN/i686-w64-mingw32-g++',
+                     F('/usr/BIN/i686-w64-mingw32-g++'))
+    self.assertEqual('_.,:', F('_.,:'))
+    self.assertEqual('"Hello, World!"', F('Hello, World!'))
+    self.assertEqual('"foo\'b\'ar\\baz\\"x\\\\\\"y\\\\\\\\"',
+                     F('foo\'b\'ar\\baz"x\\"y\\\\'))
+    self.assertEqual('" "', F(' '))
+    self.assertEqual('"\t"', F('\t'))
+    self.assertEqual('"%PROMPT%"', F('%PROMPT%'))
+    self.assertEqual('"\\""', F('"'))
+    self.assertEqual('"<"', F('<'))
+    self.assertEqual('">"', F('>'))
+    self.assertEqual('"&"', F('&'))
+    self.assertEqual('"|"', F('|'))
+    self.assertEqual('\\', F('\\'))
+    self.assertEqual('\\\\', F('\\\\'))
+    self.assertEqual('C:\\pdfsizeopt\\pdfsizeopt.exe',
+                     F('C:\\pdfsizeopt\\pdfsizeopt.exe'))
+    self.assertEqual('"|\\\\"', F('|\\'))
+
   CFF_FONT_PROGRAM_FONT_NAME = 'Obj000009'
   CFF_FONT_PROGRAM_STRINGS = ['Computer Modern Roman', 'Computer Modern']
   # This is font `i: 5556' in cff.pgs, Ghostscript has failed to parse it,
   # probably because it has incorrect CharStrings offset (hence the `- 1' in
   # CheckFont).
+  #
+  # By the way, this is an invalid CFF font program. But it's very useful for
+  # testing here, because offset sizes in indexes in it grow as the FontName
+  # gets longer.
   CFF_FONT_PROGRAM = '''
       01000402000101010a4f626a3030303030390001010128f81b02f81c038bfb61
       f9d5f961051d004e31850df7190ff610f74a11961c0e10128b0c038b0c040002

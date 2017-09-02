@@ -321,17 +321,61 @@ def GetGsCommand(is_verbose=False):
   return gs_cmd
 
 
-def ShellQuote(string):
-  # TODO(pts): Make it work properly on non-Unix systems.
+UNIX_SHELL_NEED_QUOTE_RE = re.compile(r'[^-_.+,:/a-zA-Z0-9]')
+
+
+def ShellQuoteUnix(string):
+  """Quotes (escapes) a command-line argument for Unix (Bourne shell).
+
+  Args:
+    string: Command-line argument to be quoted.
+  Returns:
+    Quoted command-line argument. Can be concatenated with any string.
+  """
   string = str(string)
-  # TODO(pts): Allow \ on Windows.
-  if string and not re.search('[^-_.+,:/a-zA-Z0-9]', string):
+  if string and not UNIX_SHELL_NEED_QUOTE_RE.search(string):
     return string
-  elif sys.platform.startswith('win'):
-    # TODO(pts): Does this replace make sense? No, Windows works differently.
-    return '"%s"' % string.replace('"', '""')
-  else:
-    return "'%s'" % string.replace("'", "'\\''")
+  return "'%s'" % string.replace("'", "'\\''")
+
+
+WINDOWS_SHELL_NEED_QUOTE_RE = re.compile(r'[ \t%"<>&|]')
+
+WINDOWS_SHELL_QUOTE_RE = re.compile(r'(\\+)("|\Z)|(")')
+
+
+def ShellQuoteWindows(string):
+  """Quotes (escapes) a command-line argument for Windows.
+
+  Does the quoting according to inverse of the rules defined in
+
+  * https://stackoverflow.com/a/4094897/97248
+  * https://msdn.microsoft.com/en-us/library/a1y7w461.aspx
+
+  Args:
+    string: Command-line argument to be quoted.
+  Returns:
+    Quoted command-line argument. If the result ends with backslash, please
+    don't continue it with a string starting with double-quote.
+  """
+  # The following characters need escaping:
+  # space, tab, %, ", <, >, &, |.
+  # If the input contains none of these, the output is same as the
+  # input. Otherwise, the output looks like "...", and within the "s:
+  #
+  # * \s not followed by a " are kept intact
+  # * \s followed by a " are doubled and the " is escaped as \"
+  # * " (not preceded by a \) is escaped as \"
+  # * anything else is kept intact
+  string = str(string)
+  if string and not WINDOWS_SHELL_NEED_QUOTE_RE.search(string):
+    return string
+  return '"%s"' % WINDOWS_SHELL_QUOTE_RE.sub(
+      lambda match: r'\\' * len(match.group(1) or '') +
+                    r'\"' * len(match.group(2) or match.group(3) or ''),
+      string)
+
+
+ShellQuote = (ShellQuoteUnix, ShellQuoteWindows)[sys.platform.startswith('win')]
 
 
 def ShellQuoteFileName(string, is_gs=False):
@@ -339,7 +383,13 @@ def ShellQuoteFileName(string, is_gs=False):
   if string.startswith('-') and len(string) > 1:
     string = '.%s%s' % (os.sep, string)
   if sys.platform.startswith('win'):
-    # os.path.isabs and os.path.join don't work correctly.
+    # This hack here is making sure that Ghostscript running on UNC path as
+    # os.getcwd() will get absolute filenames. That's because we are doing the
+    # 'c:&cd \\&' hack to run Ghotscript with 'c:\\' as os.getcwd(), and thus
+    # it wouldn't find files with a relative filename.
+    #
+    # os.path.isabs and os.path.join don't work correctly, we implement our
+    # own.
     if (is_gs and
         GetGsCommand()[1 : 8] == ':&cd \\&' and
         not string.startswith('\\\\') and not string[1 : 3] == ':\\'):
@@ -354,15 +404,6 @@ def ShellQuoteFileName(string, is_gs=False):
         string = cwd[:2] + string
       else:
         string = os.path.join(cwd, string)
-    # os.system on Windows XP doesn't seem to accept "..." escaping for
-    # arguments. (It accepts that for the command name.)
-    #
-    # TODO(pts): Try to do it, separately for commands: Ghostscript etc.
-    assert not re.search(r'\s', string), (
-        'Unexpected space in filename argument: %r' % string)
-    assert '"' not in string, (
-        'Unexpected double quote in filename argument: %r' % string)
-    return string
   return ShellQuote(string)
 
 
@@ -396,7 +437,7 @@ def FindOnPath(file_name):
   for item in path.split(os.pathsep):
     if (is_win and item.startswith('"') and item.endswith('"') and
         len(item) >= 2):
-      # TODO(pts): Do proper unquoting (inverse of ShellQuote), e.g. "" --> "?
+      # TODO(pts): Allow ';' within item.
       item = item[1 : -1].replace('""', '')
     if not item:
       item = '.'
@@ -8317,7 +8358,7 @@ def main(argv, script_dir=None, zip_file=None):
   has_not_found = False
   img_cmd_patterns_good = []
   for cmd_pattern in img_cmd_patterns:
-    # TODO(pts): Use shlib on Linux etc.
+    # TODO(pts): Use shlib on Linux etc. for parsing the command name.
     if cmd_pattern.startswith('"'):  # and sys.platform.startswith('win'):
       # TODO(pts): How is it possible to specify this on the command-line?
       cmd_prog = cmd_pattern[1 : cmd_pattern.find('"', 1)]
