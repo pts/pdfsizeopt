@@ -239,7 +239,7 @@ gs_cmd_ary = []
 def FindExeOnPath(prog):
   """Return pathname to `multivalent_compress' or None if not found."""
   exe_ext = ''
-  if sys.platform.startswith('win'):
+  if sys.platform.startswith('win') and '.' not in os.path.basename(prog):
     exe_ext = '.exe'
   return FindOnPath(prog + exe_ext)
 
@@ -8332,7 +8332,7 @@ def main(argv, script_dir=None, zip_file=None):
         has_not_found = True
       else:
         img_cmd_patterns_good.append(cmd_pattern)
-    elif not FindOnPath(cmd_prog):
+    elif not FindExeOnPath(cmd_prog):
       print >>sys.stderr, (
           'error: image optimizer not found on PATH: %s' % cmd_prog)
       has_not_found = True
