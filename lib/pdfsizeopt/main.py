@@ -8082,7 +8082,7 @@ def GetLibexecDir(used_script_dir):
   if sys.platform.startswith('win'):
     xdir = os.path.join(used_script_dir, 'pdfsizeopt_win32exec')
     if os.path.isdir(xdir):
-      return libexec_dir
+      return xdir
   xdir = os.path.join(used_script_dir, 'pdfsizeopt_libexec')
   if os.path.isdir(xdir):
     return xdir
