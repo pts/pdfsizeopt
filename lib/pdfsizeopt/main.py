@@ -8091,12 +8091,10 @@ def GetLibexecDir(used_script_dir):
 
 def PrependToPath(extrapath_dir):
   print >>sys.stderr, 'info: prepending to PATH: %s' % extrapath_dir
-  if sys.platform.startswith('win'):
-    # ShellQuote(...) doesn't work for $PATH in wine-1.6.2, is it needed on normal
-    # Windows (e.g. for running sam2p).
-    # TODO(pts): How to escape?
-    # extrapath_dir = ShellQuote(extrapath_dir)
-    pass
+  # When adding to the PATH, we mustn't call ShellQuote on extrapath_dir on
+  # Unix systems. On Windows XP ... Windows 10, it works with or without
+  # ShellQuote (i.e. "s round the directory name), but on wine-1.6.2, directory
+  # names in PATH don't work with "s. So we are not calling ShellQuote here.
   os.environ['PATH'] = '%s%s%s' % (
       extrapath_dir, os.pathsep, os.getenv('PATH', ''))
 
