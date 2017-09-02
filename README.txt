@@ -217,9 +217,6 @@ separate, additional --use-image-optimier= flags, like this:
 
   --use-image-optimizer="optipng %(sourcefnq)s -o6 -fix -force %(optipng_gray_flags)s-out %(targetfnq)s"
 
-This will not work on Windows, because it contains spaces in a
-command-line flag.
-
 You always have to specify %(targetfnq) in the command pattern.
 
 Specify --do-debug-image-optimizers=yes to see which image optimizers are
@@ -284,7 +281,9 @@ these characters don't work:
 
 * spaces and tabs: This is easy to fix, just wrap the filename in double
   quotes ("), the usual way.
-* double quotes ("): This is also easy to fix. Wrap the filename in double
+* double quotes ("): This can't happen, filenames on Windows are not allowed
+  to contain double quotes. If you need to pass a non-filename argument with
+  a double quote in it to pdfsizeopt, do this. Wrap the filename in double
   quotes ("), replace all double quotes (") with \", and replace a sequence
   backslashes (\) and an double quote (") immediately following them by
   duplicating the backslashes and replacing the double quote (") with \".
@@ -292,7 +291,7 @@ these characters don't work:
   well, see https://stackoverflow.com/a/4094897/97248 .
 * newlines and other non-space and non-tab whitespace: This won't
   work, the Windows Command Prompt (cmd.exe) doesn't allow these characters in
-  filenames.
+  command-line arguments.
 * accented characters (such as á and ő). This won't work (or it may work for
   only some characters, depending on the active code page), because
   pdfsizeopt.exe and pdfsizeopt_python.exe use the single-byte API
@@ -306,7 +305,7 @@ these characters don't work:
   inclusive): If not covered above, this may not work. See the description
   of accented characters.
 
-If some filenames don't work, the workarounds are:
+If some filenames still don't work, the workarounds are:
 
 * renaming or copying the file (and folders) in Windows Explorer, and passing
   the renamed file to pdfsizeopt
