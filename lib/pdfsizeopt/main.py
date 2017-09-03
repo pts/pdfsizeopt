@@ -267,9 +267,7 @@ def GetGsCommand(is_verbose=False):
   if gs_cmd is None:
     if sys.platform.startswith('win'):  # Windows: win32 or win64
       gs_cmd = FindOnPath(os.path.join('pdfsizeopt_gswin', 'gswin32c.exe'))
-      if gs_cmd is None:
-        data = None
-      else:
+      if gs_cmd is not None:
         # wine-1.2 works with or without quoting here, but Windows XP
         # requires quoting if the path to gs_cmd contains whitespace.
         gs_cmd = prefix + ShellQuote(gs_cmd)
@@ -303,15 +301,32 @@ def GetGsCommand(is_verbose=False):
               if gs_cmd is not None:
                 break
       if not data or gs_cmd is None:
-        assert False, 'Could not find a working Ghostscript.'
+        raise RuntimeError('Could not find a working Ghostscript.')
     else:
-      gs_cmd = prefix + 'gs'
+      gs_cmd = FindOnPath(os.path.join('pdfsizeopt_gs', 'gs'))
+      if gs_cmd is not None:
+        gs_cmd = prefix + ShellQuote(gs_cmd)
+        data = VerifyGs(gs_cmd, is_verbose=is_verbose)
+      if not data and sys.platform.startswith('darwin'):
+        # http://pages.uoregon.edu/koch/ and MacTeX have it.
+        gs_cmd = FindOnPath('gs-noX11')
+        if gs_cmd is not None:
+          gs_cmd = prefix + ShellQuote(gs_cmd)
+          data = VerifyGs(gs_cmd, is_verbose=is_verbose)
+      if not data:
+        gs_cmd, data = prefix + 'gs', None
   if data is None:
     data = VerifyGs(gs_cmd, is_verbose=is_verbose)
-  assert data, 'Ghostscript %s does not seem to work.' % gs_cmd
+  if not data:
+    raise RuntimeError('Ghostscript does not seem to work: %s' % gs_cmd)
   gs_cmd_print = gs_cmd
   if os.sep not in gs_cmd[len(prefix):]:
-    gs_cmd_print = FindOnPath(gs_cmd)  # TODO(pts): Unquote.
+    gs_cmd2 = gs_cmd
+    if gs_cmd2.startswith('"'):  # Approximately correct on Windows and Unix.
+      i = gs_cmd2.find('"', 1)
+      if i > 0:
+        gs_cmd2 = gs_cmd[1 : i]
+    gs_cmd_print = FindExeOnPath(gs_cmd2)
     if not gs_cmd_print:
       gs_cmd_print = gs_cmd
   else:
