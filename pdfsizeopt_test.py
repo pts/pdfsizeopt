@@ -506,7 +506,7 @@ class PdfSizeOptTest(unittest.TestCase):
     obj = main.PdfObj(
         '42 0 obj[/Foo%]endobj\n42  43\t]\nendobj')
     # Parses the comment properly, but doesn't replace it with the non-comment
-    # version.
+    # version. Also comments in the middle aren't removed.
     self.assertEqual('[/Foo%]endobj\n42  43\t]', obj.head)
     obj = main.PdfObj('42 0 obj%hello\r  \t\f%more\n/Foo%bello\nendobj')
     # Leading comments are removed, but trailing comments aren't.
@@ -1083,7 +1083,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(True, f(None))
     self.assertEqual(None, f(True))
     self.assertEqual(None, f(42))
-    self.assertRaises(ValueError, f, '42 0 R foo')
+    self.assertRaises(ValueError, f, '42 0 R')
+    self.assertEqual(None, f('42 0 R foo'))
     self.assertEqual(False, f('/WinAnsiEncoding'))
     self.assertEqual(None, f('[]'))
     self.assertRaises(main.PdfTokenParseError, f, '<<')
@@ -1196,6 +1197,15 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('C:\\pdfsizeopt\\pdfsizeopt.exe',
                      F('C:\\pdfsizeopt\\pdfsizeopt.exe'))
     self.assertEqual('"|\\\\"', F('|\\'))
+
+  def testGetBadNumbersFixed(self):
+    F = main.PdfObj.GetBadNumbersFixed
+    self.assertEqual('/Hello/World', F('/Hello/World'))
+    self.assertEqual('0', F('.'))
+    self.assertEqual('1.', F('1.'))
+    self.assertEqual('.2', F('.2'))
+    self.assertEqual('[1. 0 0 1. 0 0]', F('[1. . . 1. . .]'))
+    self.assertEqual('[0 0 612. 792.]', F('[. . 612. 792.]'))
 
   CFF_FONT_PROGRAM_FONT_NAME = 'Obj000009'
   CFF_FONT_PROGRAM_STRINGS = ['Computer Modern Roman', 'Computer Modern']
