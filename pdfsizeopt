@@ -1,7 +1,11 @@
-#! /bin/sh
+#!/bin/sh
 
 """:" # pdfsizeopt: PDF file size optimizer
 
+P="$(readlink "$0" 2>/dev/null)"
+test "$P" || P="$0"
+P="${P%/*}"/pdfsizeopt_libexec/python
+test -f "$P" && exec "$P" -- "$0" ${1+"$@"}
 type -p python2.7 >/dev/null 2>&1 && exec python2.7 -- "$0" ${1+"$@"}
 type -p python2.6 >/dev/null 2>&1 && exec python2.6 -- "$0" ${1+"$@"}
 type -p python2.5 >/dev/null 2>&1 && exec python2.5 -- "$0" ${1+"$@"}
