@@ -2,7 +2,7 @@ README for pdfsizeopt
 ^^^^^^^^^^^^^^^^^^^^^
 pdfsizeopt is a program for converting large PDF files to small ones. More
 specifically, pdfsizeopt is a free, cross-platform command-line application
-(for Linux, Mac OS X, Windows and Unix) and a collection of best practices
+(for Linux, macOS, Windows and Unix) and a collection of best practices
 to optimize the size of PDF files, with focus on PDFs created from TeX and
 LaTeX documents. pdfsizeopt is written in Python, so it is a bit slow, but
 it offloads some of the heavy work to its faster (C, C++ and Java)
@@ -30,10 +30,9 @@ open a terminal window and run these commands (without the leading `$'):
   $ cd ~/pdfsizeopt
   $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_linux-v3.tar.gz
   $ tar xzvf pdfsizeopt_libexec_linux.tar.gz
-  $ wget -O pdfsizeopt https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.trampoline
-  $ chmod +x pdfsizeopt
   $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
   $ chmod +x pdfsizeopt.single
+  $ ln -s pdfsizeopt.single pdfsizeopt
 
 To optimize a PDF, run the following command
 
@@ -125,16 +124,70 @@ running it natively (as a Linux or Unix program).
 
 Installation instructions and usage on macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-There is no installer, you need to run some commands in the command line
-(black Command Prompt window) to download and install. pdfsizeopt is a
-command-line only application, there is no GUI.
+There is no installer, you need to run some commands in the command line to
+download and install. pdfsizeopt is a command-line only application, there
+is no GUI.
 
-macOS is not one of the officially supported platforms, so installation can
-be much more inconvenient (and error-prone) than on Windows or Unix.
+To install pdfsizeopt on a macOS system (with architecture i386 or amd64),
+open a terminal window and run these commands (without the leading `$'):
 
-Download and extract all the Mac executables and binaries from
-https://github.com/pts/pdfsizeopt/releases , and follow the section
-``Installation instructions and usage on generic Unix''.
+  $ mkdir ~/pdfsizeopt
+  $ cd ~/pdfsizeopt
+  $ wget -O pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
+  $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
+  $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  $ chmod +x pdfsizeopt.single
+  $ ln -s pdfsizeopt.single pdfsizeopt
+
+To optimize a PDF, run the following command
+
+  ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
+
+If the input PDF has many images or large images, pdfsizeopt can be very
+slow. You can speed it up by disabling pngout, the slowest image optimization
+method, like this:
+
+  ~/pdfsizeopt/pdfsizeopt --use-pngout=no input.pdf output.pdf
+
+Also, if you have an 32-bit Mac, then the pngout bundled with pdfsizeopt
+won't work (because it needs a 64-bit Mac), so you have to force
+--use-pngout=no . See the section ``Image optimizers'' for alternatives of
+pngout.
+
+pdfsizeopt creates lots of temporary files (psotmp.*) in the output
+directory, but it also cleans up after itself.
+
+It's possible to optimize a PDF outside the current directory. To do that,
+specify the pathname (including the directory name) in the command-line.
+
+Please note that the commands above download most dependencies (including
+Ghostscript, but excluding Python) as well. Everything should work as
+instructed above, out of the box. If you are experiencing problems, please
+report an issue on https://github.com/pts/pdfsizeopt/issues .
+
+To avoid typing ~/pdfsizeopt/pdfsizeopt, add "$HOME/pdfsizeopt" to your PATH
+(probably in your ~/.bashrc), open a new terminal window, and the
+command pdfsizeopt will work from any directory.
+
+You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you
+like.
+
+Installation instructions and usage on FreeBSD
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+There is no installer, you need to run some commands in the command line to
+download and install. pdfsizeopt is a command-line only application, there
+is no GUI.
+
+pdfsizeopt works perfectly on x86 FreeBSD systems with the Linux
+emulation layer enabled. So, enable the Linux emulation layer on your
+FreeBSD system, and then follow the
+``Installation instructions and usage on Linux''.
+
+Alterantively, you can follow the
+``Installation instructions and usage on generic Unix'', but that needs much
+more work on your part (and it's inconvenient and error-prone), because you
+need to install many dependencies separately, possibly compiling some of
+them from source.
 
 Installation instructions and usage on generic Unix
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
