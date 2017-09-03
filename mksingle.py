@@ -223,15 +223,17 @@ SCRIPT_PREFIX = r'''#!/bin/sh --
 #
 
 P="$(readlink "$0" 2>/dev/null)"
+test "$P" && test "${P#/}" = "$P" && P="${0%/*}/$P"
 test "$P" || P="$0"
-P="${P%/*}"/pdfsizeopt_libexec/python
-test -f "$P" && exec "$P" -- "$0" ${1+"$@"}
-type python2.7 >/dev/null 2>&1 && exec python2.7 -- "$0" ${1+"$@"}
-type python2.6 >/dev/null 2>&1 && exec python2.6 -- "$0" ${1+"$@"}
-type python2.5 >/dev/null 2>&1 && exec python2.5 -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$0" ${1+"$@"}
-type python2.4 >/dev/null 2>&1 && exec python2.4 -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$0" ${1+"$@"}
-exec python -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$0" ${1+"$@"}
+Q="${P%/*}"/pdfsizeopt_libexec/python
+test -f "$Q" && exec "$Q" -- "$P" ${1+"$@"}
+type python2.7 >/dev/null 2>&1 && exec python2.7 -- "$P" ${1+"$@"}
+type python2.6 >/dev/null 2>&1 && exec python2.6 -- "$P" ${1+"$@"}
+type python2.5 >/dev/null 2>&1 && exec python2.5 -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$P" ${1+"$@"}
+type python2.4 >/dev/null 2>&1 && exec python2.4 -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$P" ${1+"$@"}
+exec python -c"import sys;del sys.argv[0];sys.path[0]=sys.argv[0];import m" "$P" ${1+"$@"}
 exit 1
+
 '''
 
 def main(argv):
