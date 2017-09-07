@@ -6330,9 +6330,17 @@ class PdfData(object):
           not obj.stream is not None or
           obj.Get('Subtype') != '/Image'):
         continue
+      if obj.Get('Type') is not None:
+        if obj.Get('Type') != '/XObject':
+          continue  # Something is wrong with this object, don't touch it.
+        obj.Set('Type', None)  # Remove explicit default.
+
       filter_value, filter_has_changed = PdfObj.ResolveReferences(
           obj.Get('Filter'), objs=self.objs)
       filter2 = (filter_value or '').replace(']', ' ]') + ' '
+
+      if not obj.Get('Interpolate'):
+        obj.Set('Interpolate', None)  # Remove explicit default.
 
       # Don't touch lossy-compressed images.
       # TODO(pts): Read lossy-compressed images, maybe a small, uncompressed
