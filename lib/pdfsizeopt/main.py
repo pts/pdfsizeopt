@@ -841,10 +841,10 @@ class PdfObj(object):
   PDF_NONNAME_CHAR_RE = re.compile('[%s]' % re.escape(PDF_NONNAME_CHARS))
   """Matches a single character which can't be part of a PDF name."""
 
-  PDF_NAMEOP_LITERAL_AT_EOS_RE = re.compile(r'/?[^\[\]{}()<>%\0\t\n\r\f ]+\Z')
+  PDF_NAMEOP_LITERAL_AT_EOS_RE = re.compile(r'/?[^\[\]{}()<>/%\0\t\n\r\f ]+\Z')
   """Matches a PDF /name or name literal."""
 
-  PDF_NAME_LITERAL_RE = re.compile(r'/[^\[\]{}()<>%\0\t\n\r\f ]+')
+  PDF_NAME_LITERAL_RE = re.compile(r'/[^\[\]{}()<>/%\0\t\n\r\f ]+')
   """Matches a PDF /name literal."""
 
   PDF_INT_RE = re.compile(r'-?\d+\Z')
@@ -2479,9 +2479,9 @@ class PdfObj(object):
     stream_end = len(stream) - len(stream_tail) + match.start()
     stream = stream[stream_start : stream_end]
 
-    inline_dict = cls.PDF_NAME_LITERAL_RE.sub(
+    inline_dict = self.PDF_NAME_LITERAL_RE.sub(
         lambda match: '/' + self.INLINE_IMAGE_UNABBREVIATIONS.get(
-            match.group(1), match.group(1)),
+            match.group(0)[1:], match.group(0)[1:]),
         inline_dict)
     image_obj = PdfObj('0 0 obj<<%s>>endobj' % inline_dict)
     if (image_obj.Get('Width') != width or
