@@ -1,0 +1,134 @@
+deptest.pdf.log conveniently uses most external dependencies of pdfsizeopt:
+
+* Ghostscript with Type1CConverter
+* Ghostscript with Type1CParser
+* Ghostscript with Type1CGenerator
+* Ghostscript with ImageRenderer
+* Ghostscript for stream decompression
+* sam2p for image compression
+* png22pnm for PDF decompression by sam2p
+* jbig2 for image compression
+* pngout for image compression
+
+Not used here:
+
+* qpdf for decrypting
+* Multivalent for additional compression
+
+Log generated with:
+
+  $ dfsizeopt deptest.pdf >>deptest.pdf.log 2>&1
+
+info: This is pdfsizeopt rUNKNOWN size=357293.
+info: prepending to PATH: ../pdfsizeopt_libexec
+info: loading PDF from: deptest.pdf
+info: loaded PDF of 36080 bytes
+info: separated to 25 objs + xref + trailer
+info: found 2 Type1 fonts loaded
+info: writing Type1CConverter (31666 font bytes) to: psotmp.6460.conv.tmp.ps
+info: using Ghostscript ../pdfsizeopt_libexec/gs: GPL Ghostscript 9.05 (2012-02-08)
+info: executing Type1CConverter with Ghostscript: gs -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer -dColorConversionStrategy=/LeaveColorUnchanged -sOutputFile=psotmp.6460.conv.tmp.pdf -f psotmp.6460.conv.tmp.ps
+Type1CConverter: using interpreter GPL Ghostscript 905 20120208
+Type1CConverter: converting font /JVWJQI+LMRoman10-Regular to /Obj0000000010
+Type1CConverter: converting font /MFCZJC+LMRoman10-Regular to /Obj0000000022
+Type1CConverter: all OK
+info: loading PDF from: psotmp.6460.conv.tmp.pdf
+info: loaded PDF of 4387 bytes
+info: separated to 16 objs + xref + trailer
+info: found 2 fonts in GS output
+info: optimized total Type1 font size 31658 to Type1C font size 902 (3%)
+info: optimized Type1 font XObject 10,13: new size=658 (4%)
+info: optimized Type1 font XObject 22,25: new size=708 (4%)
+info: found 2 Type1C fonts loaded
+info: writing Type1CParser (891 font bytes) to: psotmp.6460.conv.parse.tmp.ps
+info: executing Type1CParser with Ghostscript: gs -q -P- -dNOPAUSE -dBATCH -sDEVICE=nullpage -sDataFile=psotmp.6460.conv.parsedata.tmp.ps -f psotmp.6460.conv.parse.tmp.ps
+Type1CParser: using interpreter GPL Ghostscript 905 20120208
+Type1CParser: all OK
+info: parsed 2 Type1C fonts
+info: merged fonts ['/JVWJQI+LMRoman10-Regular', '/MFCZJC+LMRoman10-Regular'], reduced char count from 4 to 3 (75%)
+info: writing Type1CGenerator (1448 bytes in 1 fonts) to: psotmp.6460.conv.gen.tmp.ps
+info: executing Type1CGenerator with Ghostscript: gs -q -P- -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dPDFSETTINGS=/printer -dColorConversionStrategy=/LeaveColorUnchanged -sOutputFile=psotmp.6460.conv.gen.tmp.pdf -f psotmp.6460.conv.gen.tmp.ps
+Type1CGenerator: using interpreter GPL Ghostscript 905 20120208
+Type1CGenerator: all OK
+info: loading PDF from: psotmp.6460.conv.gen.tmp.pdf
+info: loaded PDF of 3526 bytes
+info: separated to 14 objs + xref + trailer
+info: found 1 fonts loaded
+info: optimized Type1C fonts to form 1314 bytes to 756 bytes (58%)
+info: uninlined 1 images, saved -81 bytes
+info: will optimize image XObject 9; orig width=100 height=100 colorspace=/DeviceGray bpc=1 inv=False filter=/FlateDecode dp=1 size=400 gs_device=pngmono
+info: saving PNG to psotmp.6460.img-9.parse.png
+info: written 226 bytes to PNG
+info: will optimize image XObject 26; orig width=100 height=100 colorspace=/DeviceGray bpc=1 inv=False filter=/CCITTFaxDecode dp=1 size=895 gs_device=pngmono
+info: optimizing 2 images of 1295 bytes in total
+info: writing ImageRenderer (920 image bytes) to: psotmp.6460.conv.pngmono.tmp.ps
+info: executing ImageRenderer with Ghostscript: gs -q -P- -dNOPAUSE -dBATCH -sDEVICE=pngmono -sOutputFile='psotmp.6460.img-%04d.pngmono.tmp.png' -f psotmp.6460.conv.pngmono.tmp.ps
+ImageRenderer: rendering image XObject 26 width=100 height=100 bpc=1 colorspace=/DeviceGray filter=/CCITTFaxDecode decodeparms=<< /Columns 100 /K 0 >> device=pngmono
+ImageRenderer: all OK
+info: loading image from: psotmp.6460.img-0001.pngmono.tmp.png
+info: loaded PNG IDAT of 171 bytes
+info: executing image converter sam2p_np: sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- psotmp.6460.img-9.parse.png psotmp.6460.img-9.sam2p-np.pdf
+This is sam2p 0.49.
+Available Loaders: PS PDF JAI PNG JPEG TIFF PNM BMP GIF LBM XPM PCX TGA.
+Available Appliers: XWD Meta Empty BMP PNG TIFF6 TIFF6-JAI JPEG-JAI JPEG PNM GIF89a+LZW XPM PSL1C PSL23+PDF PSL2+PDF-JAI P-TrOpBb.
+sam2p: Notice: PNM: loaded alpha, but no transparent pixels
+sam2p: Notice: job: read InputFile: psotmp.6460.img-9.parse.png
+sam2p: Notice: writeTTT: using template: p02
+sam2p: Notice: applyProfile: applied OutputRule #0
+sam2p: Notice: job: written OutputFile: psotmp.6460.img-9.sam2p-np.pdf
+Success.
+info: loading image from: psotmp.6460.img-9.sam2p-np.pdf
+info: loading PDF from: psotmp.6460.img-9.sam2p-np.pdf
+info: loaded PDF of 874 bytes
+info: separated to 5 objs + xref + trailer
+info: loaded PNG IDAT of 167 bytes
+info: executing image converter sam2p_pr: sam2p -c zip:15:9 -- psotmp.6460.img-9.parse.png psotmp.6460.img-9.sam2p-pr.png
+This is sam2p 0.49.
+Available Loaders: PS PDF JAI PNG JPEG TIFF PNM BMP GIF LBM XPM PCX TGA.
+Available Appliers: XWD Meta Empty BMP PNG TIFF6 TIFF6-JAI JPEG-JAI JPEG PNM GIF89a+LZW XPM PSL1C PSL23+PDF PSL2+PDF-JAI P-TrOpBb.
+sam2p: Notice: PNM: loaded alpha, but no transparent pixels
+sam2p: Notice: job: read InputFile: psotmp.6460.img-9.parse.png
+sam2p: Notice: applyProfile: applied OutputRule #2
+sam2p: Notice: job: written OutputFile: psotmp.6460.img-9.sam2p-pr.png
+Success.
+info: loading image from: psotmp.6460.img-9.sam2p-pr.png
+info: loaded PNG IDAT of 226 bytes
+info: executing image converter jbig2: jbig2 -p psotmp.6460.img-9.sam2p-pr.png >psotmp.6460.img-9.jbig2
+info: executing image converter pngout: pngout -force psotmp.6460.img-9.sam2p-pr.png psotmp.6460.img-9.pngout.png
+ In:                             psotmp.6460.img-9.sam2p-pr.png /c0 /f5 /d1 In:     283 bytes
+Out:                             psotmp.6460.img-9.pngout.png /c3 /f0 /d1, 2 colors 0%  1%  2%  3%  4%  5%  6%  7%  8%  9% 10% 11% 12% 13% 14% 15% 16% 17% 18% 19% 20% 21% 22% 23% 24% 25% 26% 27% 28% 29% 30% 31% 32% 33% 34% 35% 36% 37% 38% 39% 40% 41% 42% 43% 44% 45% 46% 47% 48% 49% 50% 51% 52% 53% 54% 55% 56% 57% 58% 59% 60% 61% 62% 63% 64% 65% 66% 67% 68% 69% 70% 71% 72% 73% 74% 75% 76% 77% 78% 79% 80% 81% 82% 83% 84% 85% 86% 87% 88% 89% 90% 91% 92% 93% 94% 95% 96% 97% 98% 99%  0%  1%  2%  3%  4%  5%  6%  7%  8%  9% 10% 11% 12% 13% 14% 15% 16% 17% 18% 19% 20% 21% 22% 23% 24% 25% 26% 27% 28% 29% 30% 31% 32% 33% 34% 35% 36% 37% 38% 39% 40% 41% 42% 43% 44% 45% 46% 47% 48% 49% 50% 51% 52% 53% 54% 55% 56% 57% 58% 59% 60% 61% 62% 63% 64% 65% 66% 67% 68% 69% 70% 71% 72% 73% 74% 75% 76% 77% 78% 79% 80% 81% 82% 83% 84% 85% 86% 87% 88% 89% 90% 91% 92% 93% 94% 95% 96% 97% 98% 99% Out:     291    -68.3=    222.6 0%  1%  2%  3%  4%  5%  6%  7%  8%  9% 10% 11% 12% 13% 14% 15% 16% 17% 18% 19% 20% 21% 22% 23% 24% 25% 26% 27% 28% 29% 30% 31% 32% 33% 34% 35% 36% 37% 38% 39% 40% 41% 42% 43% 44% 45% 46% 47% 48% 49% 50% 51% 52% 53% 54% 55% 56% 57% 58% 59% 60% 61% 62% 63% 64% 65% 66% 67% 68% 69% 70% 71% 72% 73% 74% 75% 76% 77% 78% 79% 80% 81% 82% 83% 84% 85% 86% 87% 88% 89% 90% 91% 92% 93% 94% 95% 96% 97% 98% 99% Out:     238     -0.8=    237.1 0%  1%  2%  3%  4%  5%  6%  7%  8%  9% 10% 11% 12% 13% 14% 15% 16% 17% 18% 19% 20% 21% 22% 23% 24% 25% 26% 27% 28% 29% 30% 31% 32% 33% 34% 35% 36% 37% 38% 39% 40% 41% 42% 43% 44% 45% 46% 47% 48% 49% 50% 51% 52% 53% 54% 55% 56% 57% 58% 59% 60% 61% 62% 63% 64% 65% 66% 67% 68% 69% 70% 71% 72% 73% 74% 75% 76% 77% 78% 79% 80% 81% 82% 83% 84% 85% 86% 87% 88% 89% 90% 91% 92% 93% 94% 95% 96% 97% 98% 99% Out:     238 bytes               
+Chg:     -45 bytes ( 84% of original)
+info: loading image from: psotmp.6460.img-9.pngout.png
+info: loaded PNG IDAT of 163 bytes and PLTE of 6 bytes
+info: optimized image XObject 9 file_name=psotmp.6460.img-9.sam2p-np.pdf size=329 (82%) methods=sam2p_np:329,jbig2:342,pngout:385,parse:391,#orig:400,sam2p_pr:448
+info: executing image converter sam2p_np: sam2p -pdf:2 -c zip:1:9 -s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop -- psotmp.6460.img-0001.pngmono.tmp.png psotmp.6460.img-26.sam2p-np.pdf
+This is sam2p 0.49.
+Available Loaders: PS PDF JAI PNG JPEG TIFF PNM BMP GIF LBM XPM PCX TGA.
+Available Appliers: XWD Meta Empty BMP PNG TIFF6 TIFF6-JAI JPEG-JAI JPEG PNM GIF89a+LZW XPM PSL1C PSL23+PDF PSL2+PDF-JAI P-TrOpBb.
+sam2p: Notice: PNM: loaded alpha, but no transparent pixels
+sam2p: Notice: job: read InputFile: psotmp.6460.img-0001.pngmono.tmp.png
+sam2p: Notice: writeTTT: using template: p02
+sam2p: Notice: applyProfile: applied OutputRule #0
+sam2p: Notice: job: written OutputFile: psotmp.6460.img-26.sam2p-np.pdf
+Success.
+info: loading image from: psotmp.6460.img-26.sam2p-np.pdf
+info: loading PDF from: psotmp.6460.img-26.sam2p-np.pdf
+info: loaded PDF of 874 bytes
+info: separated to 5 objs + xref + trailer
+info: loaded PNG IDAT of 167 bytes
+info: using already processed image for obj 26
+info: optimized image XObject 26 file_name=psotmp.6460.img-9.sam2p-np.pdf size=329 (37%) methods=#prev-processed-best:329,sam2p_np:329,gs:393,#orig:895
+info: saved 637 bytes (49%) on optimizable images
+info: decompressing 120 bytes with Ghostscript /Filter/LZWDecode
+info: optimized 5 streams, kept 2 #orig, 2 uncompressed, 1 zip
+info: eliminated 4 duplicate objs
+info: eliminated 4 unused objs in 4 classes
+info: compressed 2 streams, kept 0 of them uncompressed
+info: saving PDF with 18 objs to: deptest.pso.pdf
+info: trying 3 jobs and using the smallest
+info: generated object stream of 595 bytes in 13 objects (22%)
+info: job original generated 2232 bytes (6%)
+info: job xrefstm generated 2892 bytes (8%)
+info: job nostm generated 3189 bytes (9%)
+info: jobs result: original=2232 xrefstm=2892 nostm=3189
+info: generated 2232 bytes (6%)
