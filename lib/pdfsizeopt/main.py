@@ -6057,7 +6057,7 @@ class PdfData(object):
         print >>sys.stderr, (
             'info: image converter %s produced non-gray output (%s), ignoring' %
             (cmd_name, image.color_type))
-        EnsureRemoved(targetfn)
+        os.remove(targetfn)
         return None
       return cmd_name, image
 
@@ -6735,9 +6735,13 @@ class PdfData(object):
               obj_images.append(image)
               image = None
 
-        # TODO(pts): For very small (10x10) images, try uncompressed too.
+          # No need for pr_file_name anymore, we've loaded it to obj_images
+          # with cmd_name='sam2p_pr', and we've used it as an input for
+          # img_cmd_patterns.
+          os.remove(pr_file_name)
 
-        os.remove(pr_file_name)
+          # TODO(pts): For very small (10x10) images, try uncompressed too.
+
         os.remove(rendered_image_file_name)
 
       obj_infos = [(obj.size, '#orig', '', obj, None)]
