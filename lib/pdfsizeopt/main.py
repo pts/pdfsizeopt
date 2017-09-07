@@ -105,6 +105,9 @@ FLAGS_HELP = r"""
   After Type1C font serialization, parse it again, and check that the glyphs
   and most other fields are still there? It is slow, but it can reveal some
   bugs in Ghostscript.
+--do-optimize-streams=YES_NO; default: yes
+  Recompress all non-image streams, keep the smallest value. To optimize image
+  streams, please use --do-optimize-images=yes.
 --do-optimize-objs=YES_NO; default: yes
   Optimize all objects in a PDF in a generic way? It removes unused objects,
   it deduplicates objects, it reserialize object headers etc. These
@@ -166,6 +169,7 @@ FLAGS_HELP = r"""
   before reading the first input PDF.
 """
 
+# TODO(pts): Add a shorthand for: --do-optimize-images=no --do-optimize-fonts=no --do-optimize-objs=no --do-optimize-streams=no --do-decompress-most-streams=yes --do-generate-xref-stream=no --do-generate-object-stream=no
 # TODO(pts): Add flag to os.remove temporary files even on an exception.
 # TODO(pts): Proper whitespace parsing (as in PDF)
 # TODO(pts): re.compile anywhere
@@ -665,6 +669,13 @@ class FilterNotImplementedError(Error):
   """Raised if a stream filter is not implemented."""
 
 
+class FilterError(Error):
+  """Raised if a stream filter failed to to process its input.
+
+  A typical reason is corrupt compressed data in the input PDF.
+  """
+
+
 class PdfFileEncryptedError(Error):
   """Raised when an encrypted PDF file is encountered."""
 
@@ -694,6 +705,7 @@ class PdfObj(object):
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches stream or endobj in a PDF obj."""
 
+  # TODO(pts): Remove PDF comments first.
   FLATEDECODE_ARY1_RE = re.compile(
       r'\[[\0\t\n\r\f ]*/FlateDecode[\0\t\n\r\f ]*\]\Z')
   """Matches a single-element array token containing /FlateDecode."""
@@ -2422,7 +2434,9 @@ class PdfObj(object):
     """Detect whether self is a form XObject with an inline image.
 
     As an implementation limitation, this detects only inline
-    images created by sam2p.
+    images created by sam2p. These form XObjects have only the inline image
+    in them (and a `cm' operator to zoom in).
+
     TODO(pts): Add support for more.
 
     Args:
@@ -2858,35 +2872,53 @@ class PdfObj(object):
       end_ofs_out.append(i)
     return output_data
 
+  def HasUncompressedStream(self):
+    """Returns a bool indicating whether this obj has an uncompressed stream."""
+    if self.stream is None:
+      return False
+    if '/Filter' not in self.head:
+      return True
+    filter_value = self.Get('Filter')
+    if filter_value in (None, '[]'):  # TODO(pts): Match '[ ]' etc.
+      return True
+    filter_value = str(filter_value)
+    return (filter_value.startswith('[') and self.ParseArray(filter_value))
+
   def GetUncompressedStream(self, objs=None):
-    """Return the uncompressed stream data in this obj.
+    """Returns the uncompressed stream data in this obj.
 
     Args:
       objs: None or a dict mapping object numbers to PdfObj objects. It will be
         passed to ResolveReferences.
     Returns:
       A string containing the stream data in this obj uncompressed.
+    Raises:
+      FilterNotImplementedError: .
+      FilterError: .
     """
-    assert self.stream is not None
-    filter_value = self.Get('Filter')
-    if filter_value in (None, '[]'):  # TODO(pts): Match '[ ]' etc.
+    if self.HasUncompressedStream():
+      assert self.stream is not None
       return self.stream
+    filter_value = self.Get('Filter')
     decodeparms = self.Get('DecodeParms') or ''
     if objs is None:
       objs = {}
     filter_value, _ = self.ResolveReferences(filter_value, objs)
     decodeparms, _ = self.ResolveReferences(decodeparms, objs)
     if not isinstance(filter_value, str):
-      raise FilterNotImplemented('/Filter is not a str.')
+      raise FilterError('/Filter is not a str: %r' % (filter_value,))
     if not isinstance(decodeparms, str):
-      raise FilterNotImplemented('/DecodeParms is not a str.')
+      raise FilterError('/DecodeParms is not a str.')
     # !! TODO(pts): Proper PDF token parsing, e.g. FLATEDECODE_ARY1_RE not
     #               matching because of comment in the obj head.
     if ((filter_value == '/FlateDecode' or
         ('/FlateDecode' in filter_value and
          self.FLATEDECODE_ARY1_RE.match(filter_value))) and
         '/Predictor' not in decodeparms):
-      return PermissiveZlibDecompress(self.stream)
+      try:
+        return PermissiveZlibDecompress(self.stream)
+      except zlib.error, e:
+        raise FilterError('Flate decompression error: %s' % e)
     is_gs_ok = True  # TODO(pts): Add command-line flag to disable.
     if not is_gs_ok:
       raise FilterNotImplementedError(
@@ -2944,8 +2976,10 @@ class PdfObj(object):
     # On Windows, data would start with 'Error: ' on a Ghostscript error, and
     # data will be '' if gswin32c is not found.
     data = f.read()  # TODO(pts): Handle IOError etc.
-    assert not f.close(), 'Ghostscript decompression failed: %s (%r)' % (
-        gs_defilter_cmd, data)
+    if f.close():
+      raise FilterError(
+          'Ghostscript decompression with filter %r failed: %s (%r)' %
+          (filter_value, gs_defilter_cmd, data))
     os.remove(tmp_file_name)
     if ps_file_name:
       os.remove(ps_file_name)
@@ -5916,7 +5950,7 @@ class PdfData(object):
       try:
         stream = type1c_obj.GetUncompressedStream(self.objs)
         head_dict.clear()
-      except FilterNotImplementedError:
+      except (FilterNotImplementedError, FilterError):
         stream = type1c_obj.stream
         for key in sorted(head_dict):
           if key != 'Filter' and key != 'DecodeParms':
@@ -6127,7 +6161,17 @@ class PdfData(object):
       resources_obj = PdfObj(
           '0 0 obj %s endobj' % obj.Get('Resources', '<<>>'))
       assert resources_obj.Get('XObject') is None
+      # Currently, typically resources_obj.head ==
+      # '<</ProcSet[/PDF/ImageB]>>'. /ProcSet is optional since PDF 1.2.
+      # TODO(pts): Remove /ProcSet from resources_obj.
       resources_obj.Set('XObject', '<</S %s 0 R>>' % image_obj_num)
+      # TODO(pts): Instead of creating a /Subtype/Form which references a
+      # /Subtype/Image (in its `/Resources<</XObject</S x 0 r>> >>'), we
+      # should make content streams reference the /Subtype/Image directly,
+      # and replace teh e`/... Do' in the content streams (and other forms)
+      # with `q %d 0 0 %d 0 0 cm/... Do Q'. As an additional optimization,
+      # content streams generated by pdftex have
+      # `q 1 0 0 1 0 0 cm /Im1 Do Q', which can conveniently be replaced.
       form_obj = PdfObj('0 0 obj<</Subtype/Form>>endobj')
       form_obj.stream = 'q %s 0 0 %s 0 0 cm/S Do Q' % (width, height)
       form_obj.Set('BBox', '[0 0 %s %s]' % (width, height))
@@ -7046,6 +7090,93 @@ class PdfData(object):
       objs_ret[obj_num_map.get(obj_num, obj_num)] = obj
 
     return objs_ret
+
+  def OptimizeStreams(self, do_decompress_only=False):
+    """Recompress all non-image streams, keep the smallest.
+
+    Args:
+      do_decompress_only: Decompress all non-image streams, don't attempt to
+        compress them.
+    """
+    # TODO(pts): Merge much of the code from here to SetStreamAndCompress.
+
+    counts = {}
+    skipped_count = 0
+    for obj_num in sorted(self.objs):
+      obj = self.objs[obj_num]
+      if obj.stream is None:
+        skipped_count += 1
+        continue
+      if ('/Subtype' in obj.head and '/Image' in obj.head and
+          obj.Get('Subtype') == '/Image'):
+        # Force regeneration from obj._cache, give self.OptimizeObjs a better
+        # chance to find duplicates.
+        #
+        # TODO(pts): Do this regeneration from self.OptimizeObjs.
+        obj._head = None
+        skipped_count += 1
+        #print obj.head
+        continue
+
+      obj_infos = []
+      if obj.HasUncompressedStream():
+        data, filter_value = obj.stream, None
+        obj.Set('Filter', None)
+        obj.Set('DecodeParms', None)
+        # '#' has a small ASCII code, so prefer '#orig' to 'zip'.
+        obj_infos.append((obj.size, '#orig', obj))
+      else:
+        filter_value = str(obj.Get('Filter'))
+        # Keep objects with lossy filters untouched.
+        if ('/DCTDecode' in filter_value or '/JPXDecode' in filter_value):
+          skipped_count += 1
+          continue
+        try:
+          data = obj.GetUncompressedStream(self.objs)
+        except (FilterNotImplementedError, FilterError), e:
+          print >>sys.stderr, (
+              'warning: error decompressing obj %d: %s' %
+              (obj_num, e))
+          counts['#dec-error'] = counts.get('#dec-error', 0) + 1
+          continue
+        obj_infos.append((obj.size, '#orig', obj))
+        obj2 = PdfObj(obj)
+        obj2.stream = data
+        obj2.Set('Filter', None)
+        obj2.Set('DecodeParms', None)
+        obj2.Set('Length', len(obj2.stream))
+        obj_infos.append((obj2.size, 'uncompressed', obj2))
+        del obj2  # Save memory.
+
+      if do_decompress_only:
+        del obj_infos[:-1]  # Keep only the last, uncompressed stream.
+      else:
+        # Try flate with maximum effort.
+        obj2 = PdfObj(obj)
+        obj2.stream = zlib.compress(data, 9)
+        obj2.Set('Length', len(obj2.stream))
+        obj2.Set('Filter', '/FlateDecode')
+        obj2.Set('DecodeParms', None)
+        obj_infos.append((obj2.size, 'zip', obj2))
+        del obj2  # Save memory.
+
+        # TODO(pts): Additionally, try advzip etc., or flate with
+        #            predictors, like in SetStreamAndCompress.
+
+        obj_infos.sort()
+
+      self.objs[obj_num] = obj_infos[0][2]  # Pick the smallest.
+      counts[obj_infos[0][1]] = counts.get(obj_infos[0][1], 0) + 1
+      del obj_infos  # Save memory.
+
+    if do_decompress_only:
+      what = 'decompressed'
+    else:
+      what = 'optimized'
+    print >>sys.stderr, (
+        'info: %s %d streams, kept %s' %
+        (what, len(self.objs) - skipped_count,
+        ', '.join('%d %s' % (c, k) for k, c in sorted(counts.iteritems()))))
 
   def DecompressStreams(self, is_flate_only):
     """Decompress stream data in most objects.
@@ -8503,6 +8634,11 @@ def main(argv, script_dir=None, zip_file=None):
   if f.do_optimize_images:
     pdf.ConvertInlineImagesToXObjects()
     pdf.OptimizeImages(img_cmd_patterns=img_cmd_patterns)
+  if f.do_optimize_streams:
+    # We call this before pdf.OptimizeObjs, so pdf.OptimizeObjs can found
+    # more duplicate objs (in case the same stream data was compressed
+    # differently).
+    pdf.OptimizeStreams(do_decompress_only=f.do_decompress_most_streams)
   may_obj_heads_contain_comments = True
   if f.do_optimize_objs or f.do_remove_generational_objs:
     # TODO(pts): Do only a simpler optimization with renumbering if
@@ -8520,7 +8656,11 @@ def main(argv, script_dir=None, zip_file=None):
   elif f.do_decompress_flate:
     # TODO(pts): Also decompress in Multivalent output.
     pdf.DecompressStreams(is_flate_only=True)
+  # TODO(pts): Better handle which of f.do_compress_uncompressed_streams
+  #            and f.do_decompress_most_streams takes precedence. Maybe
+  #            that which is specified on the command-line (?).
   if (f.do_compress_uncompressed_streams and
+      not f.do_decompress_most_streams and
       multivalent_compress_command is None):
     pdf.CompressUncompressedStreams()
   pdf.Save(
@@ -8532,5 +8672,6 @@ def main(argv, script_dir=None, zip_file=None):
       do_generate_xref_stream=f.do_generate_xref_stream,
       do_generate_object_stream=f.do_generate_object_stream,
       may_obj_heads_contain_comments=may_obj_heads_contain_comments,
-      is_flate_ok=f.do_compress_uncompressed_streams)
+      is_flate_ok=(f.do_compress_uncompressed_streams and
+                   not f.do_decompress_most_streams))
   os.rename(output_file_name + '.tmp', output_file_name)
