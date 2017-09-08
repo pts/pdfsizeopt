@@ -2963,7 +2963,7 @@ class PdfObj(object):
       end_ofs_out.append(i)
     return output_data
 
-  def HasUncompressedStream(self):
+  def HasUncompressedStream(self):  # !!! Add unit test.
     """Returns a bool indicating whether this obj has an uncompressed stream."""
     if self.stream is None:
       return False
@@ -2973,7 +2973,7 @@ class PdfObj(object):
     if filter_value in (None, '[]'):  # TODO(pts): Match '[ ]' etc.
       return True
     filter_value = str(filter_value)
-    return (filter_value.startswith('[') and self.ParseArray(filter_value))
+    return (filter_value.startswith('[') and not self.ParseArray(filter_value))
 
   def GetUncompressedStream(self, objs=None):
     """Returns the uncompressed stream data in this obj.
