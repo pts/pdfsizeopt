@@ -781,6 +781,19 @@ class PdfObj(object):
       PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
   """Matches an `obj' definition, xref or startxref."""
 
+  # !!! Faster regexps by splitting. Do some benchmarks on huge PDFs.
+  PDF_HEAD_INTERESTING_RE = re.compile(
+      PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1.
+      r'(\([^\\()]*\))|'  # 2. Simple string: without parens or backslash.
+      r'(\()|'  # 3. Beginning of a complicated string.
+      r'(/[^(){}\[\]/\0\t\n\r\f #]*#[^(){}\[\]/\0\t\n\r\f ]*)|'  # 4.
+      r'(stream(?:\r\n|[\0\t\n\r\f ])|endobj(?:[\0\t\n\r\f /%]|\Z))')  # 5. !!! Reuse parts of STREAM_OR_ENDOBJ_RE.
+  """Matches interesting parts of a non-simple obj head."""
+
+  PDF_WHITESPACE_INSIMPLE_RE = re.compile(
+      r'([^\0\t\n\r\f ])[\0\t\n\r\f ]+(?=([^\0\t\n\r\f ]|\Z))')
+  """Matches whitespace in a simple obj head."""
+
   NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
   """Matches and captures a nonnegative integer."""
 
@@ -1017,9 +1030,11 @@ class PdfObj(object):
       # Our simple parsing approach may have failed, maybe because we've
       # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
 
-      def ParsePdfString(data, data_size, i,
-                         _escapes = dict(('n\n', 'r\r', 't\t', 'b\b', 'f\f', '4\4', '5\5', '6\6', '7\7')),
-                        ):  # !!! unit tests
+      def ParsePdfString(
+          data, data_size, i,
+          _escapes = dict(('n\n', 'r\r', 't\t', 'b\b', 'f\f', '4\4', '5\5',
+                           '6\6', '7\7')),
+          ):  # !!! Add unit tests.
         """Returns (string, idx): 1 + the index of the trailing ')'."""
         # Compose a Python eval()able string in string_output.
         #
@@ -1102,24 +1117,15 @@ class PdfObj(object):
             j += 1
         return ''.join(output), i
 
-      # !!! Simple case: no nested parens in strings.
-      interesting_re = re.compile(  # !!! Precompile class-level.  !!! Faster regexp.
-          self.PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1.
-          r'(\([^\\()]*\))|'  # 2.
-          r'(\()|'  # 3.
-          r'(/[^(){}\[\]/\0\t\n\r\f #]*#[^(){}\[\]/\0\t\n\r\f ]*)|'  # 4.
-          r'(stream(?:\r\n|[\0\t\n\r\f ])|endobj(?:[\0\t\n\r\f /%]|\Z))')  # 5. !!! reuse STREAM_OR_ENDOBJ_RE
-
       output = []
       i, end_idx = skip_obj_number_idx, len(other)
-      #print '!!! STA', other[i : end_idx]
+      _interesting_re = self.PDF_HEAD_INTERESTING_RE
       while 1:
-        match = interesting_re.search(other, i, end_idx)
+        match = _interesting_re.search(other, i, end_idx)
         if not match:
           raise PdfTokenParseError(
               'full endobj/stream not found from ofs=%s to ofs=%s' %
               (file_ofs, file_ofs + len(other) - start))
-        #print '!!! --- ', [match.group(), match.group(4)]
         if i != match.start():
           output.append(other[i : match.start()])
         if match.group(1) is not None:  # Whitespace or comment.
@@ -1130,10 +1136,10 @@ class PdfObj(object):
                   match.group(1) in '<>[](){}/'):
             output.append(' ')
         elif match.group(2):  # Simple string.
-          output.append(match.group(2))  # !!! Escape '/' as '\\057'.
+          output.append(match.group(2))  # !!! Escape '/' as '\\057', or everything as hex, normalize string literals.
         elif match.group(3):  # Beginning of string.
           data, i = ParsePdfString(other, end_idx, match.start())
-          output.append('<%s>' % data.encode('hex'))
+          output.append('<%s>' % data.encode('hex'))  # !!! Normalize.
           data = ()  # Save memory.
           continue
         elif match.group(4):  # /name with hex-escape (#AB).
@@ -1142,7 +1148,6 @@ class PdfObj(object):
              other[match.start() - 1] not in '<>[](){}/\0\t\n\r\f '):
           pass  # `endobj' in the middle of a name token.
         else:
-          #print '!!! EEEE', [other[:match.start() - 1], output]
           if match.group(5).startswith('stream'):
             stream_start_idx = match.end(5)
           end_ofs = match.end()
@@ -1152,15 +1157,14 @@ class PdfObj(object):
           del output  # Save memory.
           break
         i = match.end()
-        # !!! Add support for hex literals in PDF, everything what
-        #     RewriteToParsable supports. Do we need anything at all?
-        #     Do we want to compress hex literals?
-        # !!! fix tuzv.pso.pdf
+        # !!! Add support for hex literals in PDF (and maybe normalize them to non-hex).
+        # !!! Add everything what RewriteToParsable supports, e.g. integer normalization. Not only here, also to the `else:' below.
+        # !!! Normalize dict item order? Better elsewhere, in PdfData.OptimizeObjs (rather than `obj._cache = None' in PdfData.OptimizeStreams).
+        # !!! Remove RewriteToParseable.
     else:
       if match.group(1).startswith('stream'):
         stream_start_idx = match.end(1)
       end_ofs = match.end()
-      PDF_WHITESPACE_INSIMPLE_RE = re.compile(r'([^\0\t\n\r\f ])[\0\t\n\r\f ]+(?=([^\0\t\n\r\f ]|\Z))')  # !!!
 
       def Replacement(match):
         # It's OK that match.group(2) is empty.
@@ -1168,7 +1172,7 @@ class PdfObj(object):
           return match.group(1)
         return match.group(1) + ' '
 
-      self._head = head = PDF_WHITESPACE_INSIMPLE_RE.sub(
+      self._head = head = self.PDF_WHITESPACE_INSIMPLE_RE.sub(
           Replacement,
           buffer(other, skip_obj_number_idx,
                  match.start(1) - skip_obj_number_idx))
@@ -1187,6 +1191,7 @@ class PdfObj(object):
       # We happily accept the invalid PDF obj
       # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
       # we don't implement a validating PDF parser.
+      # !!! Do this with proper scanning, now that it's normalized.
       raise PdfTokenParseError(
           'stream /Length not found at ofs=%s' % file_ofs)
     if scanner.search():
@@ -1231,7 +1236,6 @@ class PdfObj(object):
           self._head[:match.start()], stream_length,
           self._head[match.end():])
     endstream_str = other[stream_end_idx : stream_end_idx + 128]
-    # TODO(pts): Create objs for regexps elsewhere in this .py file.
     match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
     if not match:
       # TODO(pts): Find the last match.
@@ -1753,7 +1757,7 @@ class PdfObj(object):
                             end_ofs_out=end_ofs_out)
 
   @classmethod
-  def NormalizePdfName(cls, name, idx=None):  # !!! Add unit test.
+  def NormalizePdfName(cls, name, idx=None):  # !!! Add unit tests.
     """Normalize hex-escaping (#) in a PDF name."""
     assert name.startswith('/')
     if '#' in name:
@@ -2963,7 +2967,7 @@ class PdfObj(object):
       end_ofs_out.append(i)
     return output_data
 
-  def HasUncompressedStream(self):  # !!! Add unit test.
+  def HasUncompressedStream(self):  # !!! Add unit tests.
     """Returns a bool indicating whether this obj has an uncompressed stream."""
     return (self.stream is not None and
             ('/Filter' not in self.head or self.Get('Filter') in (None, '[]')))
