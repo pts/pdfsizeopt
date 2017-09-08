@@ -701,9 +701,12 @@ class PdfObj(object):
 
   PDF_STREAM_OR_ENDOBJ_RE_STR = (
       r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
-      r'endobj(?:[\0\t\n\r\f /]|\Z))')
+      r'endobj(?:[\0\t\n\r\f /%]|\Z))')
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches stream or endobj in a PDF obj."""
+
+  PDF_NONSIMPLE_CHAR_RE = re.compile(r'[%(]')
+  """Matches a non-simple character in a PDF obj."""
 
   # TODO(pts): Remove PDF comments first.
   FLATEDECODE_ARY1_RE = re.compile(
@@ -747,10 +750,16 @@ class PdfObj(object):
   SUBSET_FONT_NAME_PREFIX_RE = re.compile(r'/[A-Z]{6}[+]')
   """Matches the beginning of a subset font name (starting with slash)."""
 
-  PDF_OBJ_DEF_RE_STR = (
+  PDF_COMMENTS_OR_WHITESPACE_RE = re.compile(
+      r'(?:[\0\t\n\r\f ]+(?=[^\0\t\n\r\f ])|%[^\r\n]*(?:[\r\n]|\Z))*')
+      # TODO(pts): Does this do fewer baccktracks than the one below?
+      # r'[\0\t\n\r\f ]*(?:%[^\r\n]*(?:[\r\n]|\Z)[\0\t\n\r\f ]*)*')
+  """Matches any number (0 is OK) of terminated comments and whitespace."""
+
+  PDF_OBJ_DEF_RE = re.compile(
       r'[\0\t\n\r\f ]*(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
-      r'(?=[\0\t\n\r\f %/<\[({])[\0\t\n\r\f ]*')
-  PDF_OBJ_DEF_RE = re.compile(PDF_OBJ_DEF_RE_STR)
+      r'(?=[\0\t\n\r\f %/<\[({])' +
+      PDF_COMMENTS_OR_WHITESPACE_RE.pattern)
   """Matches an `obj' definition no leading, with trailing whitespace."""
 
   PDF_OBJ_DEF_CAPTURE_RE_STR = (
@@ -762,7 +771,7 @@ class PdfObj(object):
   Captures the object number and the generation number."""
 
   PDF_OBJ_DEF_OR_XREF_RE = re.compile(
-      PDF_OBJ_DEF_RE_STR + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
+      PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
   """Matches an `obj' definition, xref or startxref."""
 
   NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
@@ -786,12 +795,10 @@ class PdfObj(object):
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
-      r'(?s)trailer[\0\t\n\r\f ]*(<<.*?>>)'
-      r'[\0\t\n\r\f ]*(?:%[^\r\n]*(?:[\r\n]|\Z)[\0\t\n\r\f ]*)*'
+      r'(?s)trailer[\0\t\n\r\f ]*(<<.*?>>)' +
+      PDF_COMMENTS_OR_WHITESPACE_RE.pattern +
       r'(?:startxref|xref)[\0\t\n\r\f ]')
   """Matches from 'trailer' to 'startxref' or 'xref'.
-
-  Comment regexp is from PDF_COMMENTS_OR_WHITESPACE_RE.
 
   TODO(pts): Match more generally, see multiple trailers for testing in:
   pdf.a9p4/5176.CFF.a9p4.pdf
@@ -871,10 +878,6 @@ class PdfObj(object):
   PDF_COMMENT_OR_STRING_RE = re.compile(
       r'%[^\r\n]*|\(([^()\\]*)\)|(\()')
   """Matches a comment, a string simple literal or a string literal opener."""
-
-  PDF_COMMENTS_OR_WHITESPACE_RE = re.compile(
-      r'[\0\t\n\r\f ]*(?:%[^\r\n]*(?:[\r\n]|\Z)[\0\t\n\r\f ]*)*')
-  """Matches any number of terminated comments and whitespace."""
 
   PDF_FIND_END_OBJ_RE = re.compile(
       r'%[^\r\n]*|\([^()\\]*(?=\))|(\()|'
@@ -971,159 +974,159 @@ class PdfObj(object):
       PdfIndirectLengthError: .
       Exception: Many others.
     """
+    self._cache = None
+    if not isinstance(other, (str, buffer)):
+      if isinstance(other, PdfObj):
+        self._head = other.head
+        self.stream = other.stream
+      elif other is None:
+        self._head = None
+        self.stream = None
+      else:
+        raise TypeError(type(other))
+      return
+
+    # Parse the rest as a buffer (byte string).
+
+    if not other:
+      raise PdfTokenParseError('empty PDF obj to parse at ofs=%s' % file_ofs)
+    # Also matches and strips leading whitespace after 'obj'.
+    match = self.PDF_OBJ_DEF_RE.match(other, start)
+    if not match:
+      raise PdfTokenParseError(
+          'X Y obj expected, got %r at ofs=%s' %
+          (other[start : start + 32], file_ofs))
+    obj_def_obj_num = int(match.group(1))
+    skip_obj_number_idx = match.end()
+
     # !! TODO(pts): Remove comments (not only leading comments, but all), so
     # that users of PdfObj can make more assumptions. Also, in strings replace
-    # / with \057, and remove spaces, and unescape # in names, so that e.g. if
+    # / with \057 (or replace strings with <<hex>>), and remove spaces, and
+    # unescape `#' in names, so that e.g. if
     # ('/Subtype/Form' in obj.head) will be true for form objects. It can also
     # be true for non-form objects like:
     # `<</A/Subtype/Form/B>' or `<</A[/Subtype/Form]>>' or `[/Subtype/Form]'.
-    self._cache = None
-    if isinstance(other, PdfObj):
-      self._head = other.head
-      self.stream = other.stream
-    elif isinstance(other, (str, buffer)):
-      if not other:
-        raise PdfTokenParseError('empty PDF obj to parse at ofs=%s' % file_ofs)
-      scanner = self.PDF_OBJ_DEF_RE.scanner(other, start)
-      match = scanner.match()
+
+    # We do the simplest and fastest parsing approach first to find
+    # endobj/endstream. This covers about 90% of the objs. Notable
+    # exceptions are the /Producer, /CreationDate and /CharSet strings.
+    match = self.PDF_STREAM_OR_ENDOBJ_RE.search(
+        other, skip_obj_number_idx)
+    if not match:
+      raise PdfTokenParseError(
+          'endobj/stream not found from ofs=%s to ofs=%s' %
+          (file_ofs, file_ofs + len(other) - start))
+    stream_start_idx = None
+    if self.PDF_NONSIMPLE_CHAR_RE.search(
+        other, skip_obj_number_idx, match.start(1)):
+      # Our simple parsing approach may have failed, maybe because we've
+      # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
+      #
+      # Now we do the little bit slower parsing approach, which can parse
+      # any valid PDF obj. Please note that we still don't have to call
+      # RewriteParsable on `other'.
+      i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
+      j = max(i - 16, 0)
+      head_suffix = other[j : i]
+      #print '\n%r from %r + %r' % (head_suffix, other[:i], other[i:])
+      match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
       if not match:
         raise PdfTokenParseError(
-            'X Y obj expected, got %r at ofs=%s' %
-            (other[start : start + 32], file_ofs))
-      obj_def_obj_num = int(match.group(1))
-      # This already strips leafing whitespace after `obj'.
-      skip_obj_number_idx = match.end()
-      if other[skip_obj_number_idx : skip_obj_number_idx + 1] == '%':
-        match = self.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(
-            other, skip_obj_number_idx).match()
-        assert match
-        skip_obj_number_idx = match.end()
-
-      stream_start_idx = None
-
-      # We do the simplest and fastest parsing approach first to find
-      # endobj/endstream. This covers about 90% of the objs. Notable
-      # exceptions are the /Producer, /CreationDate and /CharSet strings.
-      scanner = self.PDF_STREAM_OR_ENDOBJ_RE.scanner(
-          other, skip_obj_number_idx)
-      match = scanner.search()
-      if not match:
-        raise PdfTokenParseError(
-            'endobj/stream not found from ofs=%s to ofs=%s' %
+            'full endobj/stream not found from ofs=%s to ofs=%s' %
             (file_ofs, file_ofs + len(other) - start))
-      head = other[skip_obj_number_idx : match.start(1)].rstrip(
-          self.PDF_WHITESPACE_CHARS)
-      if '%' in head or '(' in head:
-        # Our simple parsing approach may have failed, maybe because we've
-        # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
-        #
-        # Now we do the little bit slower parsing approach, which can parse
-        # any valid PDF obj. Please note that we still don't have to call
-        # RewriteParsable on `other'.
-        i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
-        j = max(i - 16, 0)
-        head_suffix = other[j : i]
-        #print '\n%r from %r + %r' % (head_suffix, other[:i], other[i:])
-        match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
-        if not match:
-          raise PdfTokenParseError(
-              'full endobj/stream not found from ofs=%s to ofs=%s' %
-              (file_ofs, file_ofs + len(other) - start))
-        if match.group(1).startswith('stream'):
-          stream_start_idx = j + match.end(1)
-        i = j + match.start(1)
-        end_ofs = j + match.end()
-        while other[i - 1] in self.PDF_WHITESPACE_CHARS:
-          i -= 1
-        head = other[skip_obj_number_idx : i]
-      else:
-        if match.group(1).startswith('stream'):
-          stream_start_idx = match.end(1)
-        end_ofs = match.end()
-
-      self._head = head
-      if stream_start_idx is None:
-        self.stream = None
-      else:  # has 'stream'
-        if not head.startswith('<<') and head.endswith('>>'):
-          raise PdfTokenParseError(
-              'stream must have a dict head at ofs=%s' % file_ofs)
-        scanner = self.LENGTH_OF_STREAM_RE.scanner(head)
-        match = scanner.search()
-        if not match:
-          # We happily accept the invalid PDF obj
-          # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
-          # we don't implement a validating PDF parser.
-          raise PdfTokenParseError(
-              'stream /Length not found at ofs=%s' % file_ofs)
-        if scanner.search():
-          # Duplicate /Length found. We need a full parsing to figure out
-          # which one we need.
-          stream_length = self.Get('Length')
-          if stream_length is None:
-            raise PdfTokenParseError(
-                'proper stream /Length not found at ofs=%s' % file_ofs)
-          match = self.LENGTH_OF_STREAM_RE.match('/Length %s ' % stream_length)
-          assert match
-        if match.group(2) is None:
-          stream_end_idx = stream_start_idx + int(match.group(1))
-        else:
-          # For testing: lme_v6.pdf (and eurotex2006.final.pdf?)
-          if (int(match.group(2)) != 0 and
-              not do_ignore_generation_numbers):
-            raise NotImplementedError(
-                'generational refs (in /Length %s %s R) not implemented '
-                'at ofs=%s' % (match.group(1), match.group(2), file_ofs))
-          obj_num = int(match.group(1))
-          if obj_num <= 0:
-            raise PdfTokenParseError(
-                'obj num %d >= 0 expected for indirect /Length at ofs=%s' %
-                (obj_num, file_ofs))
-          if not objs or obj_num not in objs:
-            if is_ilstream_ok:
-              raise PdfUnexpectedIlStreamError
-            exc = PdfIndirectLengthError(
-                'missing obj for indirect /Length %d 0 R at ofs=%s' %
-                (obj_num, file_ofs))
-            exc.length_obj_num = obj_num
-            raise exc
-          try:
-            stream_length = int(objs[obj_num].head)
-          except ValueError:
-            raise PdfTokenParseError(
-                'indirect /Length not an integer at ofs=%s' % file_ofs)
-          stream_end_idx = stream_start_idx + stream_length
-          # Inline the reference to /Length
-          self._head = '%s/Length %d%s' % (
-              self._head[:match.start()], stream_length,
-              self._head[match.end():])
-        endstream_str = other[stream_end_idx : stream_end_idx + 128]
-        # TODO(pts): Create objs for regexps elsewhere in this .py file.
-        match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
-        if not match:
-          # TODO(pts): Find the last match.
-          for match in self.PDF_ENDSTREAM_ENDOBJ_RE.finditer(
-              buffer(other, stream_start_idx, len(other) - stream_start_idx)):
-            pass
-          if match is None:
-            raise PdfTokenParseError(
-                'expected endstream+endobj in obj %d at %s' %
-                (obj_def_obj_num, file_ofs + stream_end_idx))
-          print >>sys.stderr, (
-              'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
-          self.Set('Length', match.end(1))  # Trailing whitespace included.
-          stream_end_idx = match.end(1) + stream_start_idx
-          end_ofs = match.end() + stream_start_idx
-        else:
-          end_ofs = stream_end_idx + match.end()
-        self.stream = other[stream_start_idx : stream_end_idx]
+      if match.group(1).startswith('stream'):
+        stream_start_idx = j + match.end(1)
+      end_ofs = j + match.end()
+      i = j + match.start(1)
+      # TODO(pts): Strip trailing comments and whitespace.
+    else:
+      if match.group(1).startswith('stream'):
+        stream_start_idx = match.end(1)
+      end_ofs = match.end()
+      i = match.start(1)
+    while other[i - 1] in self.PDF_WHITESPACE_CHARS:
+      i -= 1
+    self._head = head = other[skip_obj_number_idx : i]
+    if stream_start_idx is None:
+      self.stream = None
       if end_ofs_out is not None:
         end_ofs_out.append(end_ofs)
-    elif other is None:
-      self._head = None
-      self.stream = None
+      return
+
+    if not head.startswith('<<') and head.endswith('>>'):
+      raise PdfTokenParseError(
+          'stream must have a dict head at ofs=%s' % file_ofs)
+    scanner = self.LENGTH_OF_STREAM_RE.scanner(head)
+    match = scanner.search()
+    if not match:
+      # We happily accept the invalid PDF obj
+      # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
+      # we don't implement a validating PDF parser.
+      raise PdfTokenParseError(
+          'stream /Length not found at ofs=%s' % file_ofs)
+    if scanner.search():
+      # Duplicate /Length found. We need a full parsing to figure out
+      # which one we need.
+      stream_length = self.Get('Length')
+      if stream_length is None:
+        raise PdfTokenParseError(
+            'proper stream /Length not found at ofs=%s' % file_ofs)
+      match = self.LENGTH_OF_STREAM_RE.match('/Length %s ' % stream_length)
+      assert match
+    if match.group(2) is None:
+      stream_end_idx = stream_start_idx + int(match.group(1))
     else:
-      raise TypeError(type(other))
+      # For testing: lme_v6.pdf (and eurotex2006.final.pdf?)
+      if (int(match.group(2)) != 0 and
+          not do_ignore_generation_numbers):
+        raise NotImplementedError(
+            'generational refs (in /Length %s %s R) not implemented '
+            'at ofs=%s' % (match.group(1), match.group(2), file_ofs))
+      obj_num = int(match.group(1))
+      if obj_num <= 0:
+        raise PdfTokenParseError(
+            'obj num %d >= 0 expected for indirect /Length at ofs=%s' %
+            (obj_num, file_ofs))
+      if not objs or obj_num not in objs:
+        if is_ilstream_ok:
+          raise PdfUnexpectedIlStreamError
+        exc = PdfIndirectLengthError(
+            'missing obj for indirect /Length %d 0 R at ofs=%s' %
+            (obj_num, file_ofs))
+        exc.length_obj_num = obj_num
+        raise exc
+      try:
+        stream_length = int(objs[obj_num].head)
+      except ValueError:
+        raise PdfTokenParseError(
+            'indirect /Length not an integer at ofs=%s' % file_ofs)
+      stream_end_idx = stream_start_idx + stream_length
+      # Inline the reference to /Length
+      self._head = '%s/Length %d%s' % (
+          self._head[:match.start()], stream_length,
+          self._head[match.end():])
+    endstream_str = other[stream_end_idx : stream_end_idx + 128]
+    # TODO(pts): Create objs for regexps elsewhere in this .py file.
+    match = self.PDF_ENDSTREAM_ENDOBJ_RE.match(endstream_str)
+    if not match:
+      # TODO(pts): Find the last match.
+      for match in self.PDF_ENDSTREAM_ENDOBJ_RE.finditer(
+          buffer(other, stream_start_idx, len(other) - stream_start_idx)):
+        pass
+      if match is None:
+        raise PdfTokenParseError(
+            'expected endstream+endobj in obj %d at %s' %
+            (obj_def_obj_num, file_ofs + stream_end_idx))
+      print >>sys.stderr, (
+          'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
+      self.Set('Length', match.end(1))  # Trailing whitespace included.
+      stream_end_idx = match.end(1) + stream_start_idx
+      end_ofs = match.end() + stream_start_idx
+    else:
+      end_ofs = stream_end_idx + match.end()
+    self.stream = other[stream_start_idx : stream_end_idx]
+    if end_ofs_out is not None:
+      end_ofs_out.append(end_ofs)
 
   def AppendTo(self, output, obj_num):
     """Append serialized self to output list, using obj_num."""

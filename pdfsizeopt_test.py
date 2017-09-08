@@ -479,10 +479,12 @@ class PdfSizeOptTest(unittest.TestCase):
     t = '42 0 obj<</T 5%>>endobj\n/Length  3>>stream\nABE endstream endobj'
     end_ofs_out = []
     obj = main.PdfObj(s, end_ofs_out=end_ofs_out)
+    self.assertEqual('<</T(>>\nendobj\n)/Length  3>>', obj.head)
     self.assertEqual([len(s)], end_ofs_out)
     self.assertEqual('ABD', obj.stream)
     end_ofs_out = []
     obj = main.PdfObj(t + '\r\n\tANYTHING', end_ofs_out=end_ofs_out)
+    self.assertEqual('<</T 5%>>endobj\n/Length  3>>', obj.head)
     self.assertEqual([len(t) + 1], end_ofs_out)
     end_ofs_out = []
     obj = main.PdfObj(
@@ -511,6 +513,17 @@ class PdfSizeOptTest(unittest.TestCase):
     obj = main.PdfObj('42 0 obj%hello\r  \t\f%more\n/Foo%bello\nendobj')
     # Leading comments are removed, but trailing comments aren't.
     self.assertEqual('/Foo%bello', obj.head)
+    obj = main.PdfObj('42 0 obj/Type/XOb#65ec#74#20endobj endobj')
+    # TODO(pts): Canonicalize to '/Type/XObject#20endobj'.
+    self.assertEqual('/Type/XOb#65ec#74#20endobj', obj.head)
+    obj = main.PdfObj('42 0 obj(endobj rest) endobj')
+    self.assertEqual('(endobj rest)', obj.head)
+    obj = main.PdfObj('42 0 obj<</Type\n\n/XObject >>endobj')
+    # TODO(pts): Remove \n\n and the space.
+    self.assertEqual('<</Type\n\n/XObject >>', obj.head)
+    obj = main.PdfObj('42 0 obj<</BitsPerComponent\n\n4 >>endobj')
+    # TODO(pts): Change \n\n to space, and remove the space.
+    self.assertEqual('<</BitsPerComponent\n\n4 >>', obj.head)
 
     # TODO(pts): Add more tests.
 
