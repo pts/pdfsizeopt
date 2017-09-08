@@ -705,7 +705,7 @@ class PdfObj(object):
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
   """Matches stream or endobj in a PDF obj."""
 
-  PDF_NONSIMPLE_CHAR_RE = re.compile(r'[%(]')
+  PDF_NONSIMPLE_CHAR_RE = re.compile(r'[%(#]')
   """Matches a non-simple character in a PDF obj."""
 
   # TODO(pts): Remove PDF comments first.
@@ -751,10 +751,17 @@ class PdfObj(object):
   """Matches the beginning of a subset font name (starting with slash)."""
 
   PDF_COMMENTS_OR_WHITESPACE_RE = re.compile(
-      r'(?:[\0\t\n\r\f ]+(?=[^\0\t\n\r\f ])|%[^\r\n]*(?:[\r\n]|\Z))*')
+      r'(?:[\0\t\n\r\f ]+(?![\0\t\n\r\f ])|%[^\r\n]*(?:[\r\n]|\Z))*')
       # TODO(pts): Does this do fewer baccktracks than the one below?
       # r'[\0\t\n\r\f ]*(?:%[^\r\n]*(?:[\r\n]|\Z)[\0\t\n\r\f ]*)*')
-  """Matches any number (0 is OK) of terminated comments and whitespace."""
+  """Matches any number (0 is OK) of terminated comments and whitespace.
+
+  Doesn't capture any regexp group.
+  """
+
+  PDF_COMMENT_OR_WHITESPACE_RE = re.compile(
+      PDF_COMMENTS_OR_WHITESPACE_RE.pattern[:-1] + r'+')
+  """Matches any number (>= 1) of terminated comments and whitespace."""
 
   PDF_OBJ_DEF_RE = re.compile(
       r'[\0\t\n\r\f ]*(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
@@ -879,11 +886,6 @@ class PdfObj(object):
       r'%[^\r\n]*|\(([^()\\]*)\)|(\()')
   """Matches a comment, a string simple literal or a string literal opener."""
 
-  PDF_FIND_END_OBJ_RE = re.compile(
-      r'%[^\r\n]*|\([^()\\]*(?=\))|(\()|'
-      + PDF_STREAM_OR_ENDOBJ_RE_STR)
-  """Matches a substring interesting for FindEndOfObj."""
-
   PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
       r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
   """Matches a single character which has to be hex-escaped in the output.
@@ -999,13 +1001,6 @@ class PdfObj(object):
     obj_def_obj_num = int(match.group(1))
     skip_obj_number_idx = match.end()
 
-    # !! TODO(pts): Remove comments (not only leading comments, but all), so
-    # that users of PdfObj can make more assumptions. Also, in strings replace
-    # / with \057 (or replace strings with <<hex>>), and remove spaces, and
-    # unescape `#' in names, so that e.g. if
-    # ('/Subtype/Form' in obj.head) will be true for form objects. It can also
-    # be true for non-form objects like:
-    # `<</A/Subtype/Form/B>' or `<</A[/Subtype/Form]>>' or `[/Subtype/Form]'.
 
     # We do the simplest and fastest parsing approach first to find
     # endobj/endstream. This covers about 90% of the objs. Notable
@@ -1021,32 +1016,162 @@ class PdfObj(object):
         other, skip_obj_number_idx, match.start(1)):
       # Our simple parsing approach may have failed, maybe because we've
       # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
-      #
-      # Now we do the little bit slower parsing approach, which can parse
-      # any valid PDF obj. Please note that we still don't have to call
-      # RewriteParsable on `other'.
-      i = self.FindEndOfObj(other, skip_obj_number_idx, len(other))
-      j = max(i - 16, 0)
-      head_suffix = other[j : i]
-      #print '\n%r from %r + %r' % (head_suffix, other[:i], other[i:])
-      match = self.PDF_STREAM_OR_ENDOBJ_RE.search(head_suffix)
-      if not match:
-        raise PdfTokenParseError(
-            'full endobj/stream not found from ofs=%s to ofs=%s' %
-            (file_ofs, file_ofs + len(other) - start))
-      if match.group(1).startswith('stream'):
-        stream_start_idx = j + match.end(1)
-      end_ofs = j + match.end()
-      i = j + match.start(1)
-      # TODO(pts): Strip trailing comments and whitespace.
+
+      def ParsePdfString(data, data_size, i,
+                         _escapes = dict(('n\n', 'r\r', 't\t', 'b\b', 'f\f', '4\4', '5\5', '6\6', '7\7')),
+                        ):  # !!! unit tests
+        """Returns (string, idx): 1 + the index of the trailing ')'."""
+        # Compose a Python eval()able string in string_output.
+        #
+        # FYI Section 3.2. of the PDF reference 1.7 says thes about CR and
+        # LF in string literals:
+        #
+        # * The carriage return (CR) and line feed (LF) characters, also
+        #   called newline characters, are treated as end-of-line (EOL)
+        #   markers. The combination of a carriage return followed
+        #   immediately by a line feed is treated as one EOL marker.
+        #
+        # * The backslash and the end-of-line marker following it are not
+        #   considered part of the string.
+        #
+        # * If an end-of-line marker appears within
+        #   a literal string without a preceding backslash, the result is
+        #   equivalent to \n (regardless of whether the end-of-line marker
+        #   was a carriage return, a line feed, or both).''
+        assert data[i] == '('
+        i += 1
+        j, output, depth = i, [], 1
+        while 1:
+          if j == data_size:
+            raise PdfTokenTruncated
+          c = data[j]
+          if c == '(':
+            depth += 1
+            j += 1
+          elif c == ')':
+            depth -= 1
+            if not depth:
+              output.append(data[i : j])
+              j += 1
+              i = j
+              break
+            j += 1
+          elif c == '\\':
+            if j + 1 == data_size:
+              raise PdfTokenTruncated
+            c = data[j + 1]
+            if c in '0123':  # !! Test this.
+              output.append(data[i : j])
+              if j + 2 == data_size or data[j + 2] not in '01234567':
+                output.append(chr(int(c, 8)))
+                j += 2
+              elif j + 3 == data_size or data[j + 3] not in '01234567':
+                output.append(chr(int(data[j + 1 : j + 2], 8)))
+                j += 3
+              else:
+                output.append(chr(int(data[j + 1 : j + 4], 8)))
+                j += 4
+            elif c in 'nrtbf4567':
+              output.append(data[i : j])
+              output.append(_escapes[c])
+              j += 2
+              i = j
+            elif c == '\n':  # Skip '\n'.
+              output.append(data[i : j])
+              j += 2
+              i = j
+            elif c == '\r':  # Skip '\r' or '\r\n'.
+              output.append(data[i : j])
+              j += 2
+              if j < data_size and data[j] == '\n':
+                j += 1
+              i = j
+            else:
+              output.append(data[i : j])
+              output.append(c)  # Without the backslash.
+              j += 2
+              i = j
+          elif c == '\r':
+            output.append(data[i : j])
+            output.append('\n')
+            j += 1
+            if j < data_size and data[j] == '\n':
+              j += 1
+            i = j
+          else:
+            j += 1
+        return ''.join(output), i
+
+      # !!! Simple case: no nested parens in strings.
+      interesting_re = re.compile(  # !!! Precompile class-level.  !!! Faster regexp.
+          self.PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1.
+          r'(\([^\\()]*\))|'  # 2.
+          r'(\()|'  # 3.
+          r'(/[^(){}\[\]/\0\t\n\r\f #]*#[^(){}\[\]/\0\t\n\r\f ]*)|'  # 4.
+          r'(stream(?:\r\n|[\0\t\n\r\f ])|endobj(?:[\0\t\n\r\f /%]|\Z))')  # 5. !!! reuse STREAM_OR_ENDOBJ_RE
+
+      output = []
+      i, end_idx = skip_obj_number_idx, len(other)
+      #print '!!! STA', other[i : end_idx]
+      while 1:
+        match = interesting_re.search(other, i, end_idx)
+        if not match:
+          raise PdfTokenParseError(
+              'full endobj/stream not found from ofs=%s to ofs=%s' %
+              (file_ofs, file_ofs + len(other) - start))
+        #print '!!! --- ', [match.group(), match.group(4)]
+        if i != match.start():
+          output.append(other[i : match.start()])
+        if match.group(1) is not None:  # Whitespace or comment.
+          # output[-1] is guaranteed to be a non-empty string, because
+          # we don't append empty strings, and the input doesn't start with
+          # whitespace (PDF_OBJ_DEF_RE above has removed leading whitespace).
+          if not (output[-1][-1] in '<>[](){}/' or
+                  match.group(1) in '<>[](){}/'):
+            output.append(' ')
+        elif match.group(2):  # Simple string.
+          output.append(match.group(2))  # !!! Escape '/' as '\\057'.
+        elif match.group(3):  # Beginning of string.
+          data, i = ParsePdfString(other, end_idx, match.start())
+          output.append('<%s>' % data.encode('hex'))
+          data = ()  # Save memory.
+          continue
+        elif match.group(4):  # /name with hex-escape (#AB).
+          output.append(self.NormalizePdfName(match.group(4)))
+        elif (not match.start() or
+             other[match.start() - 1] not in '<>[](){}/\0\t\n\r\f '):
+          pass  # `endobj' in the middle of a name token.
+        else:
+          #print '!!! EEEE', [other[:match.start() - 1], output]
+          if match.group(5).startswith('stream'):
+            stream_start_idx = match.end(5)
+          end_ofs = match.end()
+          if output and output[-1] == ' ':
+            output.pop()
+          self._head = head = ''.join(output)
+          del output  # Save memory.
+          break
+        i = match.end()
+        # !!! Add support for hex literals in PDF, everything what
+        #     RewriteToParsable supports. Do we need anything at all?
+        #     Do we want to compress hex literals?
+        # !!! fix tuzv.pso.pdf
     else:
       if match.group(1).startswith('stream'):
         stream_start_idx = match.end(1)
       end_ofs = match.end()
-      i = match.start(1)
-    while other[i - 1] in self.PDF_WHITESPACE_CHARS:
-      i -= 1
-    self._head = head = other[skip_obj_number_idx : i]
+      PDF_WHITESPACE_INSIMPLE_RE = re.compile(r'([^\0\t\n\r\f ])[\0\t\n\r\f ]+(?=([^\0\t\n\r\f ]|\Z))')  # !!!
+
+      def Replacement(match):
+        # It's OK that match.group(2) is empty.
+        if match.group(1) in '<>[]/' or match.group(2) in '<>[]/':
+          return match.group(1)
+        return match.group(1) + ' '
+
+      self._head = head = PDF_WHITESPACE_INSIMPLE_RE.sub(
+          Replacement,
+          buffer(other, skip_obj_number_idx,
+                 match.start(1) - skip_obj_number_idx))
     if stream_start_idx is None:
       self.stream = None
       if end_ofs_out is not None:
@@ -1369,49 +1494,6 @@ class PdfObj(object):
         pdf.version = '1.3'
 
   @classmethod
-  def FindEndOfObj(cls, data, start=0, end=None, do_rewrite=True):
-    """Find the right endobj/endstream from data[start : end].
-
-    Args:
-      data: PDF token sequence (with or without `<x> <y> obj' from `start').
-      start: Offset to start parsing at.
-      end: Offset to stop parsing at.
-      do_rewrite: Bool indicating whether to call cls.ReweriteToParsable if
-        needed.
-    Returns:
-      Index in data right after the right 'endobj\n' or 'stream\r\n' (any
-      other whitespace is also OK).
-    Raises:
-      PdfTokenParseError: if `endobj' or `stream' was not found.
-    """
-    if end is None:
-      end = len(data)
-    scanner = cls.PDF_FIND_END_OBJ_RE.scanner(data, start, end)
-    while 1:
-      match = scanner.search()
-      if not match:
-        raise PdfTokenParseError(
-            'could not find endobj/stream in %r...' % data[: 256])
-      if match.group(1):  # a (...) string we were not able to parse
-        if not do_rewrite:
-          raise PdfTokenNotSimplest
-        end_ofs_out = []
-        try:
-          # Ignore return value (the parsable string).
-          cls.RewriteToParsable(
-              data=data, start=match.start(1), end_ofs_out=end_ofs_out)
-        except PdfTokenTruncated, exc:
-          raise PdfTokenParseError(
-              'could not find end of string in %r: %s' %
-              (data[match.start(1) : match.start(1) + 256], exc))
-        # We subtract one below so we don't match ')', and we could match
-        # ')endobj' later.
-        scanner = cls.PDF_FIND_END_OBJ_RE.scanner(
-            data, end_ofs_out[0] - 1, end)
-      elif match.group(2):  # endobj or stream
-        return match.end(2)
-
-  @classmethod
   def ParseTrailer(cls, data, start=0, end_ofs_out=None):
     """Parse PDF trailer at offset start."""
     # TODO(pts): Add unit test.
@@ -1671,6 +1753,22 @@ class PdfObj(object):
                             end_ofs_out=end_ofs_out)
 
   @classmethod
+  def NormalizePdfName(cls, name, idx=None):  # !!! Add unit test.
+    """Normalize hex-escaping (#) in a PDF name."""
+    assert name.startswith('/')
+    if '#' in name:
+      try:
+        name = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+            lambda match: chr(int(match.group(1), 16)), name)
+      except TypeError:  # In int(...) if match.group(1) is None.
+        raise PdfTokenParseError(
+            'hex error in literal name %r at %d' % (name, idx))
+    if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(name, 1):
+      name = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+          lambda match: '#%02X' % ord(match.group(0)), name[1:])
+    return name
+
+  @classmethod
   def _ParseTokens(cls, data, start, end, count_limit,
                    scanner=None, match=None, end_ofs_out=None):
     """Helper method to scan tokens and build values in data[start : end].
@@ -1705,17 +1803,7 @@ class PdfObj(object):
       if kind == '/':
         # It's OK that we don't apply this normalization recursively to
         # [/?Foo] etc.
-        if '#' in value:
-          try:
-            value = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
-                lambda match: chr(int(match.group(1), 16)), value)
-          except TypeError:  # In int(...) if match.group(1) is None.
-            raise PdfTokenParseError(
-                'hex error in literal name %r at %d' %
-                (value, match.start(1)))
-        if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(value, 1):
-          value = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
-              lambda match: '#%02X' % ord(match.group(0)), value[1:])
+        value = cls.NormalizePdfName(value, idx=match.start(1))
       elif kind == '(':
         if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
             value, 1, len(value) - 1).search():

@@ -456,18 +456,21 @@ class PdfSizeOptTest(unittest.TestCase):
   def testPdfObjParse(self):
     obj = main.PdfObj(
         '42 0 obj<</Length  3>>stream\r\nABC endstream endobj')
-    self.assertEqual('<</Length  3>>', obj.head)
+    self.assertEqual('<</Length 3>>', obj.head)
     self.assertEqual('ABC', obj.stream)
     obj = main.PdfObj(
-        '42 0 obj<</Length  4>>stream\r\nABC endstream endobj')
+        '42 0 obj<</Length%5 6\n3\r>>\t\f\0stream\r\nABC endstream endobj')
+    self.assertEqual('<</Length 3>>', obj.head)
+    self.assertEqual('ABC', obj.stream)
+    obj = main.PdfObj(
+        '42 0 obj<</Length 4>>stream\r\nABC endstream endobj')
     self.assertEqual(
         'ABC ', main.PdfObj(
             '42 0 obj<</Length 99>>stream\r\nABC endstream endobj').stream)
-    self.assertEqual('<</Length  4>>', obj.head)
+    self.assertEqual('<</Length 4>>', obj.head)
     self.assertEqual('ABC ', obj.stream)
-    obj = main.PdfObj(
-        '42 0 obj<</Length  4>>endobj')
-    self.assertEqual('<</Length  4>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</Length  4>>endobj')
+    self.assertEqual('<</Length 4>>', obj.head)
     self.assertEqual(None, obj.stream)
     obj = main.PdfObj(
         '42 0 obj<</T[/Length 99]/Length  3>>stream\r\nABC endstream endobj')
@@ -479,12 +482,12 @@ class PdfSizeOptTest(unittest.TestCase):
     t = '42 0 obj<</T 5%>>endobj\n/Length  3>>stream\nABE endstream endobj'
     end_ofs_out = []
     obj = main.PdfObj(s, end_ofs_out=end_ofs_out)
-    self.assertEqual('<</T(>>\nendobj\n)/Length  3>>', obj.head)
+    self.assertEqual('<</T(>>\nendobj\n)/Length 3>>', obj.head)
     self.assertEqual([len(s)], end_ofs_out)
     self.assertEqual('ABD', obj.stream)
     end_ofs_out = []
     obj = main.PdfObj(t + '\r\n\tANYTHING', end_ofs_out=end_ofs_out)
-    self.assertEqual('<</T 5%>>endobj\n/Length  3>>', obj.head)
+    self.assertEqual('<</T 5/Length 3>>', obj.head)
     self.assertEqual([len(t) + 1], end_ofs_out)
     end_ofs_out = []
     obj = main.PdfObj(
@@ -507,23 +510,27 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual([len(s)], end_ofs_out)
     obj = main.PdfObj(
         '42 0 obj[/Foo%]endobj\n42  43\t]\nendobj')
-    # Parses the comment properly, but doesn't replace it with the non-comment
-    # version. Also comments in the middle aren't removed.
-    self.assertEqual('[/Foo%]endobj\n42  43\t]', obj.head)
+    self.assertEqual('[/Foo 42 43]', obj.head)
     obj = main.PdfObj('42 0 obj%hello\r  \t\f%more\n/Foo%bello\nendobj')
-    # Leading comments are removed, but trailing comments aren't.
-    self.assertEqual('/Foo%bello', obj.head)
-    obj = main.PdfObj('42 0 obj/Type/XOb#65ec#74#20endobj endobj')
-    # TODO(pts): Canonicalize to '/Type/XObject#20endobj'.
-    self.assertEqual('/Type/XOb#65ec#74#20endobj', obj.head)
+    self.assertEqual('/Foo', obj.head)
+    obj = main.PdfObj('42 0 obj/Type/XObendobj endobj')
+    self.assertEqual('/Type/XObendobj', obj.head)
+    obj = main.PdfObj('42 0 obj/Type/XOb#6Aec#74#20endobj endobj')
+    self.assertEqual('/Type/XObject#20endobj', obj.head)
     obj = main.PdfObj('42 0 obj(endobj rest) endobj')
     self.assertEqual('(endobj rest)', obj.head)
-    obj = main.PdfObj('42 0 obj<</Type\n\n/XObject >>endobj')
-    # TODO(pts): Remove \n\n and the space.
-    self.assertEqual('<</Type\n\n/XObject >>', obj.head)
-    obj = main.PdfObj('42 0 obj<</BitsPerComponent\n\n4 >>endobj')
-    # TODO(pts): Change \n\n to space, and remove the space.
-    self.assertEqual('<</BitsPerComponent\n\n4 >>', obj.head)
+    obj = main.PdfObj('42 0 obj<</Type\n\n/XObject >>\n\rendobj')
+    self.assertEqual('<</Type/XObject>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</Type\n%\n/XObject >>\n\rendobj')
+    self.assertEqual('<</Type/XObject>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</BitsPerComponent\n\n4 \f>>\t\tendobj')
+    self.assertEqual('<</BitsPerComponent 4>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</BitsPerComponent\n\n4\f/A ( ) >>\t\tendobj')
+    self.assertEqual('<</BitsPerComponent 4/A( )>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</BitsPerComponent\n\n4\f'
+                      '/A ((\)\)endobj)x) >>\t\tendobj')
+    self.assertEqual('<</BitsPerComponent 4/A<282929656e646f626a2978>>>',
+                     obj.head)
 
     # TODO(pts): Add more tests.
 
@@ -578,30 +585,6 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(None, obj._cache)
     self.assertEqual('<2a>', obj.Get('Foo'))
     self.assertEqual({'Foo': '<2a>'}, obj._cache)
-
-  def testFindEndOfObj(self):
-    def Rest(data, do_rewrite=False):
-      return data[main.PdfObj.FindEndOfObj(
-          data, do_rewrite=do_rewrite):]
-    self.assertRaises(main.PdfTokenParseError, Rest, 'foo bar ')
-    self.assertRaises(main.PdfTokenParseError, Rest, 'endobj ')
-    self.assertEqual('after', Rest(' endobj after'))
-    self.assertEqual('after', Rest('>endobj\rafter'))
-    self.assertEqual('after', Rest('foo\t\tbar endobj\nafter'))
-    self.assertEqual('after', Rest('foo%stream\r\nbar%baz\rendobj after'))
-    self.assertEqual('after', Rest('(hi)endobj after'))
-    self.assertEqual('after', Rest('foo bar >>endobj\nafter'))
-    self.assertEqual('\n\tafter', Rest('foo bar >>endobj\n\n\tafter'))
-    self.assertEqual('\n after', Rest('foo bar >>endobj\r\n after'))
-    self.assertEqual('\fafter', Rest('foo bar >>stream\r\n\fafter'))
-    self.assertRaises(
-        main.PdfTokenNotSimplest, Rest,
-        '((\\)\\)endobj \\\\))endobj\nafter')
-    self.assertEqual(
-        'after', Rest('((\\)\\)endobj \\\\))endobj\nafter', do_rewrite=True))
-    self.assertEqual('after', Rest('(%\nendobj\n)\tendobj\nafter'))
-    self.assertEqual('after', Rest('(%)endobj\nafter'))
-    self.assertEqual('after', Rest('%((()endobj\n)\tendobj\nafter'))
 
   def testFindEqclassesAllEquivalent(self):
     pdf = main.PdfData()
@@ -919,7 +902,7 @@ class PdfSizeOptTest(unittest.TestCase):
          '1 0 obj\n'
          '<</Type/Pages/Kids[5 0 R]/MediaBox[0 0 419 534]/Count 1>>endobj\n'
          '2 0 obj\n'
-         '<</Type   /Catalog/Pages 1 0 R>>endobj\n'
+         '<</Type/Catalog/Pages 1 0 R>>endobj\n'
          '3 0 obj\n'
          '<</Length 30>>stream\n'
          '\n'
@@ -937,10 +920,10 @@ class PdfSizeOptTest(unittest.TestCase):
              '/Parent 1 0 R>>endobj\n'
          '6 0 obj\n'
          '<</Length 14/Root 2 0 R/Size 7/Type/XRef/W[0 2 0]>>stream\n'
-         '\x00\x00\x00\x0f\x00W\x00\x86\x00\xd2\x01t\x01\xcf'
+         '\x00\x00\x00\x0f\x00W\x00\x83\x00\xcf\x01q\x01\xcc'
              'endstream endobj\n'
          'startxref\n'
-         '463\n'
+         '460\n'
          '%%EOF\n')
     output = []
     e(s, output=output, do_generate_object_stream=False)
@@ -1154,10 +1137,11 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Differences[65/AAA]/BaseEncoding/WinAnsiEncoding>>',
                      F('1 0 obj<<>>endobj'))
     # Unchanged.
-    self.assertEqual('<</BaseEncoding  /Foo>>',
+    self.assertEqual('<</BaseEncoding/Foo>>',
                      F('1 0 obj<</Encoding<</BaseEncoding  /Foo>>>>endobj'))
     # Unchanged.
-    self.assertEqual('<</BaseEncoding/Foo/Differences[66/BB/CC 100/dd  101/ee]>>',
+    self.assertEqual('<</BaseEncoding/Foo'
+                     '/Differences[66/BB/CC 100/dd 101/ee]>>',
                      F('1 0 obj<</Encoding<</BaseEncoding/Foo/Differences'
                        '[66/BB/CC 100/dd  101/ee]>>>>endobj'))
     self.assertEqual('<</Differences[65/AAA/BB/CC'
