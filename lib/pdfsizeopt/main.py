@@ -2965,15 +2965,8 @@ class PdfObj(object):
 
   def HasUncompressedStream(self):  # !!! Add unit test.
     """Returns a bool indicating whether this obj has an uncompressed stream."""
-    if self.stream is None:
-      return False
-    if '/Filter' not in self.head:
-      return True
-    filter_value = self.Get('Filter')
-    if filter_value in (None, '[]'):  # TODO(pts): Match '[ ]' etc.
-      return True
-    filter_value = str(filter_value)
-    return (filter_value.startswith('[') and not self.ParseArray(filter_value))
+    return (self.stream is not None and
+            ('/Filter' not in self.head or self.Get('Filter') in (None, '[]')))
 
   def GetUncompressedStream(self, objs=None):
     """Returns the uncompressed stream data in this obj.
