@@ -851,7 +851,7 @@ class PdfObj(object):
   trailing >."""
 
   PDF_HEX_STRING_LITERAL_RE = re.compile(
-      r'<[\0\t\n\r\f 0-9a-fA-F]*(?:>|\Z)')
+      r'<[\0\t\n\r\f 0-9a-fA-F]*>?')
   """Matches a PDF hex <...> string literal, where the trailing > is optional,
   but then anchored to \Z."""
 
@@ -1707,12 +1707,11 @@ class PdfObj(object):
     if start >= len(data):
       raise PdfTokenTruncated
     if data[start] == '<':
-      # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
       match = cls.PDF_HEX_STRING_LITERAL_RE.match(data, start, end)
-      if not match:
+      if not match or data[match.end() - 1] != '>':
+        if match and match.end() == end:
+          raise PdfTokenTruncated('Truncated hex string.')
         raise PdfTokenParseError('Bad hex string.')
-      if data[match.end() - 1] != '>':
-        raise PdfTokenTruncated('Truncated hex string.')
       i = match.end()
       data = cls.PDF_WHITESPACE_RE.sub(
           '', buffer(data, start + 1, match.end() - 2 - start))
@@ -1768,12 +1767,11 @@ class PdfObj(object):
       # This would also work here, but it contains an unnecessary
       # .decode('hex').encode('hex'):
       # return '<%s>' % cls.ParsePdfString(data)[0].encode('hex')
-      # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
       match = cls.PDF_HEX_STRING_LITERAL_RE.match(data)
-      if not match or match.end() != len(data):
+      if not match or data[match.end() - 1] != '>':
+        if match and match.end() == len(data):
+          raise PdfTokenTruncated('Truncated hex string %r' % data)
         raise PdfTokenParseError('Bad hex string %r' % data)
-      if data[match.end() - 1] != '>':
-        raise PdfTokenTruncated('Truncated hex string %r' % data)
       data = cls.PDF_WHITESPACE_RE.sub('', data).lower()
       if (len(data) & 1) != 0:
         return data[:-1] + '0>'
@@ -3068,16 +3066,15 @@ class PdfObj(object):
           # s, i = cls.ParsePdfString(
           #     data, i - 1, data_size, is_partial_ok=True)
           # output.append(' <%s>' % s.encode('hex'))
-          # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
           match = cls.PDF_HEX_STRING_LITERAL_RE.match(data, i - 1, data_size)
-          if not match:
+          if not match or data[match.end() - 1] != '>':
+            if match and match.end() == data_size:
+              raise PdfTokenTruncated('Truncated hex string.')
             raise PdfTokenParseError('Bad hex string.')
-          j = match.end() - 1
-          if data[j] != '>':
-            raise PdfTokenTruncated('Truncated hex string.')
-          s = cls.PDF_WHITESPACE_RE.sub('', buffer(data, i, j - i))
+          j = match.end()
+          s = cls.PDF_WHITESPACE_RE.sub('', buffer(data, i, j - 1 - i))
           output.append(' <%s%s>' % (s.lower(), '0' * (len(s) & 1)))
-          i = j + 1
+          i = j
           del s  # Save memory.
           if stack[-1] == '-':
             stack.pop()
