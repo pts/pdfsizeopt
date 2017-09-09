@@ -169,11 +169,9 @@ FLAGS_HELP = r"""
   before reading the first input PDF.
 """
 
-# TODO(pts): Add a shorthand for: --do-optimize-images=no --do-optimize-fonts=no --do-optimize-objs=no --do-optimize-streams=no --do-decompress-most-streams=yes --do-generate-xref-stream=no --do-generate-object-stream=no
-# TODO(pts): Add flag to os.remove temporary files even on an exception.
-# TODO(pts): Proper whitespace parsing (as in PDF)
-# TODO(pts): re.compile anywhere
-# TODO(pts): Try to recompress already compressed streams, maybe save bytes.
+# TODO(pts): Add a shorthand for (and then allow override later in the command-line -- or also earlier?): --do-optimize-images=no --do-optimize-fonts=no --do-optimize-objs=no --do-optimize-streams=no --do-decompress-most-streams=yes --do-generate-xref-stream=no --do-generate-object-stream=no
+# TODO(pts): Add cleanup flag to os.remove temporary files even on an exception.
+# TODO(pts): re.compile anywhere (no re.match or re.search).
 
 # We don't want to have a '$' + 'Id' in this file, because downloading the
 # script from http://pdfsizeopt.googlecode.com/svn/trunk/pdfsizeopt.py
@@ -630,7 +628,8 @@ class PdfIndirectLengthError(PdfTokenParseError):
 class PdfUnexpectedIlStreamError(PdfTokenParseError):
   """Raised if a PDF obj with an indirect /Length is found where unexpected."""
 
-class PdfTokenTruncated(Error):
+
+class PdfTokenTruncated(PdfTokenParseError):
   """Raised if a string is only a prefix of a PDF token sequence."""
 
 
@@ -699,19 +698,14 @@ class PdfObj(object):
   PDF_WHITESPACES_RE = re.compile('[' + PDF_WHITESPACE_CHARS + ']+')
   """Matches one or more PDF whitespace characters."""
 
-  PDF_STREAM_OR_ENDOBJ_RE_STR = (
-      r'[\0\t\n\r\f )>\]](stream(?:\r\n|[\0\t\n\r\f ])|'
+  PDF_STREAM_OR_ENDOBJ_RE = re.compile(
+      r'(stream(?:\r\n|[\0\t\n\r\f ])|'
       r'endobj(?:[\0\t\n\r\f /%]|\Z))')
-  PDF_STREAM_OR_ENDOBJ_RE = re.compile(PDF_STREAM_OR_ENDOBJ_RE_STR)
-  """Matches stream or endobj in a PDF obj."""
+  """Matches stream or endobj in a PDF obj in .group(1)."""
 
-  PDF_NONSIMPLE_CHAR_RE = re.compile(r'[%(#]')
-  """Matches a non-simple character in a PDF obj."""
-
-  # TODO(pts): Remove PDF comments first.
-  FLATEDECODE_ARY1_RE = re.compile(
-      r'\[[\0\t\n\r\f ]*/FlateDecode[\0\t\n\r\f ]*\]\Z')
-  """Matches a single-element array token containing /FlateDecode."""
+  PDF_PREFIXED_STREAM_OR_ENDOBJ_RE = re.compile(
+      r'[\0\t\n\r\f \)>\]]' + PDF_STREAM_OR_ENDOBJ_RE.pattern)
+  """Matches stream or endobj in a PDF obj, prefixed with 1 char."""
 
   REST_OF_R_RE = re.compile(
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
@@ -781,16 +775,111 @@ class PdfObj(object):
       PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
   """Matches an `obj' definition, xref or startxref."""
 
+  PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
+      r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
+  """Matches a single character which has to be hex-escaped in the output.
+
+  The character class of PDF_CHAR_TO_HEX_ESCAPE_RE is a subset of the
+  character class of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE, e.g. '/', '<', ' ',
+  '#' and '(' are not members of PDF_CHAR_TO_HEX_ESCAPE_RE, but they are
+  members of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE,. """
+
+  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
+  """Matches a single character to be kept escaped internally to pdfsizeopt."""
+
+  PDF_TOKENS_SAFE_STRING_RE = re.compile(
+      r'([-+A-Za-z0-9_./#\[\] ]+|>>|'
+      r'<(?:<|[0-9a-f]*>)|'
+      # !!! reuse PDF_STRING_UNSAFE_CHAR_RE = re.compile(r'[<>(){}\[\]\\\v/\0\t\n\r\f %]')
+      r'\([^<>(){}\[\]\\\v/\0\t\n\r\f %]*\))+')
+  """Matches a safe prefix of a PDF token sequence.
+
+  If PDF_TOKENS_UNSAFE_CHARS_RE is found in a string, then
+  PDF_TOKENS_SAFE_STRING_RE doesn't match all the way to the end. It's not
+  true the other way round, e.g. PDF_TOKENS_SAFE_STRING_RE doesn't match
+  'foo&bar' all the way to the end, but
+  PDF_TOKENS_UNSAFE_CHARS_RE isn't found. """
+
+  PDF_TOKENS_UNSAFE_CHARS_RE = re.compile(r'[{}\\\v\0\t\n\r\f%\\]+')
+  """Matches a single unsafe character in a PDF token sequence.
+
+  * Space is not unsafe, we need it for `/Length 5'.
+  * Non-space whitespace is considered unsafe because we normalize to space.
+  * ( and ) are not unsafe, we need them for `(hi)'.
+  * [ and ] are not unsafe, we need them for `[]'.
+  * < and > are not unsafe, we need them for `<01>'.
+  * # is not unsafe, we need it for `/Foo#2A'.
+  * { and } are considered unsafe because they are PostScript tokens, and they
+    are not safe to have in PDF names. They are hex-escaped in string
+    literals.
+  * \v is considered unsafe because it's a Python whitespace (not PDF
+    whitespace).
+  * % is considered unsafe because of <<%/Type/XObject\n>> .
+  * \\ is considered unsafe because of (\)) .
+
+  !!! Use this for additional checking.
+
+  !!! Check for { and } always, explicitly.
+  """
+
+  PDF_STRING_UNSAFE_CHAR_RE = re.compile(r'[<>(){}\[\]\\\v/\0\t\n\r\f %]')
+  """Matches a single unsafe character in a PDF string literal.
+
+  * \v is considered unsafe because it's a Python whitespace (not PDF
+    whitespace).
+  * / is considered unsafe because of <</A(/Type/XObject)>>
+  * % is considered unsafe because it's a PDF comment.
+  * \r is considered unsafe because (\r) is equivalent to (\n).
+  * { and } are considered unsafe because they are PostScript tokens, and they
+    are not safe to have in PDF names.
+  * \\ is considered unsafe because of (\)) .
+
+  See also PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE for PDF name tokens.
+  PDF_STRING_UNSAFE_CHAR_RE (e.g. not containing *) must be a subset of
+  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE (e.g. containing *).
+  """
+
+  PDF_HEX_STRING_LITERAL_OR_DICT_RE = re.compile(
+      r'<(?:<|[\0\t\n\r\f 0-9a-fA-F]*>?)')
+  """Matches a << or a PDF hex <...> string literal, without maybe the
+  trailing >."""
+
+  PDF_HEX_STRING_LITERAL_RE = re.compile(
+      r'<[\0\t\n\r\f 0-9a-fA-F]*(?:>|\Z)')
+  """Matches a PDF hex <...> string literal, where the trailing > is optional,
+  but then anchored to \Z."""
+
+  PDF_TOKENS_NONSIMPLE_CHAR_RE = re.compile(
+      r'[^-+A-Za-z0-9_./\[\]<>\0\t\n\r\f ]')
+  """Matches a non-simple character in a PDF obj, needs the
+  PDF_TOKENS_INTERESTING_RE parser.
+
+  In particular these PDF token constructs are considered nonsimple:
+  string ('(' and ')'), comment ('%'), PostScript array ('{', '}'), a name
+  with a hex escape (e.g. '/Typ#65'), a name with an unsafe character
+  (e.g. '/Type*' or '/foo\\bar'), a vertical tab ('\v', because it's
+  whitespace in Python, but not in PDF).
+
+  Non-space PDF whitespace characters (e.g '\t') are considered simple, because
+  parsing will normalize them to spaces.
+  """
+
   # !!! Faster regexps by splitting. Do some benchmarks on huge PDFs.
-  PDF_HEAD_INTERESTING_RE = re.compile(
-      PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1.
-      r'(\([^\\()]*\))|'  # 2. Simple string: without parens or backslash.
+  # !!! Does it match properly at end-of-string (e.g. '/')?
+  PDF_TOKENS_INTERESTING_RE = re.compile(
+      PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1. Comment or whitespace.
+      r'\(([^\\()\r]*)\)|'  # 2. Simple string: without parens or backslash.
       r'(\()|'  # 3. Beginning of a complicated string.
-      r'(/[^(){}\[\]/\0\t\n\r\f #]*#[^(){}\[\]/\0\t\n\r\f ]*)|'  # 4.
-      r'(stream(?:\r\n|[\0\t\n\r\f ])|endobj(?:[\0\t\n\r\f /%]|\Z))')  # 5. !!! Reuse parts of STREAM_OR_ENDOBJ_RE.
+      r'(/[-+A-Za-z0-9_.]*[^<>(){}\[\]/\0\t\n\r\f %\-+A-Za-z0-9_.][^<>(){}\[\]/\0\t\n\r\f %]*)|' +  # 4. Name with explicit hex (#AB) escape or name which needs hex-escaping. !!! Reuse PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.
+      r'(/(?=[<>(){}\[\]/\0\t\n\r\f %]|\Z))|'  # 5. An empty name token.
+      r'(' + PDF_HEX_STRING_LITERAL_OR_DICT_RE.pattern + ')|'  # 6. Hex string literal or stray <.
+      r'([{}\\\v\)])|'  # 7. Invalid PDF tokens. (At least invalid outside name tokens.)
+      + PDF_STREAM_OR_ENDOBJ_RE.pattern)  # 8. stream or endobj.
   """Matches interesting parts of a non-simple obj head."""
 
-  PDF_WHITESPACE_INSIMPLE_RE = re.compile(
+  PDF_EMPTY_NAME_TOKEN_RE = re.compile('/[<>(){}\[\]/\0\t\n\r\f %]')
+
+  PDF_WHITESPACE_IN_SIMPLE_RE = re.compile(
       r'([^\0\t\n\r\f ])[\0\t\n\r\f ]+(?=([^\0\t\n\r\f ]|\Z))')
   """Matches whitespace in a simple obj head."""
 
@@ -889,25 +978,15 @@ class PdfObj(object):
   PDF_INT_RE = re.compile(r'-?\d+\Z')
   """Matches a PDF integer token."""
 
-  PDF_STRING_SPECIAL_CHAR_RE = re.compile(r'([()\\])')
-  """Matches PDF string literal special chars ( ) \\ ."""
+  PDF_STRING_NONSIMPLE_CHAR_RE = re.compile(r'([()\\\r])')
+  """Matches PDF string literal special chars ( ) \\ \r ."""
 
-  PDF_HEX_STRING_LITERAL_RE = re.compile(r'<[\0\t\n\r\f 0-9a-fA-F]+>\Z')
-  """Matches a PDF hex <...> string literal."""
+  PDF_SIMPLE_STRING_RE = re.compile(r'\(([^()\\\r]*)\)')
+  """Matches a PDF string literal without special chars ( ) \\ \r . No \Z."""
 
   PDF_COMMENT_OR_STRING_RE = re.compile(
       r'%[^\r\n]*|\(([^()\\]*)\)|(\()')
   """Matches a comment, a string simple literal or a string literal opener."""
-
-  PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
-      r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
-  """Matches a single character which has to be hex-escaped in the output.
-
-  A superset (subset) of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.
-  """
-
-  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
-  """Matches a single character to be kept escaped internally to pdfsizeopt."""
 
   PDF_COMMENT_RE = re.compile(r'%[^\r\n]*')
   """Matches a single comment line without a terminator."""
@@ -1018,108 +1097,24 @@ class PdfObj(object):
     # We do the simplest and fastest parsing approach first to find
     # endobj/endstream. This covers about 90% of the objs. Notable
     # exceptions are the /Producer, /CreationDate and /CharSet strings.
-    match = self.PDF_STREAM_OR_ENDOBJ_RE.search(
+    match = self.PDF_PREFIXED_STREAM_OR_ENDOBJ_RE.search(
         other, skip_obj_number_idx)
     if not match:
       raise PdfTokenParseError(
           'endobj/stream not found from ofs=%s to ofs=%s' %
           (file_ofs, file_ofs + len(other) - start))
     stream_start_idx = None
-    if self.PDF_NONSIMPLE_CHAR_RE.search(
+    _whitespace_re = self.PDF_WHITESPACE_RE
+    _unsafe_string_char_re = self.PDF_STRING_UNSAFE_CHAR_RE
+    if self.PDF_TOKENS_NONSIMPLE_CHAR_RE.search(
         other, skip_obj_number_idx, match.start(1)):
       # Our simple parsing approach may have failed, maybe because we've
       # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
-
-      def ParsePdfString(
-          data, data_size, i,
-          _escapes = dict(('n\n', 'r\r', 't\t', 'b\b', 'f\f', '4\4', '5\5',
-                           '6\6', '7\7')),
-          ):  # !!! Add unit tests.
-        """Returns (string, idx): 1 + the index of the trailing ')'."""
-        # Compose a Python eval()able string in string_output.
-        #
-        # FYI Section 3.2. of the PDF reference 1.7 says thes about CR and
-        # LF in string literals:
-        #
-        # * The carriage return (CR) and line feed (LF) characters, also
-        #   called newline characters, are treated as end-of-line (EOL)
-        #   markers. The combination of a carriage return followed
-        #   immediately by a line feed is treated as one EOL marker.
-        #
-        # * The backslash and the end-of-line marker following it are not
-        #   considered part of the string.
-        #
-        # * If an end-of-line marker appears within
-        #   a literal string without a preceding backslash, the result is
-        #   equivalent to \n (regardless of whether the end-of-line marker
-        #   was a carriage return, a line feed, or both).''
-        assert data[i] == '('
-        i += 1
-        j, output, depth = i, [], 1
-        while 1:
-          if j == data_size:
-            raise PdfTokenTruncated
-          c = data[j]
-          if c == '(':
-            depth += 1
-            j += 1
-          elif c == ')':
-            depth -= 1
-            if not depth:
-              output.append(data[i : j])
-              j += 1
-              i = j
-              break
-            j += 1
-          elif c == '\\':
-            if j + 1 == data_size:
-              raise PdfTokenTruncated
-            c = data[j + 1]
-            if c in '0123':  # !! Test this.
-              output.append(data[i : j])
-              if j + 2 == data_size or data[j + 2] not in '01234567':
-                output.append(chr(int(c, 8)))
-                j += 2
-              elif j + 3 == data_size or data[j + 3] not in '01234567':
-                output.append(chr(int(data[j + 1 : j + 2], 8)))
-                j += 3
-              else:
-                output.append(chr(int(data[j + 1 : j + 4], 8)))
-                j += 4
-            elif c in 'nrtbf4567':
-              output.append(data[i : j])
-              output.append(_escapes[c])
-              j += 2
-              i = j
-            elif c == '\n':  # Skip '\n'.
-              output.append(data[i : j])
-              j += 2
-              i = j
-            elif c == '\r':  # Skip '\r' or '\r\n'.
-              output.append(data[i : j])
-              j += 2
-              if j < data_size and data[j] == '\n':
-                j += 1
-              i = j
-            else:
-              output.append(data[i : j])
-              output.append(c)  # Without the backslash.
-              j += 2
-              i = j
-          elif c == '\r':
-            output.append(data[i : j])
-            output.append('\n')
-            j += 1
-            if j < data_size and data[j] == '\n':
-              j += 1
-            i = j
-          else:
-            j += 1
-        return ''.join(output), i
-
       output = []
       i, end_idx = skip_obj_number_idx, len(other)
-      _interesting_re = self.PDF_HEAD_INTERESTING_RE
+      _interesting_re = self.PDF_TOKENS_INTERESTING_RE
+      _parse_pdf_string = self._ParseNonSimplePdfString
+
       while 1:
         match = _interesting_re.search(other, i, end_idx)
         if not match:
@@ -1135,21 +1130,50 @@ class PdfObj(object):
           if not (output[-1][-1] in '<>[](){}/' or
                   match.group(1) in '<>[](){}/'):
             output.append(' ')
-        elif match.group(2):  # Simple string.
-          output.append(match.group(2))  # !!! Escape '/' as '\\057', or everything as hex, normalize string literals.
+        elif match.group(2) is not None:  # Simple string.
+          if _unsafe_string_char_re.search(match.group(2)):
+            output.append('<%s>' % match.group(2).encode('hex'))
+          else:
+            output.append(match.group())
         elif match.group(3):  # Beginning of string.
-          data, i = ParsePdfString(other, end_idx, match.start())
-          output.append('<%s>' % data.encode('hex'))  # !!! Normalize.
+          data, i = _parse_pdf_string(other, match.start(), end_idx)
+          if _unsafe_string_char_re.search(data):
+            output.append('<%s>' % data.encode('hex'))
+          else:
+            output.append('(%s)' % data)
           data = ()  # Save memory.
-          continue
+          continue  # Don't change `i' below.
         elif match.group(4):  # /name with hex-escape (#AB).
-          output.append(self.NormalizePdfName(match.group(4)))
+          output.append(self.NormalizePdfName(match.group(4), file_ofs))
+        elif match.group(5):  # An empty name token (/).
+          raise PdfTokenParseError('Found empty name token.')
+        elif match.group(6):  # A hex string literal or <<.
+          if match.group() == '<<':
+            output.append('<<')
+          else:
+            if other[match.end() - 1] != '>':
+              if match.end() == end_idx:
+                raise PdfTokenTruncated('Truncated hex string.')
+              else:
+                raise PdfTokenParseError('Invalid < token.')
+            data = _whitespace_re.sub('', buffer(
+                other, match.start() + 1, match.end() - 2 - match.start()))
+            if len(data) & 1 != 0:
+              data += '0'
+            data_dec = data.decode('hex')
+            if _unsafe_string_char_re.search(data_dec):
+              output.append('<%s>' % data.lower())
+            else:
+              output.append('(%s)' % data_dec)
+            data = data_dec = ()  # Save memory.
+        elif match.group(7):
+          raise PdfTokenParseError('Invalid PDF token: %r' % match.group())
         elif (not match.start() or
              other[match.start() - 1] not in '<>[](){}/\0\t\n\r\f '):
           pass  # `endobj' in the middle of a name token.
         else:
-          if match.group(5).startswith('stream'):
-            stream_start_idx = match.end(5)
+          if match.group(8).startswith('stream'):
+            stream_start_idx = match.end(8)
           end_ofs = match.end()
           if output and output[-1] == ' ':
             output.pop()
@@ -1157,7 +1181,7 @@ class PdfObj(object):
           del output  # Save memory.
           break
         i = match.end()
-        # !!! Add support for hex literals in PDF (and maybe normalize them to non-hex).
+        # !!! Check forbidden characters here.
         # !!! Add everything what RewriteToParsable supports, e.g. integer normalization. Not only here, also to the `else:' below.
         # !!! Normalize dict item order? Better elsewhere, in PdfData.OptimizeObjs (rather than `obj._cache = None' in PdfData.OptimizeStreams).
         # !!! Remove RewriteToParseable.
@@ -1166,16 +1190,57 @@ class PdfObj(object):
         stream_start_idx = match.end(1)
       end_ofs = match.end()
 
-      def Replacement(match):
+      def ReplacementWhiteSpace(match):
         # It's OK that match.group(2) is empty.
         if match.group(1) in '<>[]/' or match.group(2) in '<>[]/':
           return match.group(1)
         return match.group(1) + ' '
 
-      self._head = head = self.PDF_WHITESPACE_INSIMPLE_RE.sub(
-          Replacement,
-          buffer(other, skip_obj_number_idx,
-                 match.start(1) - skip_obj_number_idx))
+      def ReplacementAngle(match):
+        data = match.group()
+        if data == '<<':
+          return data
+        if data[-1] != '>':
+          if match.end() == end_idx:
+            raise PdfTokenTruncated('Truncated hex string.')
+          else:
+            raise PdfTokenParseError('Invalid < token.')
+        data = _whitespace_re.sub('', buffer(data, 1, len(data) - 2))
+        if len(data) & 1 != 0:
+          data += '0'
+        data_dec = data.decode('hex')
+        if _unsafe_string_char_re.search(data_dec):
+          return '<%s>' % data.lower()
+        else:
+          return '(%s)' % data_dec
+
+      head = buffer(other, skip_obj_number_idx,
+                    match.start(1) - skip_obj_number_idx)
+      # !!! Benchmark this relatively to previous implementation. This is the simple case.
+      #     Seems to be tolerable for pdf_reference_1-7.pdf with >100000 objs.
+      # !!! Report statistics about nonsimple obj parsing percentage.
+      if self.PDF_EMPTY_NAME_TOKEN_RE.search(head):
+        raise PdfTokenParseError('Found empty name token.')
+      head = self.PDF_WHITESPACE_IN_SIMPLE_RE.sub(ReplacementWhiteSpace, head)
+      if not ((head.startswith('<<') and head.find('<', 2) < 0) or
+              head.find('<') < 0):
+        head = self.PDF_HEX_STRING_LITERAL_OR_DICT_RE.sub(
+            ReplacementAngle, head)
+      self._head = head
+
+    # !!! Disable by default, for speed.
+    # !!! Is this regexp match exponential?
+    # !!! This shouldn't be catching additional problems, all errors here
+    #     must have been caught above in the constructor.
+    match = self.PDF_TOKENS_SAFE_STRING_RE.match(head)
+    if not match or match.end() != len(head):
+      if match:
+        i = match.end()
+      else:
+        i = 0
+      raise PdfTokenParseError(
+          'Unsafe chars in obj head at ofs=%s: %r' %
+          (file_ofs, head[i : i + 16]))
     if stream_start_idx is None:
       self.stream = None
       if end_ofs_out is not None:
@@ -1192,6 +1257,7 @@ class PdfObj(object):
       # `<</Foo[/Length 42]>>stream...endstream' above. This is OK, since
       # we don't implement a validating PDF parser.
       # !!! Do this with proper scanning, now that it's normalized.
+      # !!! Do everything below in __init__ simpler.
       raise PdfTokenParseError(
           'stream /Length not found at ofs=%s' % file_ofs)
     if scanner.search():
@@ -1244,7 +1310,7 @@ class PdfObj(object):
         pass
       if match is None:
         raise PdfTokenParseError(
-            'expected endstream+endobj in obj %d at %s' %
+            'expected endstream+endobj in obj %d at ofs=%s' %
             (obj_def_obj_num, file_ofs + stream_end_idx))
       print >>sys.stderr, (
           'warning: incorrect /Length fixed for obj %d' % obj_def_obj_num)
@@ -1500,8 +1566,8 @@ class PdfObj(object):
   @classmethod
   def ParseTrailer(cls, data, start=0, end_ofs_out=None):
     """Parse PDF trailer at offset start."""
-    # TODO(pts): Add unit test.
-    # TODO(pts): Proper PDF token sequence parsing, for the end of the dict.
+    # !!! TODO(pts): Add unit test.
+    # !!! TODO(pts): Do proper PDF token sequence parsing, for the end of the dict.
     scanner = PdfObj.PDF_TRAILER_RE.scanner(data, start)
     match = scanner.match()
     if not match:
@@ -1510,12 +1576,145 @@ class PdfObj(object):
     if end_ofs_out is not None:
       end_ofs_out.append(match.end(1))
     trailer_obj = PdfObj(None)
-    # TODO(pts): No need to strip with proper PDF token sequence parsing.
+    # !!! TODO(pts): No need to strip with proper PDF token sequence parsing.
     trailer_obj.head = match.group(1).strip(
         PdfObj.PDF_WHITESPACE_CHARS)
     trailer_obj.Set('XRefStm', None)
     # We don't remove 'Prev' here, the caller might be interested.
     return trailer_obj
+
+  @classmethod
+  def _ParseNonSimplePdfString(
+      cls, data, start, end,
+      _escapes = dict(('n\n', 'r\r', 't\t', 'b\b', 'f\f', '4\4', '5\5',
+                       '6\6', '7\7'))):
+    """Internal method. Use ParsePdfString instead."""
+    i = start + 1
+    j, output, depth = i, [], 1
+    while 1:
+      if j == end:
+        raise PdfTokenTruncated
+      c = data[j]
+      if c == '(':
+        depth += 1
+        j += 1
+      elif c == ')':
+        depth -= 1
+        if not depth:
+          output.append(data[i : j])
+          j += 1
+          i = j
+          break
+        j += 1
+      elif c == '\\':
+        if j + 1 == end:
+          raise PdfTokenTruncated
+        c = data[j + 1]
+        if c in '0123':
+          output.append(data[i : j])
+          if j + 2 == end or data[j + 2] not in '01234567':
+            output.append(chr(int(c, 8)))
+            j += 2
+          elif j + 3 == end or data[j + 3] not in '01234567':
+            output.append(chr(int(data[j + 1 : j + 3], 8)))
+            j += 3
+          else:
+            output.append(chr(int(data[j + 1 : j + 4], 8)))
+            j += 4
+        elif c in 'nrtbf4567':
+          output.append(data[i : j])
+          output.append(_escapes[c])
+          j += 2
+        elif c == '\n':  # Skip '\n'.
+          output.append(data[i : j])
+          j += 2
+        elif c == '\r':  # Skip '\r' or '\r\n'.
+          output.append(data[i : j])
+          j += 2
+          if j < end and data[j] == '\n':
+            j += 1
+        else:
+          output.append(data[i : j])
+          output.append(c)  # Append without the backslash.
+          j += 2
+        i = j
+      elif c == '\r':
+        output.append(data[i : j])
+        output.append('\n')
+        j += 1
+        if j < end and data[j] == '\n':
+          j += 1
+        i = j
+      else:
+        j += 1
+    return ''.join(output), i
+
+  @classmethod
+  def ParsePdfString(cls, data, start=0, end=None, is_partial_ok=False):
+    """Parses a PDF string literal (hex or non-hex).
+
+    Args:
+      data: str or buffer in which to parse.
+      start: Offset in data to start parsing.
+      end: End (first excluded) offset in data, to end parsing at. The value
+        None means len(data).
+      is_partial_ok: bool indicating whether a string literal ending earlier
+        than `end' is OK. If not, PdfTokenParseError will be raised.
+    Returns:
+      Tuple (string, idx). idx is the index in data right after the parsed
+      string literal.
+    Raises:
+      PdfTokenTruncated: .
+      PdfTokenNotString: .
+      PdfTokenParseError: .
+    """
+    # FYI Section 3.2. of the PDF reference 1.7 says thes about CR and
+    # LF in string literals:
+    #
+    # * The carriage return (CR) and line feed (LF) characters, also
+    #   called newline characters, are treated as end-of-line (EOL)
+    #   markers. The combination of a carriage return followed
+    #   immediately by a line feed is treated as one EOL marker.
+    #
+    # * The backslash and the end-of-line marker following it are not
+    #   considered part of the string.
+    #
+    # * If an end-of-line marker appears within
+    #   a literal string without a preceding backslash, the result is
+    #   equivalent to \n (regardless of whether the end-of-line marker
+    #   was a carriage return, a line feed, or both).''
+    if not isinstance(data, (buffer, str)):
+      raise TypeError
+    if end is None:
+      end = len(data)
+    if not (0 <= start <= end <= len(data)):
+      raise ValueError('Bad offsets.')
+    if start >= len(data):
+      raise PdfTokenTruncated
+    if data[start] == '<':
+      # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
+      match = cls.PDF_HEX_STRING_LITERAL_RE.match(data, start, end)
+      if not match:
+        raise PdfTokenParseError('Bad hex string.')
+      if data[match.end() - 1] != '>':
+        raise PdfTokenTruncated('Truncated hex string.')
+      i = match.end()
+      data = cls.PDF_WHITESPACE_RE.sub(
+          '', buffer(data, start + 1, match.end() - 2 - start))
+      if (len(data) & 1) != 0:
+        data += '0'
+      data = data.decode('hex')
+    elif data[start] == '(':
+      match = cls.PDF_SIMPLE_STRING_RE.match(data, start, end)
+      if match:
+        data, i = match.group(1), match.end()
+      else:  # A non-simple string. Parse it the hard way, counting parens.
+        data, i = cls._ParseNonSimplePdfString(data, start, end)
+    else:
+      raise PdfTokenNotString
+    if not is_partial_ok and i != end:
+      raise PdfTokenParseError('PDF string ended too early.')
+    return data, i
 
   @classmethod
   def ParseSimpleValue(cls, data):
@@ -1527,7 +1726,8 @@ class PdfObj(object):
       Parsed value: True, False, None, an int (or long) or an str (for
       anything else).
     Raises:
-      PdfTokenParseError:
+      PdfTokenParseError: .
+      PdfTokenTruncated: .
     """
     if not isinstance(data, str):
       raise TypeError
@@ -1539,29 +1739,25 @@ class PdfObj(object):
     elif cls.PDF_INT_RE.match(data):
       return int(data)
     elif data.startswith('('):
-      if not data.endswith(')'):
-        raise PdfTokenParseError('bad string %r' % data)
-      if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
-          data, 1, len(data) - 1).search():
-        end_ofs_out = []
-        data2 = cls.RewriteToParsable(data, end_ofs_out=end_ofs_out)
-        if data[end_ofs_out[0]:].strip(cls.PDF_WHITESPACE_CHARS):
-          raise PdfTokenParseError('bad string %r' % data)
-        assert data2.startswith(' <') and data2.endswith('>')
-        return data2[1:]
-      else:
-        return '<%s>' % data[1 : -1].encode('hex')
+      return '<%s>' % cls.ParsePdfString(data)[0].encode('hex')
     elif data.startswith('<<'):
       if not data.endswith('>>'):
-        raise PdfTokenParseError('unclosed dict in %r' % data)
+        raise PdfTokenParseError('Unclosed dict in %r' % data)
       return data
     elif data.startswith('['):
       if not data.endswith(']'):
-        raise PdfTokenParseError('unclosed array in %r' % data)
+        raise PdfTokenParseError('Unclosed array in %r' % data)
       return data
-    elif data.startswith('<'):  # see also data.startswith('<<') above
-      if not cls.PDF_HEX_STRING_LITERAL_RE.match(data):
-        raise PdfTokenParseError('bad hex string %r' % data)
+    elif data.startswith('<'):  # See also data.startswith('<<') above.
+      # This would also work here, but it contains an unnecessary
+      # .decode('hex').encode('hex'):
+      # return '<%s>' % cls.ParsePdfString(data)[0].encode('hex')
+      # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
+      match = cls.PDF_HEX_STRING_LITERAL_RE.match(data)
+      if not match or match.end() != len(data):
+        raise PdfTokenParseError('Bad hex string %r' % data)
+      if data[match.end() - 1] != '>':
+        raise PdfTokenTruncated('Truncated hex string %r' % data)
       data = cls.PDF_WHITESPACE_RE.sub('', data).lower()
       if (len(data) & 1) != 0:
         return data[:-1] + '0>'
@@ -1759,14 +1955,16 @@ class PdfObj(object):
   @classmethod
   def NormalizePdfName(cls, name, idx=None):  # !!! Add unit tests.
     """Normalize hex-escaping (#) in a PDF name."""
-    assert name.startswith('/')
+    assert name.startswith('/'), [name]
     if '#' in name:
       try:
         name = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
             lambda match: chr(int(match.group(1), 16)), name)
       except TypeError:  # In int(...) if match.group(1) is None.
+        # It's OK to report an error here (rather than including a literal
+        # #), because pdf_reference_1-7.pdf says that # must also be escaped.
         raise PdfTokenParseError(
-            'hex error in literal name %r at %d' % (name, idx))
+            'Hex error in name %r at ofs=%s' % (name, idx))
     if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(name, 1):
       name = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
           lambda match: '#%02X' % ord(match.group(0)), name[1:])
@@ -1809,7 +2007,8 @@ class PdfObj(object):
         # [/?Foo] etc.
         value = cls.NormalizePdfName(value, idx=match.start(1))
       elif kind == '(':
-        if cls.PDF_STRING_SPECIAL_CHAR_RE.scanner(
+        # !!! get rid of this string parsing.
+        if cls.PDF_STRING_NONSIMPLE_CHAR_RE.scanner(
             value, 1, len(value) - 1).search():
           # Parse the string in a slow way.
           end_ofs_out = []
@@ -2064,7 +2263,9 @@ class PdfObj(object):
     Returns:
       The most compact PDF token sequence form of data: without superfluous
       whitespace; with '(' string literals. It may contain \n only in
-      string literals.
+      string literals. It's not always a safe token sequence, for example, it
+      may contain '(())' or '/foo*'.
+      !!!! Do we want to emit '/foo*'? Is it compatible?
     Raises:
       PdfTokenParseError: .
     """
@@ -2114,11 +2315,24 @@ class PdfObj(object):
         return char
 
     if do_expect_postscript_name_input:
-      data = data.replace('#', '#23')
+      data0 = data = data.replace('#', '#23')
     else:
+      data0 = data
       data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
-    data = cls.PDF_CHAR_TO_HEX_ESCAPE_RE.sub(
+    #assert not cls.PDF_CHAR_TO_HEX_ESCAPE_RE.search(data), [data]
+    data = cls.PDF_CHAR_TO_HEX_ESCAPE_RE.sub(  # !!!! does this match anything?
         lambda match: '#%02X' % ord(match.group(0)), data)
+    #assert data == PdfObj.NormalizePdfName(data0), [data0, data, PdfObj.NormalizePdfName(data0)]
+    #PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
+    #    r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
+    #"""Matches a single character which has to be hex-escaped in the output.
+    #
+    #The character class of PDF_CHAR_TO_HEX_ESCAPE_RE is a subset of the
+    #character class of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE, e.g. '/', '<', ' ',
+    #'#' and '(' are not members of PDF_CHAR_TO_HEX_ESCAPE_RE, but they are
+    #members of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE,. """
+    # NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE = re.compile(r'[^-+A-Za-z0-9_.]')
+
     # TODO(pts): Optimize integer constants starting with 0.
 
     if obj_num_map:  # nonempty dict
@@ -2142,7 +2356,7 @@ class PdfObj(object):
       for match in cls.PDF_SIMPLE_REF_RE.finditer(data):
         old_obj_nums_ret.append(int(match.group(1)))
 
-    def ReplacementWhiteString(match):
+    def ReplacementWhiteOrString(match):
       """Return replacement for whitespace or hex string `match'.
 
       This function assumes that match is in data.
@@ -2158,7 +2372,7 @@ class PdfObj(object):
         if do_emit_strings_as_hex:
           return '<%s>' % s.encode('hex')
         else:
-          return cls.EscapeString(s)
+          return cls.SerializePdfString(s)
       elif match.group(1):  # '<<'
         return match.group(1)
       else:  # whitespace: remove unless needed
@@ -2170,7 +2384,7 @@ class PdfObj(object):
           return ' '
 
     return cls.PDF_WHITESPACE_OR_HEX_STRING_RE.sub(
-        ReplacementWhiteString, data)
+        ReplacementWhiteOrString, data)
 
   @classmethod
   def SimpleValueToString(cls, value):
@@ -2192,7 +2406,7 @@ class PdfObj(object):
     if isinstance(value, str):
       if (value.startswith('(') or
           (value.startswith('<') and not value.startswith('<<'))):
-        return cls.EscapeString(cls.ParseString(value))
+        return cls.SerializePdfString(cls.ParsePdfString(value)[0])
       else:
         return value
     elif isinstance(value, bool):  # must be above int and long
@@ -2226,8 +2440,23 @@ class PdfObj(object):
     return ''.join(output)
 
   @classmethod
-  def EscapeString(cls, data):
-    """Escape a string to the shortest possible PDF string literal."""
+  def SerializeSafeString(cls, data):  # !!! add tests
+    """Serializes a string as a PDF string: (...) if safe, otherwise <...>."""
+    if cls.PDF_STRING_UNSAFE_CHAR_RE.search(data):
+      return '<%s>' % data.encode('hex')
+    else:
+      return '(%s)' % data
+
+  @classmethod
+  def SerializePdfString(cls, data):
+    """Escape a string to the shortest possible PDF string literal.
+
+    Args:
+      data: An arbitrary byte string (str) (not a PDF string).
+    Results:
+      A string containing a PDF token. Please note that it won't always be a
+      safe string, e.g. '(\n)' and '(())' are both unsafe.
+    """
     if not isinstance(data, str):
       raise TypeError
     # We never emit hex strings (e.g. <face>), because they cannot ever be
@@ -2237,37 +2466,40 @@ class PdfObj(object):
     if no_open or no_close:
       # No way to match parens.
       if no_open and no_close:
-        return '(%s)' % data.replace('\\', '\\\\')
+        data = '(%s)' % data.replace('\\', '\\\\')
+        return data.replace('\r', '\\r')
       else:
-        return '(%s)' % cls.PDF_STRING_SPECIAL_CHAR_RE.sub(r'\\\1', data)
-    else:
-      close_remaining = data.count(')')
-      depth = 0
-      output = ['(']
-      i = j = 0
-      while j < len(data):
-        c = data[j]
-        if (c == '\\' or
-            (c == ')' and depth == 0) or
-            (c == '(' and close_remaining <= depth)):
-          output.append(data[i : j])  # Flush unescaped.
-          output.append('\\' + c)
-          if c == ')':
-            close_remaining -= 1
-          j += 1
-          i = j
-        else:
-          if c == '(':
-            depth += 1
-          elif c == ')':
-            depth -= 1
-            close_remaining -= 1
-          j += 1
-      output.append(data[i:])
-      output.append(')')
-      assert depth == 0
-      assert close_remaining == 0
-      return ''.join(output)
+        data = '(%s)' % cls.PDF_STRING_NONSIMPLE_CHAR_RE.sub(r'\\\1', data)
+        return data.replace('\\\r', '\\r')
+    close_remaining = data.count(')')
+    depth = 0
+    output = ['(']
+    i = j = 0
+    while j < len(data):
+      c = data[j]
+      if (c == '\\' or
+          (c == ')' and depth == 0) or
+          (c == '(' and close_remaining <= depth)):
+        output.append(data[i : j])  # Flush unescaped.
+        output.append('\\' + c)
+        if c == ')':
+          close_remaining -= 1
+        j += 1
+        i = j
+      else:
+        if c == '(':
+          depth += 1
+        elif c == ')':
+          depth -= 1
+          close_remaining -= 1
+        j += 1
+    output.append(data[i:])
+    output.append(')')
+    assert depth == 0
+    assert close_remaining == 0
+    data = ''.join(output)
+    # Without this replacement, (\r\n) would become just \n (EOL).
+    return data.replace('\r', '\\r')
 
   @classmethod
   def PdfToPsName(cls, data, is_nonname_char_ok=False):
@@ -2419,6 +2651,7 @@ class PdfObj(object):
     colorspace = colorspace.strip(cls.PDF_WHITESPACE_CHARS)
     if colorspace == '/DeviceGray':
       return True
+    # !!! TODO(pts): Do proper PDF token sequence parsing.
     match = re.match(r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*'
                      r'(/DeviceRGB|/DeviceGray)'
                      r'[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]*(?s)([<(].*)]\Z',
@@ -2427,7 +2660,7 @@ class PdfObj(object):
       return False
     if match.group(1) == '/DeviceGray':
       return True
-    palette = cls.ParseString(match.group(2))
+    palette = cls.ParsePdfString(match.group(2))[0]
     palette_size = cls.GetRgbPaletteSize(palette)
     i = 0
     while i < palette_size:
@@ -2497,6 +2730,7 @@ class PdfObj(object):
         'invalid palette size: %s' % palette_size)
     return palette_size - palette_mod
 
+  # !!! Do proper PDF token sequence parsing.
   PDFDATA_IS_INDEXED_RGB_OR_GRAY_RE = re.compile(
       r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*/Device(?:RGB|Gray)'
       r'[\0\t\n\r\f ]+\d')
@@ -2506,6 +2740,7 @@ class PdfObj(object):
     return colorspace and cls.PDFDATA_IS_INDEXED_RGB_OR_GRAY_RE.match(
         colorspace)
 
+  # !!! Do proper PDF token sequence parsing.
   PDFDATA_INDEXED_RGB_OR_GRAY_RE = re.compile(
       r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*/Device(RGB|Gray)'
       r'[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]*([<(](?s).*)\]\Z')
@@ -2516,10 +2751,11 @@ class PdfObj(object):
     assert match, 'syntax error in /ColorSpace %r' % colorspace
     base = match.group(1)
     if base == 'RGB':
-      palette = cls.ParseString(match.group(2))
+      palette = cls.ParsePdfString(match.group(2))[0]
       palette_size = min(256 * 3, cls.GetRgbPaletteSize(palette))
     elif base == 'Gray':
-      palette = ''.join(c + c + c for c in cls.ParseString(match.group(2)))
+      palette = ''.join(c + c + c for c in
+                        cls.ParsePdfString(match.group(2))[0])
       palette_size = 256 * 3
     else:
       assert 0, base
@@ -2564,7 +2800,8 @@ class PdfObj(object):
     height = int(bbox[3])
 
     stream = self.GetUncompressedStream(objs=objs)
-    # TODO(pts): Match comments etc.
+    # !! TODO(pts): Do proper PDF content stream token sequence parsing,
+    #    matching comments etc.
     match = re.match(
         r'q[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+'
         r'(\d+)[\0\t\n\r\f ]+0[\0\t\n\r\f ]+0[\0\t\n\r\f ]+cm[\0\t\n\r\f ]+'
@@ -2599,24 +2836,6 @@ class PdfObj(object):
     image_obj.Set('Length', len(stream))
     image_obj.stream = stream
     return width, height, image_obj
-
-  @classmethod
-  def ParseString(cls, pdf_data):
-    """Parse a PDF string data to a Python string.
-
-    Args:
-      pdf_data: `(...)' or `<...>' PDF string data
-    Returns:
-      Python string.
-    Raises:
-      PdfTokenParseError:
-      PdfTokenTruncated:
-      PdfTokenNotString:
-    """
-    pdf_data2 = cls.ParseSimpleValue(pdf_data)
-    if not pdf_data2.startswith('<') or not pdf_data2.endswith('>'):
-      raise PdfTokenNotString
-    return pdf_data2[1 : -1].decode('hex')
 
   PDF_CLASSIFY = [40] * 256
   """Mapping a 0..255 byte to a character type used by RewriteToParsable.
@@ -2653,7 +2872,7 @@ class PdfObj(object):
     the time. In the complicated case, those methods will call
     RewriteToParsable to do the hard work of proper parsing. You can avoid the
     complicated case if you don't have comments or `(...)' string constants in
-    the token stream. Hex string constants (<...>) are OK.
+    the token sequence. Hex string constants (<...>) are OK.
 
     Parsing stops at `stream', `endobj' or `startxref', which will also
     be returned at the end of the string.
@@ -2827,131 +3046,32 @@ class PdfObj(object):
           stack.append('<')
           output.append(' <<')
           i += 1
-        else:  # hex string
-          if isinstance(data, buffer):
-            data = str(data)  # To make data.find work.
-          j = data.find('>', i)
-          if j < 0:
-            hex_data = data[i :]
-          else:
-            hex_data = data[i : j]
-          hex_data = cls.PDF_WHITESPACE_RE.sub('', hex_data)
-          if not re.match('[0-9a-fA-F]*\Z', hex_data):
-            raise PdfTokenParseError('invalid hex data')
-          if j < 0:
-            raise PdfTokenTruncated
-          if len(hex_data) % 2 != 0:
-            hex_data += '0'  # <def> --> <def0>
+        else:  # A hex string literal.
+          # This would also work here, but it contains an unnecessary
+          # .decode('hex').encode('hex'):
+          # s, i = cls.ParsePdfString(
+          #     data, i - 1, data_size, is_partial_ok=True)
+          # output.append(' <%s>' % s.encode('hex'))
+          # !!!! better detect truncation, e.g. <??> should be a PdfTokenParseError instead.
+          match = cls.PDF_HEX_STRING_LITERAL_RE.match(data, i - 1, data_size)
+          if not match:
+            raise PdfTokenParseError('Bad hex string.')
+          j = match.end() - 1
+          if data[j] != '>':
+            raise PdfTokenTruncated('Truncated hex string.')
+          s = cls.PDF_WHITESPACE_RE.sub('', buffer(data, i, j - i))
+          output.append(' <%s%s>' % (s.lower(), '0' * (len(s) & 1)))
           i = j + 1
-          output.append(' <%s>' % hex_data.lower())
+          del s  # Save memory.
           if stack[-1] == '-':
             stack.pop()
-      elif o == 16:  # string
-        depth = 1
-        i += 1
-        if isinstance(data, buffer):
-          data = str(data)  # To make data.find work.
-        j = data.find(')', i)
-        if j > 0:
-          s = data[i : j]
-        else:
-          s = '('
-        if '(' not in s and ')' not in s and '\\' not in s and '\r' not in s:
-          output.append(' <%s>' % s.encode('hex'))
-          i = j + 1
-        else:
-          # Compose a Python eval()able string in string_output.
-          #
-          # FYI Section 3.2. of the PDF reference 1.7 says thes about CR and
-          # LF in string literals:
-          #
-          # * The carriage return (CR) and line feed (LF) characters, also
-          #   called newline characters, are treated as end-of-line (EOL)
-          #   markers. The combination of a carriage return followed
-          #   immediately by a line feed is treated as one EOL marker.
-          #
-          # * The backslash and the end-of-line marker following it are not
-          #   considered part of the string.
-          #
-          # * If an end-of-line marker appears within
-          #   a literal string without a preceding backslash, the result is
-          #   equivalent to \n (regardless of whether the end-of-line marker
-          #   was a carriage return, a line feed, or both).''
-          string_output = ["'"]
-          j = i
-          while 1:
-            if j == data_size:
-              raise PdfTokenTruncated
-            c = data[j]
-            if c == '(':
-              depth += 1
-              j += 1
-            elif c == ')':
-              depth -= 1
-              if not depth:
-                string_output.append(data[i : j])
-                j += 1
-                i = j
-                break
-              j += 1
-            elif c == "'":
-              string_output.append(data[i : j])
-              string_output.append("\\'")
-              j += 1
-              i = j
-            elif c == '\\':
-              if j + 1 == data_size:
-                raise PdfTokenTruncated
-              c = data[j + 1]
-              if c in '0123nrtbf"\\\'':
-                j += 2
-              elif c in '4567':
-                string_output.append(data[i : j])
-                string_output.append('\\00' + c)
-                j += 2
-                i = j
-              elif c == '\n':  # Skip '\n'.
-                string_output.append(data[i : j])
-                j += 2
-                i = j
-              elif c == '\r':  # Skip '\r' or '\r\n'.
-                string_output.append(data[i : j])
-                j += 2
-                if j < data_size and data[j] == '\n':
-                  j += 1
-                i = j
-              else:
-                string_output.append(data[i : j])
-                string_output.append(c)  # without the backslash
-                j += 2
-                i = j
-            elif c == '\0':
-              string_output.append(data[i : j])
-              string_output.append('\\000')  # for eval() below
-              j += 1
-              i = j
-            elif c == '\n':
-              string_output.append(data[i : j])
-              string_output.append('\\n')  # for eval() below
-              j += 1
-              i = j
-            elif c == '\r':  # Not needed in Python 2.6, needed in 2.7.
-              string_output.append(data[i : j])
-              string_output.append('\\n')  # for eval() below
-              j += 1
-              if j < data_size and data[j] == '\n':
-                j += 1
-              i = j
-            else:
-              j += 1
-          string_output.append("'")
-          # eval() works for all 8-bit strings.
-          output.append(
-              ' <%s>' % eval(''.join(string_output), {}).encode('hex'))
-          i = j
+      elif o == 16:  # A (...) string literal.
+        s, i = cls.ParsePdfString(data, i, data_size, is_partial_ok=True)
+        output.append(' <%s>' % s.encode('hex'))
+        del s  # Save memory.
         if stack[-1] == '-':
           stack.pop()
-      elif o == 19:  # single-line comment
+      elif o == 19:  # A single-line comment.
         while i < data_size and data[i] != '\r' and data[i] != '\n':
           i += 1
         if i < data_size:
@@ -2997,11 +3117,7 @@ class PdfObj(object):
       raise FilterError('/Filter is not a str: %r' % (filter_value,))
     if not isinstance(decodeparms, str):
       raise FilterError('/DecodeParms is not a str.')
-    # !! TODO(pts): Proper PDF token parsing, e.g. FLATEDECODE_ARY1_RE not
-    #               matching because of comment in the obj head.
-    if ((filter_value == '/FlateDecode' or
-        ('/FlateDecode' in filter_value and
-         self.FLATEDECODE_ARY1_RE.match(filter_value))) and
+    if (filter_value in ('/FlateDecode', '[/FlateDecode]') and
         '/Predictor' not in decodeparms):
       try:
         return PermissiveZlibDecompress(self.stream)
@@ -3145,7 +3261,7 @@ class PdfObj(object):
         if not do_strings:
           raise UnexpectedStreamError(
               'unexpected stream in: %d 0 obj' % obj_num)
-        return obj.EscapeString(obj.GetUncompressedStream(objs=objs))
+        return obj.SerializePdfString(obj.GetUncompressedStream(objs=objs))
 
     data0 = data
     if '(' in data or '%' in data:  # ')'
@@ -3253,7 +3369,7 @@ class PdfObj(object):
           'expected %d, but got %d values in token list objstm obj %d' %
           (2 * n, len(numbers), obj_num))
     compressed_obj_nums = []
-    # List of (str) buffer objects corresponding to the PDF token stream
+    # List of (str) buffer objects corresponding to the PDF token sequence
     # string in the respective compressed_obj_nums item.
     compressed_obj_headbufs = []
     prev_offset = -1
@@ -3424,7 +3540,7 @@ class ImageData(object):
       assert len(self.plte) % 3 == 0
       # TODO(pts): Save as /Indexed/DeviceGray instead if possible.
       return '[/Indexed/DeviceRGB %d%s]' % (
-          len(self.plte) / 3 - 1, PdfObj.EscapeString(self.plte))
+          len(self.plte) / 3 - 1, PdfObj.SerializePdfString(self.plte))
     else:
       assert False, 'cannot convert to PDF color space'
 
@@ -3672,7 +3788,7 @@ class ImageData(object):
     `sam2p -c zip' and alike, but not much more.
     """
     pdf = PdfData().Load(f, is_parse_error_ok=False)
-    # !! TODO(pts): proper PDF token sequence parsing
+    # !!! TODO(pts): Do proper PDF token sequence parsing.
     image_obj_nums = [
         obj_num for obj_num in sorted(pdf.objs)
         if re.search(r'/Subtype[\0\t\n\r\f ]*/Image\b',
@@ -3703,6 +3819,8 @@ class ImageData(object):
       number_re = r'\d+(?:[.]\d*)?'  # TODO(pts): Exact PDF number regexp.
       width = obj.Get('Width')
       height = obj.Get('Height')
+      # !! TODO(pts): Precompile content_re.
+      # !! TODO(pts): Do proper PDF content stream token sequence parsing.
       # Example content_stream, as emitted by sam2p-0.46:
       # q 0.2118 1 0 rg 0 0 m %(width)s 0 l %(width)s %(height)s l 0
       # %(height)s l F 1 1 1 rg %(width)s 0 0 %(height)s 0 0 cm /S Do Q
@@ -3729,7 +3847,7 @@ class ImageData(object):
         palette = color1 + color2
       obj.Set('Decode', None)
       colorspace = '[/Indexed/DeviceRGB %d%s]' % (
-          len(palette) / 3 - 1, PdfObj.EscapeString(palette))
+          len(palette) / 3 - 1, PdfObj.SerializePdfString(palette))
       obj.Set('ColorSpace', colorspace)
       obj.Set('ImageMask', None)
 
@@ -3918,6 +4036,8 @@ class PdfData(object):
     # /Root ref.
     self.trailer = None
     # PDF version string.
+    # TODO(pts): Bump the version number to 1.2. if #AB hex escapes are used
+    #            in names.
     self.version = '1.0'
     self.file_name = None
     self.file_size = None
@@ -4063,6 +4183,8 @@ class PdfData(object):
       if not objs_with_ilstream:
         break
       objs_to_parse, objs_with_ilstream = objs_with_ilstream, None
+
+    print >>sys.stderr, 'info: parsed %d objs' % len(self.objs)
 
     if not objs and not is_no_objs_ok:
       # Happens e.g. when no objs can be parsed.
@@ -4949,7 +5071,7 @@ class PdfData(object):
     duplicate_count = 0
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
-      # !! TODO(pts): Proper PDF token sequence parsing.
+      # !!! TODO(pts): Do proper PDF token sequence parsing.
       if (
           # (nonstandard behavior) eurotex2006.final.pdf has
           # /Type/FontDescriptor missing, so we don't match on that.
@@ -5423,7 +5545,7 @@ class PdfData(object):
     assert 'FontBBox' not in target_font
     assert source_font['FontType'] == 2
     assert target_font['FontType'] == 2
-    # !! proper check for FontMatrix floats.
+    # !! TODO(pts): Do proper check for FontMatrix floats.
     # We ignore FontInfo and UniqueID.
     for key in ('FontMatrix', 'PaintType'):
       target_value = target_font[key]
@@ -5882,7 +6004,7 @@ class PdfData(object):
         # New Ghostscript doesn't generate /CharSet. We don't generate it
         # either, unless the user asks for it.
         merged_fontdesc_obj.Set(
-            'CharSet', PdfObj.EscapeString(''.join(
+            'CharSet', PdfObj.SerializePdfString(''.join(
                 ['/' + name for name in sorted(merged_font['CharStrings'])])))
 
       self.objs[group_obj_nums[0]].head = merged_fontdesc_obj.head
@@ -6433,6 +6555,7 @@ class PdfData(object):
 
   SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
 
+  # !!! Do proper PDF token sequence parsing.
   PDFDATA_INDEXED_COLORSPACE_FOR_SUB_RE = re.compile(
       r'\A\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*'
       r'/([^\0\t\n\r\f /<(]+)(?s).*')
@@ -6554,6 +6677,7 @@ class PdfData(object):
           colorspace_has_changed = True
       colorspace_short = self.PDFDATA_INDEXED_COLORSPACE_FOR_SUB_RE.sub(
           '/Indexed/\\1', colorspace)
+      # !!! Do proper PDF token sequence parsing.
       if not re.match(r'(?:/Indexed)?/\w+\Z', colorspace_short):
         colorspace_short = '?'
 
@@ -6596,6 +6720,7 @@ class PdfData(object):
       # TODO(pts): Support more color spaces. DeviceCMYK would be tricky,
       # because neither PNG nor sam2p supports it. We can convert it to
       # RGB, though.
+      # !!! Do proper PDF token sequence parsing.
       if not re.match(r'(?:/Device(?:RGB|Gray)\Z|\[[\0\t\n\r\f ]*'
                       r'/Indexed[\0\t\n\r\f ]*'
                       r'/Device(?:RGB|Gray)[\0\t\n\r\f (<\[/])', colorspace):
@@ -6604,8 +6729,9 @@ class PdfData(object):
       # We've already called ResolveReferences on /Filter, /BitsPerComponent,
       # /ColorSpace, /Width, /Height, /Decode, /DecodeParms, /ImageMask.
       #
-      # !! TODO(pts): Proper PDF token sequence parsing, for example what if
-      #               the /ColorSpace palette accidentally matches the regexp?
+      # !!! Get rid of re.match and re.search.
+      # !!! TODO(pts): Do proper PDF token sequence parsing, for example what if
+      #                the /ColorSpace palette accidentally matches the regexp?
       # !! TODO(pts): Allow references in image fields we don't care about.
       #               Especially with RenderImages for Ghostscript.
       if 'R' in obj.head and PdfObj.PDF_REF_RE.search(obj.head):
@@ -6924,6 +7050,7 @@ class PdfData(object):
       # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
       # properly ([0] first)) if one of them is an object. So we implement
       # our own comparator.
+      # !! TODO(pts): Analyze this. How does sorted(...) break here?
       def CompareStr(a, b):
         return (a < b and -1) or (a > b and 1) or 0
 
@@ -6985,7 +7112,7 @@ class PdfData(object):
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       if (obj.head.startswith('<<') and
-          # !! TODO(pts): proper PDF token sequence parsing
+          # !!! TODO(pts): Do proper PDF token sequence parsing.
           re.search(r'/Subtype[\0\t\n\r\f ]*/Form\b', obj.head) and
           obj.Get('Subtype') == '/Form'):
         matrix = obj.Get('Matrix')
@@ -7170,8 +7297,9 @@ class PdfData(object):
       # do_emit_strings_as_hex=True), we have to undo it (i.e. make hex strings
       # binary instead) here.
       head = PdfObj.PDF_HEX_STRING_OR_DICT_RE.sub(
-          lambda match: (match.group(1) is not None and PdfObj.EscapeString(
-              match.group(1).decode('hex')) or '<<'), head)
+          lambda match: (match.group(1) is not None and
+              PdfObj.SerializePdfString(match.group(1).decode('hex'))
+              or '<<'), head)
       obj = PdfObj(None)
       obj.head = head
       obj.stream = stream
