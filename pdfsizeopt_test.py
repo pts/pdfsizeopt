@@ -390,6 +390,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('/foo#AB', e('/foo#ab'))
     self.assertEqual('/foo42', e('/foo#34#32'))
     self.assertEqual('/foo#2A', e('/foo*'))  # !!! Normalized.
+    self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
 
   def DoTestParseSimplestDict(self, e):
     # e is either ParseSimplestDict or ParseDict, so (because the latter)
@@ -543,7 +544,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</A[12 34]>>', e(' << \t/A\f[12%\n34]>>\r'))
     self.assertEqual('( hello\t\n)world', e(' ( hello\t\n)world'))
     self.assertEqual('(\\)((hi))\\\\)world', e(' (\\)(\\(hi\\))\\\\)world'))
-    self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
+    self.assertEqual('/\xface#5BB', e('/\xface#5b#42\f'))
     self.assertRaisesX(main.PdfTokenParseError, e, '/#')
     s = '/Kids[041\t 0\rR\f43\n0% 96 0 R\rR 42 0 R 97 0 Rs 42 0 R]( 98 0 R )\f'
     t = '/Kids[041 0 R 43 0 R 42 0 R 97 0 Rs 42 0 R]( 98 0 R )'
@@ -563,8 +564,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Type/Catalog/Pages 1 0 R>>',
                      e('<</Type/Catalog/Pages 1 0 R >>'))
     self.assertEqual('[/Zoo#3C#3E 1]', e('[/Zoo#3c#3e 1]'))
-    self.assertEqual('[/Zoo#3C#3E()/foo#2A/bar#2A]',
-                     e('[/Zoo#3c#3e(\\\n)/foo*/bar#2a]'))
+    self.assertEqual('[/Zoo#3C#3E()/foo*/bar*#5B/pedal.*]',
+                     e('[/Zoo#3c#3e(\\\n)/foo*/bar#2a#5b/pedal.#2a]'))
 
   def testPdfObjParse(self):
     obj = main.PdfObj(
@@ -690,14 +691,14 @@ class PdfSizeOptTest(unittest.TestCase):
 
   def testPdfUnsafeRegexpSubsets(self):
     a_re = main.PdfObj.PDF_TOKENS_UNSAFE_CHARS_RE
-    b_re = main.PdfObj.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE
+    b_re = main.PdfObj.PDF_SAFE_KEEP_HEX_ESCAPED_RE
     self.assertFalse(a_re.match('*'))
     self.assertTrue(b_re.match('*'))
     for i in xrange(256):  # Test that b_re is a subset of a_re.
       self.assertTrue(not a_re.match(chr(i)) or b_re.match(chr(i)), i)
 
     a_re = main.PdfObj.PDF_STRING_UNSAFE_CHAR_RE
-    b_re = main.PdfObj.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE
+    b_re = main.PdfObj.PDF_SAFE_KEEP_HEX_ESCAPED_RE
     self.assertFalse(a_re.match('*'))
     self.assertTrue(b_re.match('*'))
     for i in xrange(256):  # Test that b_re is a subset of a_re.
@@ -1376,7 +1377,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('[0 0 612. 792.]', F('[. . 612. 792.]'))
 
   def testEscapePdfNames(self):
-    f1 = main.PdfObj._EscapePdfNamesInHexTokens
+    f1 = main.PdfObj._EscapePdfNamesInHexTokensSafe
     f2 = main.PdfObj.NormalizePdfName
     self.assertEqual('', f1(''))
     self.assertRaises(main.PdfTokenParseError, f2, '')

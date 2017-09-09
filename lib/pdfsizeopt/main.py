@@ -775,7 +775,7 @@ class PdfObj(object):
       PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
   """Matches an `obj' definition, xref or startxref."""
 
-  PDF_HEXTOKENS_HEX_ESCAPE_RE = re.compile(
+  PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE = re.compile(
       r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
   """Matches a single name character which needs to be hex-escaped.
 
@@ -785,12 +785,20 @@ class PdfObj(object):
   sequence is not enough, e.g. '(@)' is safe, but doesn't contain all
   strings <hex>-escaped.
 
-  The character class of PDF_HEXTOKENS_HEX_ESCAPE_RE is a subset of the
-  character class of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE, e.g. '/', '<', ' ',
-  '#' and '(' are not members of PDF_HEXTOKENS_HEX_ESCAPE_RE, but they are
-  members of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE,. """
+  The character class of PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE is a subset of the
+  character class of PDF_SAFE_KEEP_HEX_ESCAPED_RE, e.g. '/', '<', ' ',
+  '#' and '(' are not members of PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE, but they are
+  members of PDF_SAFE_KEEP_HEX_ESCAPED_RE,. """
 
-  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
+  PDF_OPTIMIZED_KEEP_HEX_ESCAPED_RE = re.compile(
+      r'[/#\[\]()<>{}\0\t\n\r\f %]')
+  """Like PDF_SAFE_KEEP_HEX_ESCAPED_RE, but contains only a minimum set of
+  characters so that the PDF is still valid.
+
+  The output with this regexp won't be a safe PDF token sequence.
+  """
+
+  PDF_SAFE_KEEP_HEX_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
   """Matches a single character to be kept escaped internally to pdfsizeopt."""
 
   PDF_TOKENS_SAFE_STRING_RE = re.compile(
@@ -840,9 +848,9 @@ class PdfObj(object):
     are not safe to have in PDF names.
   * \\ is considered unsafe because of (\)) .
 
-  See also PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE for PDF name tokens.
+  See also PDF_SAFE_KEEP_HEX_ESCAPED_RE for PDF name tokens.
   PDF_STRING_UNSAFE_CHAR_RE (e.g. not containing *) must be a subset of
-  PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE (e.g. containing *).
+  PDF_SAFE_KEEP_HEX_ESCAPED_RE (e.g. containing *).
   """
 
   PDF_HEX_STRING_LITERAL_OR_DICT_RE = re.compile(
@@ -876,7 +884,7 @@ class PdfObj(object):
       PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]))|'  # 1. Comment or whitespace.
       r'\(([^\\()\r]*)\)|'  # 2. Simple string: without parens or backslash.
       r'(\()|'  # 3. Beginning of a complicated string.
-      r'(/[-+A-Za-z0-9_.]*[^<>(){}\[\]/\0\t\n\r\f %\-+A-Za-z0-9_.][^<>(){}\[\]/\0\t\n\r\f %]*)|' +  # 4. Name with explicit hex (#AB) escape or name which needs hex-escaping. !!! Reuse PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.
+      r'(/[-+A-Za-z0-9_.]*[^<>(){}\[\]/\0\t\n\r\f %\-+A-Za-z0-9_.][^<>(){}\[\]/\0\t\n\r\f %]*)|' +  # 4. Name with explicit hex (#AB) escape or name which needs hex-escaping. !!! Reuse PDF_SAFE_KEEP_HEX_ESCAPED_RE.
       r'(/(?=[<>(){}\[\]/\0\t\n\r\f %]|\Z))|'  # 5. An empty name token.
       r'(' + PDF_HEX_STRING_LITERAL_OR_DICT_RE.pattern + ')|'  # 6. Hex string literal or stray <.
       r'([{}\\\v\)])|'  # 7. Invalid PDF tokens. (At least invalid outside name tokens.)
@@ -1072,7 +1080,7 @@ class PdfObj(object):
       start: Offset in other (if a string) to start parsing from.
       end_ofs_out: None or an empty array output parameter for the end offset
         (i.e.. after `endobj' + whitespace).
-      do_ignore_generation_numbers: Boolean indicating whether to ignore
+      do_ignore_generation_numbers: bool indicating whether to ignore
         generation numbers in references when parsing this object.
       is_ilstream_ok: bool indicating whether it is OK for the obj to have a
         stream with an indirect length.
@@ -1159,7 +1167,7 @@ class PdfObj(object):
           continue  # Don't change `i' below.
         elif match.group(4):  # /name with hex-escape (#AB).
           # Like NormalizePdfName, but we don't need the extra check.
-          output.append(self._EscapePdfNamesInHexTokens(
+          output.append(self._EscapePdfNamesInHexTokensSafe(
               match.group(4), file_ofs))
         elif match.group(5):  # An empty name token (/).
           raise PdfTokenParseError('Found empty name token.')
@@ -1783,7 +1791,7 @@ class PdfObj(object):
       if len(data) == 1 or cls.PDF_NONNAME_CHAR_RE.search(data, 1):
         raise PdfTokenParseError('Bad PDF name token %r' % str(data))
       # Like NormalizePdfName, but we don't need the extra check.
-      return cls._EscapePdfNamesInHexTokens(data)
+      return cls._EscapePdfNamesInHexTokensSafe(data)
     elif data.endswith('R'):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
       if not match:
@@ -1973,12 +1981,12 @@ class PdfObj(object):
     if (len(name) < 2 or name[:1] != '/' or
         cls.PDF_NONNAME_CHAR_RE.search(name, 1)):
       raise PdfTokenParseError('Bad PDF name token %r' % str(name))
-    return cls._EscapePdfNamesInHexTokens(name, idx)
+    return cls._EscapePdfNamesInHexTokensSafe(name, idx)
 
   @classmethod
-  def _EscapePdfNamesInHexTokens(
+  def _EscapePdfNamesInHexTokensSafe(
       cls, data, idx=None,
-      _cache = [PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+      _cache = [PDF_SAFE_KEEP_HEX_ESCAPED_RE.sub(
           lambda match: '#%02X' % ord(match.group()),
           chr(i)) for i in xrange(256)],
       ):  # !!! Add unit tests
@@ -1994,8 +2002,29 @@ class PdfObj(object):
         # #), because pdf_reference_1-7.pdf says that # must also be escaped.
         raise PdfTokenParseError(
             'Hex error in name %r at ofs=%s' % (data, idx))
-    return cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(  # Escapes e.g. * to #2A.
+    return cls.PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE.sub(  # Escapes e.g. * to #2A.
         lambda match: '#%02X' % ord(match.group(0)), data)
+
+  @classmethod
+  def _EscapePdfNamesInHexTokensOptimized(
+      cls, data, idx=None,
+      _cache = [PDF_OPTIMIZED_KEEP_HEX_ESCAPED_RE.sub(
+          lambda match: '#%02X' % ord(match.group()),
+          chr(i)) for i in xrange(256)],
+      ):  # !!! Add unit tests
+    """Data is a PDF token sequence containing all strings as <hex>."""
+    if '#' not in data:  # Works for both strings and buffers.
+      return str(data)
+    # This unescapes e.g. #41 to A, and keeps e.g. #20 escaped. It doesn't
+    # touch unescaped chars (e.g. * or A).
+    try:
+      return cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+          lambda match: _cache[int(match.group(1), 16)], data)
+    except TypeError:  # In int(...) if match.group(1) is None.
+      # It's OK to report an error here (rather than including a literal
+      # #), because pdf_reference_1-7.pdf says that # must also be escaped.
+      raise PdfTokenParseError(
+          'Hex error in name %r at ofs=%s' % (data, idx))
 
   @classmethod
   def _ParseTokens(cls, data, start, end, count_limit,
@@ -2035,7 +2064,7 @@ class PdfObj(object):
         # [/?Foo] etc.
         #
         # Like NormalizePdfName, but we don't need the extra check.
-        value = cls._EscapePdfNamesInHexTokens(value, match.start(1))
+        value = cls._EscapePdfNamesInHexTokensSafe(value, match.start(1))
       elif kind == '(':
         # !!! get rid of this string parsing.
         if cls.PDF_STRING_NONSIMPLE_CHAR_RE.scanner(
@@ -2267,7 +2296,8 @@ class PdfObj(object):
   @classmethod
   def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None,
                     do_emit_strings_as_hex=False,
-                    do_expect_postscript_name_input=False):
+                    do_expect_postscript_name_input=False,
+                    do_emit_safe_names=False):
     """Return shorter representation of a PDF token sequence.
 
     This method doesn't optimize integer constants starting with 0.
@@ -2281,16 +2311,18 @@ class PdfObj(object):
       old_obj_nums_ret: Optional list to which this method will append
         num for all occurrences of `<num> 0 R' in data.
         TODO(pts): Write a simpler method which returns only this.
-      do_emit_strings_as_hex: Boolean indicating whether to emit strings as
+      do_emit_strings_as_hex: bool indicating whether to emit strings as
         hex <...>.
-      do_expect_postscript_name_input: boolean indicating where to expect
+      do_expect_postscript_name_input: bool indicating where to expect
         PostScript names on the input, i.e. don't do #AB hex escaping.
+      do_emit_safe_names: bool indicating whether to emit safe PDF name tokens.
+       (Safe has the same #AB hex-escaping as PdfObj and ParseSimpleValue.)
     Returns:
       The most compact PDF token sequence form of data: without superfluous
-      whitespace; with '(' string literals. It may contain \n only in
-      string literals. It's not always a safe token sequence, for example, it
-      may contain '(())' or '/foo*'.
-      !!!! Do we want to emit '/foo*'? Is it compatible?
+      whitespace; with '(' string literals. It may contain \n only in string
+      literals. It's not always a safe token sequence, for example, it may
+      contain '(())' or '/foo*'. It's a safe token sequence if
+      do_emit_strings_as_hex and do_emit_safe_names are both True.
     Raises:
       PdfTokenParseError: .
     """
@@ -2329,14 +2361,20 @@ class PdfObj(object):
       # According the the PDF reference, comments are equivalent to whitespace.
       data = cls.PDF_COMMENT_RE.sub(' ', data)
 
-    if do_expect_postscript_name_input:
-      data = data.replace('#', '#23')
-      # This escapes eg. * to #2A.
-      data = cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(
-          lambda match: '#%02X' % ord(match.group(0)), data)
+    if do_emit_safe_names:
+     if do_expect_postscript_name_input:
+       data = data.replace('#', '#23')
+       # This escapes eg. * to #2A.
+       data = cls.PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE.sub(
+           lambda match: '#%02X' % ord(match.group()), data)
+     else:
+       # Like NormalizePdfName, but we don't need the extra check.
+       data = cls._EscapePdfNamesInHexTokensSafe(data)
     else:
-      # Like NormalizePdfName, but we don't need the extra check.
-      data = cls._EscapePdfNamesInHexTokens(data)
+      if do_expect_postscript_name_input:
+        data = data.replace('#', '#23')
+      else:
+        data = cls._EscapePdfNamesInHexTokensOptimized(data)
 
     # TODO(pts): Optimize integer constants starting with 0.
 
@@ -2558,7 +2596,7 @@ class PdfObj(object):
 
     Args:
       data: String containing a PDF token sequence.
-      do_expect_postscript_name_input: boolean indicating where to expect
+      do_expect_postscript_name_input: bool indicating where to expect
         PostScript names on the input, i.e. don't do #AB hex escaping.
     Returns:
       A recursive Python data structure.
@@ -2568,7 +2606,7 @@ class PdfObj(object):
     # PdfObj.CompressValue converts some characters in names to hex,
     # thus e.g. /pedal.* becomes /pedal.#2A.
     data = PdfObj.CompressValue(
-        data, do_emit_strings_as_hex=True,
+        data, do_emit_strings_as_hex=True, do_emit_safe_names=True,
         do_expect_postscript_name_input=do_expect_postscript_name_input)
     scanner = PdfObj.PDF_SIMPLE_TOKEN_RE.scanner(data)
     match = scanner.match()
@@ -2916,11 +2954,11 @@ class PdfObj(object):
         (which is unparsed) offset to be appended. Terminating whitespace is
         not included, except for a single whitespace is only after
         do_terminate_obj.
-      do_terminate_obj: Boolean indicating whether look for and include the
+      do_terminate_obj: bool indicating whether look for and include the
         `stream' or `endobj' (or any other non-literal name)
         plus one whitespace (or \\r\\n) at end_ofs_out
         (and in the string).
-      do_expect_postscript_name_input: boolean indicating where to expect
+      do_expect_postscript_name_input: bool indicating where to expect
         PostScript names on the input, i.e. don't do #AB hex escaping.
     Returns:
       Nonempty string containing a PDF token sequence which is easier to
@@ -2983,7 +3021,7 @@ class PdfObj(object):
             except TypeError:  # In int(...) if match.group(1) is None.
               raise PdfTokenParseError(
                   'Invalid hex escape in PDF name %r' % ('/' + token))
-          token = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+          token = '/' + cls.PDF_SAFE_KEEP_HEX_ESCAPED_RE.sub(
               lambda match: '#%02X' % ord(match.group(0)), token)
         else:
           token = data[j : i]
@@ -3210,7 +3248,7 @@ class PdfObj(object):
       data: A string containing a PDF token sequence; or None, or an int
         or a float or True or False.
       objs: Dictionary mapping object numbers to PdfObj instances.
-      do_strings: Boolean indicating whether to embed the referred
+      do_strings: bool indicating whether to embed the referred
         streams as strings.
     Returns:
       (new_data, has_changed). has_changed may be True even if there
