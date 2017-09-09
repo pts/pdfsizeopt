@@ -52,7 +52,9 @@ class PdfSizeOptTest(unittest.TestCase):
     try:
       callable_obj(*args, **kwargs)
     except exc_class, e:
-      if type(e) != exc_class:  # True if exc_class is a superclass.
+      # type(e) doesn't work instead of e.__class__ in Python 2.4. In Python
+      # >=2.5 they work equivalently.
+      if e.__class__ != exc_class:  # True if exc_class is a superclass.
         raise
       return
     self.fail('%s not raised.' % exc_class.__name__)
