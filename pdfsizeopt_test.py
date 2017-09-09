@@ -1375,6 +1375,37 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('[1. 0 0 1. 0 0]', F('[1. . . 1. . .]'))
     self.assertEqual('[0 0 612. 792.]', F('[. . 612. 792.]'))
 
+  def testEscapePdfNames(self):
+    f1 = main.PdfObj._EscapePdfNamesInHexTokens
+    f2 = main.PdfObj.NormalizePdfName
+    self.assertEqual('', f1(''))
+    self.assertRaises(main.PdfTokenParseError, f2, '')
+    self.assertEqual('/', f1('/'))
+    self.assertRaises(main.PdfTokenParseError, f2, '/')
+    self.assertEqual('a', f1('a'))
+    self.assertRaises(main.PdfTokenParseError, f2, 'a')
+    self.assertEqual('ab', f1('ab'))
+    self.assertRaises(main.PdfTokenParseError, f2, 'ab')
+    for i in xrange(256):
+      c = '/#%02x' % i
+      e1 = f1(c)
+      e2 = f2(c)
+      self.assertEqual(e1, e2, [e1, e2, c])
+      c = '/%c' % i
+      if chr(i) == '#':
+        self.assertRaises(main.PdfTokenParseError, f1, c)
+        self.assertRaises(main.PdfTokenParseError, f2, c)
+        continue
+      if chr(i) in '\0\t\n\f\r %()/<>[]{}':
+        f1(c)  # Succeeds.
+        self.assertRaises(main.PdfTokenParseError, f2, c)
+        continue
+      e1 = f1(c)
+      e2 = f2(c)
+      self.assertEqual(e1, e2, [e1, e2, c])
+
+  # ---
+
   CFF_FONT_PROGRAM_FONT_NAME = 'Obj000009'
   CFF_FONT_PROGRAM_STRINGS = ['Computer Modern Roman', 'Computer Modern']
   # This is font `i: 5556' in cff.pgs, Ghostscript has failed to parse it,

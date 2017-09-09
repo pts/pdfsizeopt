@@ -1779,7 +1779,7 @@ class PdfObj(object):
         return data
     elif data.startswith('/'):
       if len(data) == 1 or cls.PDF_NONNAME_CHAR_RE.search(data, 1):
-        raise PdfTokenParseError('Bad name token %r' % data)
+        raise PdfTokenParseError('Bad PDF name token %r' % str(data))
       # For this input it's the same as `return cls.NormalizePdfName(data)',
       # but this one is faster.
       return cls._EscapePdfNamesInHexTokens(data)
@@ -1969,7 +1969,9 @@ class PdfObj(object):
   @classmethod
   def NormalizePdfName(cls, name, idx=None):  # !!! Add unit tests.
     """Normalize hex-escaping (#) in a PDF name."""
-    assert name.startswith('/'), [name]
+    if (len(name) < 2 or name[:1] != '/' or
+        cls.PDF_NONNAME_CHAR_RE.search(name, 1)):
+      raise PdfTokenParseError('Bad PDF name token %r' % str(name))
     if '#' in name:
       try:
         name = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
@@ -1981,7 +1983,7 @@ class PdfObj(object):
             'Hex error in name %r at ofs=%s' % (name, idx))
     if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(name, 1):
       name = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
-          lambda match: '#%02X' % ord(match.group(0)), name[1:])
+          lambda match: '#%02X' % ord(match.group(0)), buffer(name, 1))
     return name
 
   @classmethod
