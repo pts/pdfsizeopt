@@ -708,7 +708,7 @@ class PdfObj(object):
   """Matches stream or endobj in a PDF obj, prefixed with 1 char."""
 
   REST_OF_R_RE = re.compile(
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+([-+]?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R(?=[\0\t\n\r\f /%<>\[\](])')
   """Matches the generation number and the 'R' (followed by a char)."""
 
@@ -720,8 +720,8 @@ class PdfObj(object):
   """Matches a whitespace char and an R at the end of the string."""
 
   PDF_REF_AT_EOS_RE = re.compile(
-      r'(-?\d+)'
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'([-+]?\d+)'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+([-+]?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R\Z')
   """Matches an <x> <y> R at end-of-string."""
 
@@ -730,8 +730,8 @@ class PdfObj(object):
   """Matches an <x> <y> R."""
 
   PDF_NUMBER_OR_REF_RE = re.compile(
-      r'(-?\d+)(?=[\0\t\n\r\f /%(<>\[\]])(?:'
-      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+(-?\d+)'
+      r'([-+]?\d+)(?=[\0\t\n\r\f /%(<>\[\]])(?:'
+      r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+([-+]?\d+)'
       r'(?:[\0\t\n\r\f ]|%[^\r\n]*[\r\n])+R'
       r'(?=[\0\t\n\r\f /%(<>\[\]]|\Z))?')
   """Matches a number or an <x> <y> R."""
@@ -775,13 +775,19 @@ class PdfObj(object):
       PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
   """Matches an `obj' definition, xref or startxref."""
 
-  PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
+  PDF_HEXTOKENS_HEX_ESCAPE_RE = re.compile(
       r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
-  """Matches a single character which has to be hex-escaped in the output.
+  """Matches a single name character which needs to be hex-escaped.
 
-  The character class of PDF_CHAR_TO_HEX_ESCAPE_RE is a subset of the
+  This regexp should be matched against a PDF token sequence (rather than a
+  binary string) which contains all strings <hex>-escaped. (Parts of comments
+  will also be matched.) A safe token
+  sequence is not enough, e.g. '(@)' is safe, but doesn't contain all
+  strings <hex>-escaped.
+
+  The character class of PDF_HEXTOKENS_HEX_ESCAPE_RE is a subset of the
   character class of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE, e.g. '/', '<', ' ',
-  '#' and '(' are not members of PDF_CHAR_TO_HEX_ESCAPE_RE, but they are
+  '#' and '(' are not members of PDF_HEXTOKENS_HEX_ESCAPE_RE, but they are
   members of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE,. """
 
   PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE = cff.NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE
@@ -883,14 +889,20 @@ class PdfObj(object):
       r'([^\0\t\n\r\f ])[\0\t\n\r\f ]+(?=([^\0\t\n\r\f ]|\Z))')
   """Matches whitespace in a simple obj head."""
 
-  NONNEGATIVE_INT_RE = re.compile(r'(-?\d+)')
-  """Matches and captures a nonnegative integer."""
-
-  PDF_NUMBER_RE = re.compile(r'(?:([-])|[+]?)0*(\d*(?:[.]\d*)?)\Z')
+  PDF_NUMBER_AT_EOS_RE = re.compile(r'(?:([-])|[+]?)0*(\d*(?:[.]\d*)?)\Z')
   """Matches a single PDF numeric token (real or integer).
 
-  '42.' and '.5' are a valid floats in Python, PostScript and PDF.
+  Captures some parts of the number in groups.
+
+  '42.' and '.5' are a valid floats in Python, PostScript and PDF. Also
+  matches '.', which is not a valid number in Python, PostScript or PDF, but
+  see FixAllBadNumbers why we accept it.
+  !!! Don't accept it here.
   """
+
+  PDF_KEYWORD_OR_NUMBER_AT_EOS_RE = re.compile(
+     '[a-z]+\Z|[+-]?(?:[.]\d*|\d+(?:[.]\d*)?)\Z')
+  """Matches a PDF keyword (e.g. true, false, null, obj) or number."""
 
   PDF_STARTXREF_EOF_RE = re.compile(
       r'[>\0\t\n\r\f ]startxref[\0\t\n\r\f ]+(\d+)(?:[\0\t\n\r\f ]+'
@@ -931,6 +943,7 @@ class PdfObj(object):
   PDF_SIMPLE_VALUE_RE = re.compile(
       r'(?s)[\0\t\n\r\f ]*('
       r'\[.*?\]|<<.*?>>|<[^>]*>|\(.*?\)|%[^\n\r]*|'
+      + PDF_REF_RE.pattern + '|'
       r'/?[^\[\]()<>{}/\0\t\n\r\f %]+)')
   """Matches a single PDF token or comment in a simplistic way.
 
@@ -943,7 +956,8 @@ class PdfObj(object):
       r'[\0\t\n\r\f ]*('
       r'\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+R|'
       r'\([^()\\]*\)|(?s)<(?!<).*?>|'
-      r'\[[^%(\[\]]*\]|<<[^%(<>]*>>|/?[-+A-Za-z0-9_.]+)')
+      r'\[[^%(\[\]]*\]|<<[^%(<>]*>>|'
+      r'/?[-+A-Za-z0-9_.]+(?=[\0\t\n\r\f /\[(<]|\Z))')
   """Matches a very simple PDF key--value pair, in a most simplistic way."""
   # TODO(pts): How to prevent backtracking if the regexp doesn't match?
 
@@ -969,13 +983,13 @@ class PdfObj(object):
   PDF_NONNAME_CHAR_RE = re.compile('[%s]' % re.escape(PDF_NONNAME_CHARS))
   """Matches a single character which can't be part of a PDF name."""
 
-  PDF_NAMEOP_LITERAL_AT_EOS_RE = re.compile(r'/?[^\[\]{}()<>/%\0\t\n\r\f ]+\Z')
-  """Matches a PDF /name or name literal."""
-
   PDF_NAME_LITERAL_RE = re.compile(r'/[^\[\]{}()<>/%\0\t\n\r\f ]+')
   """Matches a PDF /name literal."""
 
-  PDF_INT_RE = re.compile(r'-?\d+\Z')
+  PDF_INT_RE = re.compile(r'([-+]?\d+)')
+  """Matches and captures an integer integer."""
+
+  PDF_INT_AT_EOS_RE = re.compile(r'[-+]?\d+\Z')
   """Matches a PDF integer token."""
 
   PDF_STRING_NONSIMPLE_CHAR_RE = re.compile(r'([()\\\r])')
@@ -1366,9 +1380,10 @@ class PdfObj(object):
 
   @classmethod
   def GetBadNumbersFixed(cls, data):
+    # !!! Remove this once PdfObj.__init__ does it.
     if data == '.':
       return '0'
-    # Just convert '.' to 0 in an array.
+    # Just convert '.' to '0' in an array.
     # We don't convert `42.' to '42.0' here.
     return cls.PDF_BAD_NUMBER_RE.sub(
         lambda match: match.group(1) + '0', data)
@@ -1724,7 +1739,8 @@ class PdfObj(object):
       data: String containing a PDF token to parse (no whitespace around it).
     Returns:
       Parsed value: True, False, None, an int (or long) or an str (for
-      anything else).
+      anything else). Returns PDF literals as <hex>. If the return value is
+      an str, then it's normalized.
     Raises:
       PdfTokenParseError: .
       PdfTokenTruncated: .
@@ -1736,7 +1752,7 @@ class PdfObj(object):
       return data == 'true'
     elif data == 'null':
       return None
-    elif cls.PDF_INT_RE.match(data):
+    elif cls.PDF_INT_AT_EOS_RE.match(data):
       return int(data)
     elif data.startswith('('):
       return '<%s>' % cls.ParsePdfString(data)[0].encode('hex')
@@ -1763,16 +1779,25 @@ class PdfObj(object):
         return data[:-1] + '0>'
       else:
         return data
-    # Don't parse floats, we usually don't need them parsed.
-    elif cls.PDF_NAMEOP_LITERAL_AT_EOS_RE.match(data):
-      return data
+    elif data.startswith('/'):
+      if len(data) == 1 or cls.PDF_NONNAME_CHAR_RE.search(data, 1):
+        raise PdfTokenParseError('Bad name token %r' % data)
+      # For this input it's the same as `return cls.NormalizePdfName(data)',
+      # but this one is faster.
+      return cls._EscapePdfNamesInHexTokens(data)
     elif data.endswith('R'):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
-      if match:
-        return '%d %d R' % (int(match.group(1)), int(match.group(2)))
-      return data
+      if not match:
+        raise PdfTokenParseError('Bad reference %r' % data)
+      return '%d %d R' % (int(match.group(1)), int(match.group(2)))
     else:
-      raise PdfTokenParseError('syntax error in %r' % data)
+      number_match = data and cls.PDF_NUMBER_AT_EOS_RE.match(data)
+      if number_match:
+        # Integer was already parsed above.
+        # Don't parse float, we usually don't need them parsed. Thus we also
+        # won't verify float.
+        return cls._NormalizeNumber(number_match)
+      raise PdfTokenParseError('Syntax error in %r' % data)
 
   @classmethod
   def ParseSimplestDict(cls, data):
@@ -1864,20 +1889,11 @@ class PdfObj(object):
       start = match.end()
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
 
+    # Continue with non-simplest keys.
     if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
-      scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-      match = scanner.match()
-      if not match or match.group(1)[0] != '/':
-        # cls.PDF_SIMPLEST_KEY_VALUE_RE above matched only a prefix of a
-        # token. Restart from the beginning to match everything properly.
-        # TODO(pts): Cancel only the last key.
-        dict_obj.clear()
-        list_obj = cls._ParseTokens(
-            data=data, start=2, end=end, count_limit=end)
-      else:
-        list_obj = cls._ParseTokens(
-            data=data, start=start, end=end, scanner=scanner, match=match,
-            count_limit=end)
+      list_obj = cls._ParseTokens(
+          data=data, start=start, end=end,
+          count_limit=end)
       if 0 != (len(list_obj) & 1):
         raise PdfTokenParseError('odd item count in dict')
       for i in xrange(0, len(list_obj), 2):
@@ -1971,8 +1987,27 @@ class PdfObj(object):
     return name
 
   @classmethod
+  def _EscapePdfNamesInHexTokens(cls, data):  # !!! Add unit tests -- how is it different from NormalizePdfName? Give an example.
+    """Data is a PDF token sequence containing all strings as <hex>."""
+    def ReplacementHexEscape(match):
+      try:
+        char = chr(int(match.group(1), 16))
+      except TypeError:  # In int(...) if match.group(1) is None.
+        raise PdfTokenParseError('Invalid hex escape in PDF name.')
+      if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.match(char):
+        return match.group(0).upper()  # Keep it escaped.
+      else:
+        return char
+    # This unescapes e.g. #41 to A, and keeps e.g. #20 escaped. It doesn't
+    # touch unescaped chars (e.g. * or A).
+    data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
+    # This escapes eg. * to #2A.
+    return cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(
+        lambda match: '#%02X' % ord(match.group(0)), data)
+
+  @classmethod
   def _ParseTokens(cls, data, start, end, count_limit,
-                   scanner=None, match=None, end_ofs_out=None):
+                   end_ofs_out=None):
     """Helper method to scan tokens and build values in data[start : end].
 
     Limitation: If the object end with `x y R', then count_limit is enforced
@@ -1982,16 +2017,17 @@ class PdfObj(object):
     As soon as count_limit is reached, the rest of the string is not parsed,
     and it is not even checked for syntax errors.
 
+    !!! Most of this can be simplified if the input is safe PDF token
+    sequence.
+
     Raises:
       PdfTokenParseError:
     """
     if count_limit <= 0:
       return []
     list_obj = []
-    if scanner is None:
-      scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
-    if match is None:
-      match = scanner.match()
+    scanner = cls.PDF_SIMPLE_VALUE_RE.scanner(data, start, end)
+    match = scanner.match()
     while match:
       start = match.end()
       value = match.group(1)
@@ -2085,19 +2121,14 @@ class PdfObj(object):
       elif kind == '<':  # '<<' is handled above
         value = cls.ParseSimpleValue(value)
       else:
-        match0 = match
-        if value.endswith('R'):
-          match = cls.PDF_REF_AT_EOS_RE.match(value)
-          if match:
-            value = '%d %d R' % (int(match.group(1)), int(match.group(2)))
+        if match.group(2):
+          value = '%d %d R' % (int(match.group(2)), int(match.group(3)))
+        elif not cls.PDF_KEYWORD_OR_NUMBER_AT_EOS_RE.match(value):
+          raise PdfTokenParseError(
+              'syntax error in PDF keyword or number %r at %d' %
+              (value, match.start(1)))
         else:
-          match = None
-        if not match:
-          if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(value):
-            raise PdfTokenParseError(
-                'syntax error in non-literal name %r at %d' %
-                (value, match0.start(1)))
-          value = cls.ParseSimpleValue(value)
+          value = cls.ParseSimpleValue(value)  # Convert '42' to 42 etc.
       if value == 'R':
         if (len(list_obj) < 2 or
             not isinstance(list_obj[-1], int) or list_obj[-1] < 0 or
@@ -2304,34 +2335,13 @@ class PdfObj(object):
       # According the the PDF reference, comments are equivalent to whitespace.
       data = cls.PDF_COMMENT_RE.sub(' ', data)
 
-    def ReplacementHexEscape(match):
-      try:
-        char = chr(int(match.group(1), 16))
-      except TypeError:  # In int(...) if match.group(1) is None.
-        raise PdfTokenParseError('Invalid hex escape in PDF name.')
-      if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.match(char):
-        return match.group(0).upper()  # Keep it escaped.
-      else:
-        return char
-
     if do_expect_postscript_name_input:
-      data0 = data = data.replace('#', '#23')
+      data = data.replace('#', '#23')
+      # This escapes eg. * to #2A.
+      data = cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(
+          lambda match: '#%02X' % ord(match.group(0)), data)
     else:
-      data0 = data
-      data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
-    #assert not cls.PDF_CHAR_TO_HEX_ESCAPE_RE.search(data), [data]
-    data = cls.PDF_CHAR_TO_HEX_ESCAPE_RE.sub(  # !!!! does this match anything?
-        lambda match: '#%02X' % ord(match.group(0)), data)
-    #assert data == PdfObj.NormalizePdfName(data0), [data0, data, PdfObj.NormalizePdfName(data0)]
-    #PDF_CHAR_TO_HEX_ESCAPE_RE = re.compile(
-    #    r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
-    #"""Matches a single character which has to be hex-escaped in the output.
-    #
-    #The character class of PDF_CHAR_TO_HEX_ESCAPE_RE is a subset of the
-    #character class of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE, e.g. '/', '<', ' ',
-    #'#' and '(' are not members of PDF_CHAR_TO_HEX_ESCAPE_RE, but they are
-    #members of PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE,. """
-    # NAME_CHAR_TO_HEX_KEEP_ESCAPED_RE = re.compile(r'[^-+A-Za-z0-9_.]')
+      data = cls._EscapePdfNamesInHexTokens(data)
 
     # TODO(pts): Optimize integer constants starting with 0.
 
@@ -2837,6 +2847,23 @@ class PdfObj(object):
     image_obj.stream = stream
     return width, height, image_obj
 
+  @classmethod
+  def _NormalizeNumber(cls, number_match):
+    """Normalizes a number, returns the string representation."""
+    # From the PDF reference: Note: PDF does not support the PostScript
+    # syntax for numbers with nondecimal radices (such as 16#FFFE) or in
+    # exponential format (such as 6.02E23).
+
+    # Convert the number to canonical (shortest) form.
+    token = (number_match.group(1) or '') + number_match.group(2)
+    if '.' in token:
+      token = token.rstrip('0')
+      if token.endswith('.'):
+        token = token[:-1]  # Convert real to integer: '42.' -> '42'
+    if token in ('', '-'):
+      token = '0'
+    return token
+
   PDF_CLASSIFY = [40] * 256
   """Mapping a 0..255 byte to a character type used by RewriteToParsable.
 
@@ -2965,34 +2992,23 @@ class PdfObj(object):
               lambda match: '#%02X' % ord(match.group(0)), token)
         else:
           token = data[j : i]
-          if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(token):
+          if token != 'R' and not cls.PDF_KEYWORD_OR_NUMBER_AT_EOS_RE.match(
+              token):
             raise PdfTokenParseError(
-                'Invalid character in non-literal name token %r' % token)
+                'Invalid character in keyword or number %r' % token)
 
-        number_match = cls.PDF_NUMBER_RE.match(token)
+        number_match = cls.PDF_NUMBER_AT_EOS_RE.match(token)
         if number_match:
-          # From the PDF reference: Note: PDF does not support the PostScript
-          # syntax for numbers with nondecimal radices (such as 16#FFFE) or in
-          # exponential format (such as 6.02E23).
-
-          # Convert the number to canonical (shortest) form.
-          token = (number_match.group(1) or '') + number_match.group(2)
-          if '.' in token:
-            token = token.rstrip('0')
-            if token.endswith('.'):
-              token = token[:-1]  # Convert real to integer: '42.' -> '42'
-          if token in ('', '-'):
-            token = '0'
-
-        output.append(' ' + token)
+          output.append(' ' + cls._NormalizeNumber(number_match))
+        else:
+          output.append(' ' + token)
 
         if (number_match or token[0] == '/' or
             token in ('true', 'false', 'null', 'R')):
           if token == 'R' and (
              len(output) < 3 or
-             output[-3] == ' 0' or
-             not re.match(r' \d+\Z', output[-2]) or
-             not re.match(r' \d+\Z', output[-3])):
+             not re.match(r' -?\d+\Z', output[-2]) or
+             not re.match(r' -?\d+\Z', output[-3])):
             raise PdfTokenParseError(
                 'invalid R after %r' % output[-2:])
           if stack[-1] == '-':
@@ -7104,6 +7120,7 @@ class PdfData(object):
     return self
 
   def FixAllBadNumbers(self):
+    # !!! Remove this once PdfObj.__init__ does it.
     # buggy pdfTeX-1.21a generated
     # /Matrix[1. . . 1. . .]/BBox[. . 612. 792.]
     # in eurotex2006.final.bad.pdf . Fix: convert `.' to 0.
@@ -7657,10 +7674,10 @@ class PdfData(object):
                          objs=length_objs)
       if offsets_out is not None:
         offsets_out.append(i)
-      scanner = PdfObj.NONNEGATIVE_INT_RE.scanner(data, i)
+      scanner = PdfObj.PDF_INT_RE.scanner(data, i)
       match = scanner.match()
       assert match
-      obj_num = int(match.group(1))
+      obj_num = int(match.group())
       obj_num_by_ofs_out[i] = obj_num
       if xref_ofs == i:
         self.trailer = pdf_obj

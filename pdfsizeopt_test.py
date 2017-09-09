@@ -205,6 +205,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(' [ 0 0 0 ]', e('[.0 -.0 +.0]'))
     self.assertEqual(' [ 0 0 0 ]', e('[.000 -.000 +.000]'))
     self.assertEqual(' [ 0 0 0 ]', e('[00.000 -00.000 +00.000]'))
+    self.assertEqual(' 12 345 R', e(' 12 345 R '))
 
     end_ofs_out = []
     self.assertEqual(' 5', e(' 5 endobj\t', end_ofs_out=end_ofs_out))
@@ -278,11 +279,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(13, eo[0])  # spaces not included
     eo = []
     self.assertEqual(' 442 43 R', e('\t442%foo\r43\fR/', end_ofs_out=eo))
+    self.assertEqual(' 442 43 R', e('\t+442%foo\r+43\fR/', end_ofs_out=eo))
     self.assertEqual(13, eo[0])  # spaces not included
-    self.assertRaises(main.PdfTokenParseError,
-                      e, '<</Pages 333 -1 R\n>>')
-    self.assertRaises(main.PdfTokenParseError,
-                      e, '<</Pages 0 55 R\n>>')
+    self.assertEqual(' << /Pages -333 -1 R >>', e('<</Pages -333 -1 R\n>>'))
+    self.assertEqual(' << /Pages 0 55 R >>', e('<</Pages 0 55 R\n>>'))
 
   def testSerializeDict(self):
     # Toplevel whitespace is removed, but the newline inside the /DecodeParms
@@ -312,12 +312,15 @@ class PdfSizeOptTest(unittest.TestCase):
 
   def testParseSimpleValue(self):
     e = main.PdfObj.ParseSimpleValue
+    self.assertRaises(main.PdfTokenParseError, e, '')
+    self.assertRaises(main.PdfTokenParseError, e, '%hello\nworld')
+    self.assertRaises(main.PdfTokenParseError, e, 'win')  # Unknown keyword.
+    self.assertRaises(main.PdfTokenParseError, e, 'foo bar')
+    self.assertRaises(main.PdfTokenParseError, e, '/foo bar')
     self.assertEqual(True, e('true'))
     self.assertEqual(False, e('false'))
     self.assertEqual(True, e('true '))
     self.assertEqual(False, e('\nfalse'))
-    self.assertRaises(main.PdfTokenParseError, e, '')
-    self.assertRaises(main.PdfTokenParseError, e, 'foo bar')
     self.assertEqual('[foo  bar]', e('\f[foo  bar]\n\r'))
     self.assertEqual('<<foo  bar\tbaz>>', e('\f<<foo  bar\tbaz>>\n\r'))
     self.assertEqual(None, e('null'))
@@ -325,8 +328,13 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(42, e('42'))
     self.assertEqual(42, e('00042'))
     self.assertEqual(-137, e('-0137'))
+    self.assertEqual(137, e('+0137'))
     self.assertEqual('3.14', e('3.14'))
-    self.assertEqual('5e6', e('5e6'))
+    self.assertEqual('5', e('5.'))
+    self.assertEqual('.5', e('+.5'))
+    self.assertEqual('0', e('.'))
+    self.assertEqual('0', e('-.'))
+    self.assertRaises(main.PdfTokenParseError, e, '5e6')
     self.assertEqual('<48493f>', e('(HI?)'))
     self.assertEqual('<28295c>', e('(()\\\\)'))
     self.assertRaises(main.PdfTokenParseError, e, '(()\\\\)x')
@@ -334,6 +342,16 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<deadface>', e('<dea dF aCe>'))
     self.assertEqual('<deadfac0>', e('<\fdeadFaC\r>'))
     self.assertEqual('42 0 R', e('42\f\t0 \nR'))
+    self.assertRaises(main.PdfTokenParseError, e, '42 R')
+    self.assertRaises(main.PdfTokenParseError, e, 'foo#')
+    self.assertRaises(main.PdfTokenParseError, e, 'foo#a')
+    self.assertRaises(main.PdfTokenParseError, e, 'foo#ab')
+    self.assertEqual('/foo', e('/foo'))
+    self.assertRaises(main.PdfTokenParseError, e, '/foo#')
+    self.assertRaises(main.PdfTokenParseError, e, '/foo#a')
+    self.assertEqual('/foo#AB', e('/foo#ab'))
+    self.assertEqual('/foo42', e('/foo#34#32'))
+    self.assertEqual('/foo#2A', e('/foo*'))  # !!! Normalized.
 
   def DoTestParseSimplestDict(self, e):
     # e is either ParseSimplestDict or ParseDict, so (because the latter)
@@ -341,10 +359,13 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({}, e('<<\t\0>>'))
     self.assertEqual({}, e('<<\n>>'))
     self.assertEqual({'One': '/Two'}, e('<< /One/Two>>'))
-    self.assertEqual({'One': 'Two'}, e('<</One Two>>'))
+    self.assertEqual({'One': '2.2'}, e('<</One +2.2>>'))
+    self.assertRaises(main.PdfTokenParseError, e, '<</One Two>>')
     self.assertEqual({'One': 234}, e('<</One 234>>'))
-    self.assertEqual({'Five': '/Six', 'Three': 'Four', 'One': '/Two'},
-                     e('<</One/Two/Three Four/Five/Six>>'))
+    self.assertRaises(main.PdfTokenParseError, e,
+                      '<</One/Two/Three Four/Five/Six>>')
+    self.assertEqual({'Five': '/Six', 'Three': '-4', 'One': '/Two'},
+                     e('<</One/Two/Three -4.000/Five/Six>>'))
     self.assertEqual({'A': True, 'C': None, 'B': False, 'E': '42.5', 'D': 42},
                      e('<<\n\r/A true/B\f\0false/C null/D\t42/E 42.5\r>>'))
     self.assertEqual({'Data': '42 137 R'}, e('<</Data 42\t\t137\nR >>'))
@@ -380,10 +401,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual({'I': 5}, e('<</I%\n5>>'))
     self.assertEqual({'N': '/Foo-42+_'}, e('<</N/Foo-42+_>>'))
     self.assertEqual({'N': '/Foo-42+_#2A'}, e('<</N/Foo-42+_*>>'))
-    self.assertEqual({'N': '/Foo-42+_#2Ab'}, e('<</N/Foo-42+_#2Ab>>'))
+    self.assertEqual({'N': '/Foo-42+_#2Ab'}, e('<</N/Foo-42+_#2ab>>'))
     self.assertEqual({'Five': '/Six', 'Three': '[/Four]', 'One': '/Two'},
                      e('<</One/Two/Three[/Four]/Five/Six>>'))
-    self.assertRaises(main.PdfTokenParseError, e, '<</Foo bar#3F>>')
+    self.assertRaises(main.PdfTokenParseError, e, '<</Foo bar#3f>>')
     self.assertEqual({'#3FAnswer#21#20#0D': 42}, e('<</?Answer!#20#0d 42>>'))
     self.assertEqual({'S': '<0a>'}, e('<</S\r(\\n)>>'))
     self.assertRaises(main.PdfTokenParseError, e, '<</S\r(foo\\)>>')
@@ -623,6 +644,9 @@ class PdfSizeOptTest(unittest.TestCase):
                       '42 0 obj /foo#b endobj')
     self.assertRaises(main.PdfTokenParseError, main.PdfObj,
                       '42 0 obj /foo#bxar endobj')
+    obj = main.PdfObj('42 0 obj[. -. . .]endobj')
+    # !!! TODO(pts): Fix bad numbers, all this to 0.
+    self.assertEqual('[. -. . .]', obj.head)
 
     # TODO(pts): Add more tests.
 
@@ -1212,8 +1236,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('normal', f('[  0\f7\n]', 3))
     self.assertEqual('strange', f('[  7\t0\n]', 4))
     self.assertEqual('strange', f('[  0\f7\n]', 4))
-    self.assertEqual('inverted', f('[1.0 0 1 0e5]', 0))
-    self.assertEqual('strange', f('[1.0 0 1 0e5 1]', 0))
+    self.assertEqual('inverted', f('[1.0 0 1 0.]', 0))
+    self.assertRaises(main.PdfTokenParseError, f, '[1.0 0 1 0e5]', 0)
+    self.assertRaises(main.PdfTokenParseError, f, '[1.0 0 1 0e5 1]', 0)
+    self.assertEqual('strange', f('[1.0 0 1 .0 1]', 0))
     self.assertEqual('strange', f('[0]', 0))
     self.assertEqual('strange', f('[1 0 0 1]', 0))
 
