@@ -1158,7 +1158,9 @@ class PdfObj(object):
           data = ()  # Save memory.
           continue  # Don't change `i' below.
         elif match.group(4):  # /name with hex-escape (#AB).
-          output.append(self.NormalizePdfName(match.group(4), file_ofs))
+          # Like NormalizePdfName, but we don't need the extra check.
+          output.append(self._EscapePdfNamesInHexTokens(
+              match.group(4), file_ofs))
         elif match.group(5):  # An empty name token (/).
           raise PdfTokenParseError('Found empty name token.')
         elif match.group(6):  # A hex string literal or <<.
@@ -1780,8 +1782,7 @@ class PdfObj(object):
     elif data.startswith('/'):
       if len(data) == 1 or cls.PDF_NONNAME_CHAR_RE.search(data, 1):
         raise PdfTokenParseError('Bad PDF name token %r' % str(data))
-      # For this input it's the same as `return cls.NormalizePdfName(data)',
-      # but this one is faster.
+      # Like NormalizePdfName, but we don't need the extra check.
       return cls._EscapePdfNamesInHexTokens(data)
     elif data.endswith('R'):
       match = cls.PDF_REF_AT_EOS_RE.match(data)
@@ -1972,35 +1973,45 @@ class PdfObj(object):
     if (len(name) < 2 or name[:1] != '/' or
         cls.PDF_NONNAME_CHAR_RE.search(name, 1)):
       raise PdfTokenParseError('Bad PDF name token %r' % str(name))
-    if '#' in name:
-      try:
-        name = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
-            lambda match: chr(int(match.group(1), 16)), name)
-      except TypeError:  # In int(...) if match.group(1) is None.
-        # It's OK to report an error here (rather than including a literal
-        # #), because pdf_reference_1-7.pdf says that # must also be escaped.
-        raise PdfTokenParseError(
-            'Hex error in name %r at ofs=%s' % (name, idx))
-    if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(name, 1):
-      name = '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
-          lambda match: '#%02X' % ord(match.group(0)), buffer(name, 1))
-    return name
+    return cls._EscapePdfNamesInHexTokens(name, idx)
+
+    # TODO(pts): Benchmark against this alternative implementation. This only
+    # works if the PDF_NONNAME_CHAR_RE check has succeeded.
+    #
+    # if '#' in data:  # Works for both strings and buffers.
+    #   try:
+    #     data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(
+    #         lambda match: chr(int(match.group(1), 16)), data)
+    #   except TypeError:  # In int(...) if match.group(1) is None.
+    #     # It's OK to report an error here (rather than including a literal
+    #     # #), because pdf_reference_1-7.pdf says that # must also be escaped.
+    #     raise PdfTokenParseError(
+    #         'Hex error in name %r at ofs=%s' % (data, idx))
+    # if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.search(data, 1):
+    #   return '/' + cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.sub(
+    #       lambda match: '#%02X' % ord(match.group(0)), buffer(data, 1))
+    # else:
+    #   return str(data)
 
   @classmethod
-  def _EscapePdfNamesInHexTokens(cls, data):  # !!! Add unit tests -- how is it different from NormalizePdfName? Give an example.
+  def _EscapePdfNamesInHexTokens(cls, data, idx=None):  # !!! Add unit tests -- how is it different from NormalizePdfName? Give an example.
     """Data is a PDF token sequence containing all strings as <hex>."""
+
     def ReplacementHexEscape(match):
       try:
         char = chr(int(match.group(1), 16))
       except TypeError:  # In int(...) if match.group(1) is None.
-        raise PdfTokenParseError('Invalid hex escape in PDF name.')
+        raise PdfTokenParseError(
+            'Invalid hex escape in PDF name at ofs=%s' % idx)
+      # TODO(pts): Benchmark against doing 1 big match below.
       if cls.PDF_CHAR_TO_HEX_KEEP_ESCAPED_RE.match(char):
         return match.group(0).upper()  # Keep it escaped.
       else:
         return char
-    # This unescapes e.g. #41 to A, and keeps e.g. #20 escaped. It doesn't
-    # touch unescaped chars (e.g. * or A).
-    data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
+    if '#' in data:  # Works for both strings and buffers.
+      # This unescapes e.g. #41 to A, and keeps e.g. #20 escaped. It doesn't
+      # touch unescaped chars (e.g. * or A).
+      data = cls.PDF_NAME_HEX_OR_HASHMARK_RE.sub(ReplacementHexEscape, data)
     # This escapes eg. * to #2A.
     return cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(
         lambda match: '#%02X' % ord(match.group(0)), data)
@@ -2041,7 +2052,9 @@ class PdfObj(object):
       if kind == '/':
         # It's OK that we don't apply this normalization recursively to
         # [/?Foo] etc.
-        value = cls.NormalizePdfName(value, idx=match.start(1))
+        #
+        # Like NormalizePdfName, but we don't need the extra check.
+        value = cls._EscapePdfNamesInHexTokens(value, match.start(1))
       elif kind == '(':
         # !!! get rid of this string parsing.
         if cls.PDF_STRING_NONSIMPLE_CHAR_RE.scanner(
@@ -2341,6 +2354,7 @@ class PdfObj(object):
       data = cls.PDF_HEXTOKENS_HEX_ESCAPE_RE.sub(
           lambda match: '#%02X' % ord(match.group(0)), data)
     else:
+      # Like NormalizePdfName, but we don't need the extra check.
       data = cls._EscapePdfNamesInHexTokens(data)
 
     # TODO(pts): Optimize integer constants starting with 0.

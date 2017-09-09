@@ -1386,6 +1386,8 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaises(main.PdfTokenParseError, f2, 'a')
     self.assertEqual('ab', f1('ab'))
     self.assertRaises(main.PdfTokenParseError, f2, 'ab')
+    self.assertEqual('/a', f1(buffer('/a')))
+    self.assertEqual('/a', f2(buffer('/a')))
     for i in xrange(256):
       c = '/#%02x' % i
       e1 = f1(c)
