@@ -3690,8 +3690,8 @@ class ImageData(object):
       page_objs = [pdf.objs[obj_num] for obj_num in sorted(pdf.objs) if
                    re.search(r'/Type[\0\t\n\r\f ]*/Page\b',
                              pdf.objs[obj_num].head) and
-                   obj.head.startswith('<<') and
-                   obj.Get('Type') == '/Page']
+                   pdf.objs[obj_num].head.startswith('<<') and
+                   pdf.objs[obj_num].Get('Type') == '/Page']
       assert len(page_objs) == 1, 'Page object not found for sam2p ImageMask'
       contents = page_objs[0].Get('Contents')
       match = PdfObj.PDF_REF_AT_EOS_RE.match(contents)
