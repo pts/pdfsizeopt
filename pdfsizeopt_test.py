@@ -77,8 +77,8 @@ class PdfSizeOptTest(unittest.TestCase):
     except ZeroDivisionError:
       pass
 
-  def testSerializePdfStringAndParsePdfString(self):
-    e = main.PdfObj.SerializePdfString
+  def testSerializePdfStringUnsafeAndParsePdfString(self):
+    e = main.PdfObj.SerializePdfStringUnsafe
     p = lambda *args: main.PdfObj.ParsePdfString(*args)[0]
     def Check(pdf_string_literal, data):
       self.assertEqual(pdf_string_literal, e(data))
@@ -539,24 +539,35 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<>', e('()', do_emit_strings_as_hex=True))
     self.assertEqual('<fa>', e('(\xFa)', do_emit_strings_as_hex=True))
     self.assertEqual('<7e>', e('(\\176)', do_emit_strings_as_hex=True))
-    self.assertEqual('(())', e(' <2829>\t'))
-    self.assertEqual('(\\)\\()', e(' <2928>\t'))
+    self.assertEqual('(())', e(' <2829>\t', do_emit_safe_strings=False))
+    self.assertEqual('<2829>', e(' <2829>\t'))
+    self.assertEqual('<2829>', e(' (())\t'))
+    self.assertEqual('(\\)\\()', e(' <2928>\t', do_emit_safe_strings=False))
+    self.assertEqual('<2928>', e(' <2928>\t'))
     self.assertEqual('[12 34]', e('[12%\n34]'))
     self.assertEqual('[12 34]', e('[ 12 34 ]'))
     self.assertEqual('<</A[12 34]>>', e(' << \t/A\f[12%\n34]>>\r'))
-    self.assertEqual('( hello\t\n)world', e(' ( hello\t\n)world'))
-    self.assertEqual('(\\)((hi))\\\\)world', e(' (\\)(\\(hi\\))\\\\)world'))
-    self.assertEqual('/\xface#5BB', e('/\xface#5b#42\f'))
+    self.assertEqual('<2068656c6c6f090a>world', e(' ( hello\\t\n)world'))
+    self.assertEqual('( hello\t\n)world',
+                     e(' ( hello\\t\n)world', do_emit_safe_strings=False))
+    self.assertEqual('<292828686929295c>world', e(' (\\)(\\(hi\\))\\\\)world'))
+    self.assertEqual('(\\)((hi))\\\\)world',
+                     e(' (\\)(\\(hi\\))\\\\)world', do_emit_safe_strings=False))
+    self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
+    self.assertEqual('/\xface#5BB', e('/\xface#5b#42\f', do_emit_safe_names=False))
     self.assertRaisesX(main.PdfTokenParseError, e, '/#')
     s = '/Kids[041\t 0\rR\f43\n0% 96 0 R\rR 42 0 R 97 0 Rs 42 0 R]( 98 0 R )\f'
-    t = '/Kids[041 0 R 43 0 R 42 0 R 97 0 Rs 42 0 R]( 98 0 R )'
+    t = '/Kids[041 0 R 43 0 R 42 0 R 97 0 Rs 42 0 R]<2039382030205220>'
     self.assertEqual(t, e(s))
     self.assertEqual(t, e(e(s)))
     old_obj_nums = ['']
     self.assertEqual(t, e(s, old_obj_nums_ret=old_obj_nums))
     self.assertEqual(['', 41, 43, 42, 42], old_obj_nums)
-    u = '/Kids[41 0 R 53 0 R 52 0 R 97 0 Rs 52 0 R]( 98 0 R )'
+    uu = '/Kids[41 0 R 53 0 R 52 0 R 97 0 Rs 52 0 R]( 98 0 R )'
+    u = '/Kids[41 0 R 53 0 R 52 0 R 97 0 Rs 52 0 R]<2039382030205220>'
     self.assertEqual(u, e(s, obj_num_map={43: 53, 42: 52}))
+    self.assertEqual(uu, e(s, obj_num_map={43: 53, 42: 52},
+                           do_emit_safe_strings=False))
     old_obj_nums = [None]
     self.assertEqual(
         u, e(s, obj_num_map={43: 53, 42: 52}, old_obj_nums_ret=old_obj_nums))
@@ -566,8 +577,15 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Type/Catalog/Pages 1 0 R>>',
                      e('<</Type/Catalog/Pages 1 0 R >>'))
     self.assertEqual('[/Zoo#3C#3E 1]', e('[/Zoo#3c#3e 1]'))
-    self.assertEqual('[/Zoo#3C#3E()/foo*/bar*#5B/pedal.*]',
-                     e('[/Zoo#3c#3e(\\\n)/foo*/bar#2a#5b/pedal.#2a]'))
+    self.assertEqual('[/Zoo#3C#3E(a)/foo#2A/bar#2A#5B/pedal.#2A]',
+                     e('[/Zoo#3c#3e(a\\\n)/foo*/bar#2a#5b/pedal.#2a]'))
+    self.assertEqual('[/Zoo#3C#3E<0a>/foo#2A/bar#2A#5B/pedal.#2A]',
+                     e('[/Zoo#3c#3e(\r\\\n)/foo*/bar#2a#5b/pedal.#2a]'))
+    self.assertEqual('[/Zoo#3C#3E<0d>/foo#2A/bar#2A#5B/pedal.#2A]',
+                     e('[/Zoo#3c#3e(\\r\\\n)/foo*/bar#2a#5b/pedal.#2a]'))
+    self.assertEqual('[/Zoo#3C#3E<0a>/foo*/bar*#5B/pedal.*]',
+                     e('[/Zoo#3c#3e(\n\\\n)/foo*/bar#2a#5b/pedal.#2a]',
+                       do_emit_safe_names=False))
 
   def testPdfObjParse(self):
     obj = main.PdfObj(
@@ -1157,8 +1175,8 @@ class PdfSizeOptTest(unittest.TestCase):
     # A comment or a (string) in the referrer triggers full compression.
     self.assertEqual(('foo bar()', True), e('%9 0 R\n12 0 R<>', objs))
     # A `(string)' in the referrer triggers full compression.
-    self.assertEqual(('(9 0 R[ ])foo bar', True),
-                     e('(9 0 R[\040])12 0 R', objs))
+    self.assertEqual(('<39203020525b205d>foo bar', True),
+                     e('(9 0 R[\\040])12 0 R', objs))
     self.assertRaisesX(main.PdfReferenceTargetMissing, e, '98 0 R', objs)
     self.assertRaisesX(main.PdfReferenceTargetMissing, e, '21 0 R', objs)
     self.assertRaisesX(main.PdfTokenParseError, e, '0 0 R', objs)
@@ -1169,7 +1187,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaisesX(main.PdfReferenceRecursiveError, e, '33 0 R', objs)
     self.assertEqual(('(13  0 R)', False), e('(13  0 R)', objs))
     self.assertEqual(('<</A foo  bar>>', True), e('<</A 13  0 R>>', objs))
-    self.assertEqual(('(12 0  R \0)', True), e('(12 0  R \\000)', objs))
+    self.assertEqual(('<313220302020522000>', True), e('(12 0  R \\000)', objs))
     self.assertEqual(('foo bar  bat   baz', True), e('16 0 R   baz', objs))
     # Unexpected stream.
     self.assertRaisesX(main.UnexpectedStreamError, e, '41 0 R', objs)

@@ -1347,11 +1347,16 @@ class PdfObj(object):
     if end_ofs_out is not None:
       end_ofs_out.append(end_ofs)
 
-  def AppendTo(self, output, obj_num):
+  def AppendTo(self, output, obj_num, do_emit_short_unsafe=False):
     """Append serialized self to output list, using obj_num."""
     # TODO(pts): Test this method.
     output.append('%s 0 obj\n' % int(obj_num))
     head = self.head.strip(self.PDF_WHITESPACE_CHARS)
+    if do_emit_short_unsafe:
+      # Also converts strings and names to short but unsafe.
+      # !!! TODO(pts): Do this conversion faster. Does it matter?
+      head = self.CompressValue(
+          head, do_emit_safe_names=False, do_emit_safe_strings=False)
     output.append(head)  # Implicit whitespace later.
     space = ' ' * int(head[-1] not in '>])}')
     if self.stream is not None:
@@ -2297,13 +2302,14 @@ class PdfObj(object):
   def CompressValue(cls, data, obj_num_map=None, old_obj_nums_ret=None,
                     do_emit_strings_as_hex=False,
                     do_expect_postscript_name_input=False,
-                    do_emit_safe_names=False):
+                    do_emit_safe_names=True,
+                    do_emit_safe_strings=True):
     """Return shorter representation of a PDF token sequence.
 
     This method doesn't optimize integer constants starting with 0.
 
     Args:
-      data: A PDF token sequence.
+      data: A PDF token sequence. !!! TODO(pts): Accept safe input only.
       obj_num_map: Optional dictionary mapping ints to ints; or a nonempty
         string (to force a specific obj_num placeholder), or None. It instructs
         this method to change all occurrences of `<key> 0 R' to `<value> 0 R'
@@ -2316,13 +2322,19 @@ class PdfObj(object):
       do_expect_postscript_name_input: bool indicating where to expect
         PostScript names on the input, i.e. don't do #AB hex escaping.
       do_emit_safe_names: bool indicating whether to emit safe PDF name tokens.
-       (Safe has the same #AB hex-escaping as PdfObj and ParseSimpleValue.)
+        (Safe has the same #AB hex-escaping as PdfObj and ParseSimpleValue.)
+      do_emit_safe_strings: bool indicating whether to emit safe PDF string
+        tokens. If either do_emit_safe_strings or do_emit_strings_as_hex is
+        true, then unsafe strings are emitted as <hex>.
     Returns:
-      The most compact PDF token sequence form of data: without superfluous
-      whitespace; with '(' string literals. It may contain \n only in string
-      literals. It's not always a safe token sequence, for example, it may
-      contain '(())' or '/foo*'. It's a safe token sequence if
-      do_emit_strings_as_hex and do_emit_safe_names are both True.
+      A string containing a PDF token sequence. If do_emit_safe_names and
+      do_emit_safe_strings are true, then the return value is safe. If
+      do_emit_safe_names and do_emit_safe_strings and do_emit_strings_as_hex
+      are false, then the return value is the most compact PDF token
+      sequence possible: without superfluous whitespace; with '(' string
+      literals. It may contain \n only in string literals. The most compact
+      PDF token seuqnce is not always a safe token sequence, for example, it
+      may contain '(())' or '/foo*'.
     Raises:
       PdfTokenParseError: .
     """
@@ -2414,11 +2426,13 @@ class PdfObj(object):
           raise PdfTokenParseError('invalid hex string %r' % s)
         if do_emit_strings_as_hex:
           return '<%s>' % s.encode('hex')
+        elif do_emit_safe_strings:
+          return cls.SerializePdfStringSafe(s)
         else:
-          return cls.SerializePdfString(s)
+          return cls.SerializePdfStringUnsafe(s)
       elif match.group(1):  # '<<'
         return match.group(1)
-      else:  # whitespace: remove unless needed
+      else:  # Remove whitespace unless needed.
         if (match.start() == 0 or match.end() == len(data) or
             data[match.start() - 1] in '<>)[]{}' or  # % not needed.
             data[match.end()] in '/<>([]{}'):  # % not needed.
@@ -2426,6 +2440,7 @@ class PdfObj(object):
         else:
           return ' '
 
+    # This must be the last step, because it can emit unsafe strings.
     return cls.PDF_WHITESPACE_OR_HEX_STRING_RE.sub(
         ReplacementWhiteOrString, data)
 
@@ -2449,7 +2464,7 @@ class PdfObj(object):
     if isinstance(value, str):
       if (value.startswith('(') or
           (value.startswith('<') and not value.startswith('<<'))):
-        return cls.SerializePdfString(cls.ParsePdfString(value)[0])
+        return cls.SerializePdfStringSafe(cls.ParsePdfString(value)[0])
       else:
         return value
     elif isinstance(value, bool):  # must be above int and long
@@ -2483,7 +2498,7 @@ class PdfObj(object):
     return ''.join(output)
 
   @classmethod
-  def SerializeSafeString(cls, data):  # !!! add tests
+  def SerializePdfStringSafe(cls, data):  # !!! add tests
     """Serializes a string as a PDF string: (...) if safe, otherwise <...>."""
     if cls.PDF_STRING_UNSAFE_CHAR_RE.search(data):
       return '<%s>' % data.encode('hex')
@@ -2491,14 +2506,15 @@ class PdfObj(object):
       return '(%s)' % data
 
   @classmethod
-  def SerializePdfString(cls, data):
+  def SerializePdfStringUnsafe(cls, data):
     """Escape a string to the shortest possible PDF string literal.
 
     Args:
       data: An arbitrary byte string (str) (not a PDF string).
     Results:
       A string containing a PDF token. Please note that it won't always be a
-      safe string, e.g. '(\n)' and '(())' are both unsafe.
+      safe string, e.g. '(\n)' and '(())' are both unsafe. To get a safe string
+      as result, use SerializePdfStringSafe.
     """
     if not isinstance(data, str):
       raise TypeError
@@ -3309,7 +3325,7 @@ class PdfObj(object):
         if not do_strings:
           raise UnexpectedStreamError(
               'unexpected stream in: %d 0 obj' % obj_num)
-        return obj.SerializePdfString(obj.GetUncompressedStream(objs=objs))
+        return obj.SerializePdfStringSafe(obj.GetUncompressedStream(objs=objs))
 
     data0 = data
     if '(' in data or '%' in data:  # ')'
@@ -3587,8 +3603,9 @@ class ImageData(object):
       assert self.plte
       assert len(self.plte) % 3 == 0
       # TODO(pts): Save as /Indexed/DeviceGray instead if possible.
+      # Don't use SerializePdfString, it makes the PdfObj head unsafe.
       return '[/Indexed/DeviceRGB %d%s]' % (
-          len(self.plte) / 3 - 1, PdfObj.SerializePdfString(self.plte))
+          len(self.plte) / 3 - 1, PdfObj.SerializePdfStringSafe(self.plte))
     else:
       assert False, 'cannot convert to PDF color space'
 
@@ -3895,7 +3912,7 @@ class ImageData(object):
         palette = color1 + color2
       obj.Set('Decode', None)
       colorspace = '[/Indexed/DeviceRGB %d%s]' % (
-          len(palette) / 3 - 1, PdfObj.SerializePdfString(palette))
+          len(palette) / 3 - 1, PdfObj.SerializePdfStringSafe(palette))
       obj.Set('ColorSpace', colorspace)
       obj.Set('ImageMask', None)
 
@@ -4873,6 +4890,7 @@ class PdfData(object):
                           do_hide_images=False,
                           do_generate_xref_stream=True,
                           do_generate_object_stream=True,
+                          do_emit_short_unsafe=True,
                           may_obj_heads_contain_comments=True,
                           is_flate_ok=True):
     """Appends a serialized PDF file to the list output.
@@ -5028,13 +5046,15 @@ class PdfData(object):
         # object.
         # For testing: multivalent_filter_test.pdf
         pdf_obj.Set('Filter', '/JPXDecode')
-      pdf_obj.AppendTo(output, obj_num)
+      pdf_obj.AppendTo(output, obj_num,
+                       do_emit_short_unsafe=do_emit_short_unsafe)
 
     if objstm_obj:
       objstm_obj_num = next_obj_num  # The largest.
       next_obj_num += 1
       obj_ofs[objstm_obj_num] = GetOutputSize()
-      objstm_obj.AppendTo(output, objstm_obj_num)
+      objstm_obj.AppendTo(output, objstm_obj_num,
+                          do_emit_short_unsafe=do_emit_short_unsafe)
     else:
       objstm_obj_num = None
     del objstm_obj  # Save memory.
@@ -5061,7 +5081,8 @@ class PdfData(object):
                               objstm_obj_num=objstm_obj_num,
                               objstm_obj_numbers=objstm_obj_numbers,
                               is_flate_ok=is_flate_ok)
-      trailer_obj.AppendTo(output, trailer_obj_num)
+      trailer_obj.AppendTo(output, trailer_obj_num,
+                           do_emit_short_unsafe=do_emit_short_unsafe)
     else:  # Emit xref and trailer.
       trailer_obj.Set('Size', obj_numbers[-1] + 1)  # max_obj_num + 1.
       if obj_numbers[0] == 1:
@@ -6052,7 +6073,7 @@ class PdfData(object):
         # New Ghostscript doesn't generate /CharSet. We don't generate it
         # either, unless the user asks for it.
         merged_fontdesc_obj.Set(
-            'CharSet', PdfObj.SerializePdfString(''.join(
+            'CharSet', PdfObj.SerializePdfStringSafe(''.join(
                 ['/' + name for name in sorted(merged_font['CharStrings'])])))
 
       self.objs[group_obj_nums[0]].head = merged_fontdesc_obj.head
@@ -7347,7 +7368,7 @@ class PdfData(object):
       # binary instead) here.
       head = PdfObj.PDF_HEX_STRING_OR_DICT_RE.sub(
           lambda match: (match.group(1) is not None and
-              PdfObj.SerializePdfString(match.group(1).decode('hex'))
+              PdfObj.SerializePdfStringSafe(match.group(1).decode('hex'))
               or '<<'), head)
       obj = PdfObj(None)
       obj.head = head
@@ -8057,6 +8078,7 @@ class PdfData(object):
       obj_size = in_offsets[offsets_idx + 1] - obj_ofs
       pdf_obj = pdf_objs[obj_num]
       head = pdf_obj.head
+      old_obj = PdfObj(pdf_obj)
 
       # We use substring search only to speed up the real match with Get.
       if pdf_obj.head.startswith('<<'):
@@ -8086,7 +8108,7 @@ class PdfData(object):
         output_size += len(output[output_size_idx])
         output_size_idx += 1
       out_ofs_by_num[obj_num] = old_output_size = output_size
-      pdf_obj.AppendTo(output, obj_num)
+      pdf_obj.AppendTo(output, obj_num, do_emit_short_unsafe=True)
       while output_size_idx < len(output):
         output_size += len(output[output_size_idx])
         output_size_idx += 1
@@ -8258,7 +8280,8 @@ class PdfData(object):
             output_size += len(output[output_size_idx])
             output_size_idx += 1
           out_ofs_by_num[ref_obj_num] = output_size
-          compressed_pdf_obj.AppendTo(output, ref_obj_num)
+          compressed_pdf_obj.AppendTo(output, ref_obj_num,
+                                      do_emit_short_unsafe=True)
         del objstm_cache  # Save memory.
       del compressed_objects, objstm_objs  # Save memory.
       while output_size_idx < len(output):
@@ -8299,7 +8322,8 @@ class PdfData(object):
             (len(xref_data), trailer_obj.size,
              FormatPercent(trailer_obj.size, len(xref_data))))
         del xref_out, xref_data  # Save memory.
-        trailer_obj.AppendTo(output, out_trailer_obj_num)
+        trailer_obj.AppendTo(output, out_trailer_obj_num,
+                             do_emit_short_unsafe=True)
         while output_size_idx < len(output):
           output_size += len(output[output_size_idx])
           output_size_idx += 1
