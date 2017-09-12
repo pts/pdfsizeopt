@@ -236,6 +236,12 @@ exit 1
 
 '''
 
+def new_zipinfo(file_name, file_mtime, permission_bits=0644):
+  zipinfo = zipfile.ZipInfo(file_name, file_mtime)
+  zipinfo.external_attr = (0100000 | (permission_bits & 07777)) << 16
+  return zipinfo
+
+
 def main(argv):
   assert os.path.isfile('lib/pdfsizeopt/main.py')
   zip_output_file_name = 't.zip'
@@ -260,22 +266,22 @@ def main(argv):
       file_mtime = time.localtime(os.stat('lib/' + file_name).st_mtime)[:6]
       code_mini = MinifyFile(file_name, code_orig)
       # Compression effort doesn't matter, we run advzip below anyway.
-      zf.writestr(zipfile.ZipInfo(file_name, file_mtime), code_mini)
+      zf.writestr(new_zipinfo(file_name, file_mtime), code_mini)
       del code_orig, code_mini  # Save memory.
 
     # TODO(pts): Can we use `-m m'? Does it work in Python 2.0, 2.1, 2.2 and
     # 2.3? (So that we'd reach the proper error message.)
-    zf.writestr(zipfile.ZipInfo('m.py', time_now),
+    zf.writestr(new_zipinfo('m.py', time_now),
                 MinifyFile('m.py', M_PY_CODE))
 
-    zf.writestr(zipfile.ZipInfo('__main__.py', time_now),
+    zf.writestr(new_zipinfo('__main__.py', time_now),
                 'import m')
 
     file_name = 'pdfsizeopt/psproc.py'
     code_orig = open('lib/' + file_name, 'rb').read()
     file_mtime = time.localtime(os.stat('lib/' + file_name).st_mtime)[:6]
     code_mini = MinifyPostScriptProcsets(file_name, code_orig)
-    zf.writestr(zipfile.ZipInfo(file_name, file_mtime), code_mini)
+    zf.writestr(new_zipinfo(file_name, file_mtime), code_mini)
   finally:
     zf.close()
 
