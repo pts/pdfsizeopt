@@ -532,7 +532,7 @@ def Rename(fromfn, tofn):
     # On Windows: WindowsError:
     # [Error 183] Cannot create a file when that file already exists.
     # sys.platform.startswith('win') and e[0] == 183):
-    if os.path.exists(tofn):
+    if os.path.exists(fromfn) and os.path.exists(tofn):
       try:
         try:
           os.remove(tofn)
