@@ -523,6 +523,30 @@ def EnsureRemoved(file_name):
     assert not os.path.exists(file_name)
 
 
+def Rename(fromfn, tofn):
+  """Like os.rename, but works on Windows if the destination exists."""
+  try:
+    os.rename(fromfn, tofn)
+    return
+  except OSError, e:
+    # On Windows: WindowsError:
+    # [Error 183] Cannot create a file when that file already exists.
+    # sys.platform.startswith('win') and e[0] == 183):
+    if os.path.exists(tofn):
+      try:
+        try:
+          os.remove(tofn)
+        except OSError:
+          pass
+        os.rename(fromfn, tofn)
+        return
+      except OSError, e:
+        pass
+  print >>sys.stderr, 'error: unable to rename from %r to %r: %s' % (
+      fromfn, tofn, e)
+  sys.exit(4)
+
+
 def FindOnPath(file_name):
   """Find file_name on $PATH, and return the full pathname or None."""
   path = os.getenv('PATH', None)
@@ -8963,4 +8987,5 @@ def main(argv, script_dir=None, zip_file=None):
       may_obj_heads_contain_comments=may_obj_heads_contain_comments,
       is_flate_ok=(f.do_compress_uncompressed_streams and
                    not f.do_decompress_most_streams))
-  os.rename(output_file_name + '.tmp', output_file_name)
+  Rename(output_file_name + '.tmp', output_file_name)
+
