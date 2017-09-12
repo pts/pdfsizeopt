@@ -5032,7 +5032,7 @@ class PdfData(object):
         # it (suboptimally).
         assert pdf_obj.Get('FilteR') is None
         assert pdf_obj.Get('DecodeParmS') is None
-        pdf_obj.Set('Subtype', 'ImagE')
+        pdf_obj.Set('Subtype', '/ImagE')
         filter_value = pdf_obj.Get('Filter')
         if filter_value is not None:
           pdf_obj.Set('FilteR', filter_value)
