@@ -80,7 +80,7 @@
   $ time wine ./pngout.exe lme_v6/600dpi_00001{,.pngout}.png
   In:   78862 bytes               lme_v6/600dpi_00001.png /c0 /f0 /d1
   Out:                             lme_v6/600dpi_00001.pngout.png /c3 /f0 /d1, 2 c
-  Out:   54135 bytes               
+  Out:   54135 bytes
   Chg:  -24727 bytes ( 68% of original)
   real	6m48.734s
   user	6m32.473s
@@ -92,7 +92,7 @@
   $ time ./pngout-linux-pentium4-static lme_v6/300dpi_00001.rgb8{,.pngout}.png
   In:34118768 bytes               lme_v6/300dpi_00001.rgb8.png /c2 /f0
   Out:                            lme_v6/300dpi_00001.rgb8.pngout.png /c3 /f0 /d1
-  Out:   19817 bytes               
+  Out:   19817 bytes
   Chg:-34098951 bytes (  0% of original)
   real	0m47.100s
   user	0m46.803s
@@ -100,7 +100,7 @@
   $ time ./pngout-linux-pentium4-static lme_v6/300dpi_00008{,.pngout}.png
   In:  124462 bytes               lme_v6/300dpi_00008.png /c0 /f0 /d1
   Out:                             lme_v6/300dpi_00008.pngout.png /c3 /f0 /d1, 2 c
-  Out:  107256 bytes               
+  Out:  107256 bytes
   Chg:  -17206 bytes ( 86% of original)
   real	0m58.512s
   user	0m58.192s
@@ -129,7 +129,7 @@
   real	0m14.039s
   user	0m13.705s
   sys	0m0.356s
-  $ time ./optipng lme_v6/00008.optipng.png 
+  $ time ./optipng lme_v6/00008.optipng.png
   OptiPNG 0.6.2: Advanced PNG optimizer.
   Copyright (C) 2001-2008 Cosmin Truta.
 
@@ -142,7 +142,7 @@
     zc = 9  zm = 8  zs = 1  f = 0		IDAT size = 1241149
     zc = 9  zm = 8  zs = 0  f = 5		IDAT size = 1090056
     zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
-                                          
+
   Selecting parameters:
     zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
 
@@ -158,7 +158,7 @@
   formats (BMP, GIF, PNM and TIFF) to optimized PNG, and performs PNG
   integrity checks and corrections.
   If you wish to learn how PNG optimization is done, or to know about other
-  similar tools, read the PNG-Tech article "A guide to PNG optimization". 
+  similar tools, read the PNG-Tech article "A guide to PNG optimization".
   (optipng is a redesign of pngcrush)
   * At the time of this writing, AdvPNG does not perform image reductions,
     so the use of pngrewrite or OptiPNG prior to optimiziation may be
@@ -166,7 +166,7 @@
     is a powerful contender.
   * contains minitiff.c and tiffread.c for reading TIFF files
   * can process large images: 17382x23547 pixels, 1 bit/pixel, grayscale
-* Latest version: OptiPNG 0.6.2 (released on 9 Nov 2008). 
+* Latest version: OptiPNG 0.6.2 (released on 9 Nov 2008).
 * SUXX: advpng in advancecomp-1.15 doesn't support 1-bit grayscale
   lme_v6/300dpi_00008.advpng-4.png (Unsupported bit depth/color type, 1/0)
 * ultimate data compression comparison: http://uclc.info/
@@ -259,7 +259,7 @@
 * TODO: sam2p /Filter array ==> /DecodeParams should be a similar array
 * TODO: why is the sam2p predictor consistently larger than the nonpredictor
   in lme_v6/300dpi_all.pdf ?
-* ./type1cconv.py lme_v6/empty_page.pdf 
+* ./type1cconv.py lme_v6/empty_page.pdf
 info: optimized image XObject 1 best_method=4 file_name=type1cconv-1.pngout.png  size=20000 (63%)
 info: replacements are {1: 71448, 2: 25368, 3: 25943, 4: 20000} <= 31827 bytes
 info: optimized image XObject 6 best_method=4 file_name=type1cconv-6.pngout.png  size=30453 (73%)
@@ -298,7 +298,7 @@ real	40m7.868s
 user	38m45.777s
 sys	0m42.015s
 * TODO: tool.pdf.Compress increases the image size
-$ java -cp Multivalent.jar tool.pdf.Compress lme_v6/300dpi_all.type1c.pdf 
+$ java -cp Multivalent.jar tool.pdf.Compress lme_v6/300dpi_all.type1c.pdf
 file:/home/kat/mix/trunk/pdfsize/lme_v6/300dpi_all.type1c.pdf, 1420015 bytes
 PDF 1.1, producer=pdfTeX-1.40.3, creator=TeX
 additional compression may be possible with:
@@ -319,7 +319,7 @@ additional compression may be possible with:
 * TODO: use /JBIG2Encode for image compression
 * gs 8.61 has /JBIG2Decode, but not /JBIG2Encode
 * TODO: unify fonts (gs 6.51 -sDEVICE=pdfwrite doesn't do this, keeps two
-  /Subtype/Type1C objs in the font dict) 
+  /Subtype/Type1C objs in the font dict)
   * TODO: ignore small mismatches in gs' /Type1C output:
     /BlueScale, /BlueShift, /ForceBold
   * use pdftops to convert /Type1C output of gs back to Type1.
@@ -330,7 +330,7 @@ additional compression may be possible with:
     doesn't bother finding indentically looking images.
   * Multivalent seems to find and eliminate identical subtrees (or just
     content streams??)
-    $ java -cp Multivalent.jar tool.pdf.Compress -mon eurotex2006.final.mul5.pdf 
+    $ java -cp Multivalent.jar tool.pdf.Compress -mon eurotex2006.final.mul5.pdf
     file:/home/kat/pdfsizeopt/trunk/eurotex2006.final.mul5.pdf, 42027405 bytes
     PDF 1.4, producer=pdfeTeX-1.21a, creator=TeX
     11172 objects / 630 pages pre955 pre1311 pre955 pre1311 pre955 pre1311
@@ -393,10 +393,10 @@ additional compression may be possible with:
   EexecDecode | perl -ne 'print"$1\n" if m@^(/\S+) \d+ RD @' | sort
 * Ghostscript load CFF Type1C font: /MY (t.bin) (r) file /FontSetInit /ProcSet findresource /MY findfont {pop ===} forall
 * how to test images are not recompressed with MultivalentLoad:
-  $ java -cp Multivalent.jar tool.pdf.Compress pts2.lzw.pdf 
+  $ java -cp Multivalent.jar tool.pdf.Compress pts2.lzw.pdf
   $ grep /LZWEncode pts2.lzw-o.pdf
   (no match because recompress)
-  $ java -ea MultivalentLoad Multivalent.jar tool.pdf.Comprepp pts2.lzw.pdf 
+  $ java -ea MultivalentLoad Multivalent.jar tool.pdf.Comprepp pts2.lzw.pdf
   $ grep /LZWEncode pts2.lzw-o.pdf
   (matches)
 * font unification
@@ -544,6 +544,7 @@ Lossless JPEG optimization:
 * jpegtran -optimize
   part of libjpeg
   sudo apt-get install libjpeg-turbo-progs
+  also: mozjpegtran -revert -optimize
 * imgopt
   Bash script, just calls `jpegtran -copy none -optimize' + jfifremove
   https://github.com/kormoc/imgopt/blob/master/imgopt
@@ -555,7 +556,7 @@ Lossless JPEG optimization:
   calls jpegrescan
   http://akuvian.org/src/jpgcrush.tar.gz
   https://github.com/wafflesnatcha/bin/blob/master/jpgcrush
-  Pleaase note that `-restart 1' makes the file larger.
+  Please note that `-restart 1' makes the file larger.
   jpeg_scan_rgb.txt:
     # https://github.com/jarnoh/lrjpegrescan/blob/master/jpeg_scan_rgb.txt
     0:   0  0 0 0 ;
@@ -574,11 +575,13 @@ Lossless JPEG optimization:
     0:   9 63 0 2 ;
     0:   1 63 2 1 ;
     0:   1 63 1 0 ;
+  We can't use it in PDF, because jpegtran -scans generates progressive JPEG.
 * jpegrescan
   Perl script
   calls jpegtran -optimize
   calls jpegtran -optimize -scans ... with many different, refined settings
   https://raw.githubusercontent.com/kud/jpegrescan/master/jpegrescan
+  We can't use it in PDF, because jpegtran -scans generates progressive JPEG.
 * jpegoptim
   C program using libjpeg
   sudo apt-get install jpegoptim
@@ -600,7 +603,7 @@ Lossless JPEG optimization:
   * for F in *.jpg; do jpegtran -copy none -optimize -outfile jo.bin "$F" &&
     mv -f jo.bin "$F"; done
   ... but make sure to run jfifremove (part of imgopt, simple code, unused)
-  etc. first for removing JFIF, EXIF etc. metadata; `-copy none' also
+  etc. first for removing JFIF, Exif etc. metadata; `-copy none' also
   removes some stuff (why not all?)
   jfifremove: https://github.com/kormoc/imgopt/blob/master/jfifremove.c
 * Better JPEG compression: mozjpeg.
@@ -611,7 +614,61 @@ Lossless JPEG optimization:
 
   ECT contains a zopfli-fork, with some brotli code cut-and-pasted into it. Recently, the author of ECT asked me to do the same in the official zopfli release, and I tried. I saw some improvements here and there, but an equal amount of worse compression results.
 
-Removing JPEG comments, JFIF, EXIF etc. markers:
+Removing JPEG metadata (e.g. comments, JFIF, Exif etc.) manually:
+
+* 2: d8=SOI marker:
+** 2: '\xff\xd8'  # SOI marker.
+* 18: (e0=APP0)/JFIF marker:
+** Does /DCTDecode work without this?
+** 2: '\xff\xe0   # APP0 marker.
+** 2: '\0\x10'    # Size - 2. So size is actually 18 bytes.
+** 5: 'JFIF\0'    # Type identifier.
+** 2: '\1\2'      # Version of 1.2 of JFIF.
+** 1: '\0'        # Units.
+** 2: '\0\1'      # Horizontal pixel density.
+** 2: '\0\1'      # Vertical pixel density.
+** 1: '\0'        # Thumbnail width.
+** 1: '\0'        # Thumbnail height.
+* Process markers in original JPEG:
+** Copy over these in the original order:
+   db=DQT+ c0=SOF0+ c4=DHT+ da=SOS+.
+   Stop at (excluding) d9=EOI.
+   After the da=SOS marker, copy over the Huffman-coded data following it:
+   scan, copy until (excluding) an ff which is not followed by 00=NUL or
+   d0=RES0...d7==RES7.
+   Image width and height are in the c0 (SOF0) marker.
+** If in strict mode, fail if any marker other than db, c0, d4, da, e0...ef,
+   fe, d8, d9 was found.
+** Drop these markers: e0=APP0...ef=APP15, fe=COM, d8=SOI, d9=EOI.
+   Metadata (JFIF, Exif, XMP, IPTC and ICC) is in COM and APP0...APP15.
+** Fail if found any of these markers: c1=SOF1...c3=SOF3, c5=SOF5...c7=SOF7,
+   c9=SOF9...cb=SOF11, cd=SOF13...cf=SOF15, cc=DAC.
+   SOF2 is for progressive JPEG, SOF0 is for baseline JPEG.
+   DAC defines arithmetic coding.
+* 2: d9=EOI marker.
+** 2: '\xff\xd9' # EOI marker.
+
+More info about JPEG metadata:
+
+* A typical JPEG file has markers in these order:
+  d8=SOI (e0=APP0)/JFIF e1=APP1 e1=APP1 e2=APP2 db=DQT db=DQT fe=COM fe=COM c0=SOF0 c4=DHT c4=DHT c4=DHT c4=DHT da=SOS d9=EIO.
+  The first fe marker (COM, comment) was near offset 30000.
+* A typical JPEG file after filtering through jpegtran:
+  d8=SOI (e0=APP0)/JFIF fe=COM fe=COM db=DQT db=DQT c0=SOF0 c4=DHT c4=DHT c4=DHT c4=DHT da=SOS d9=EOI.
+  The first fe marker (COM, comment) was at offset 20.
+* http://dev.exiv2.org/projects/exiv2/wiki/The_Metadata_in_JPEG_files
+* d4=DHT: define Huffman table
+* da=SOS: for baseline JPEG, there is 1 scan; for progressive JPEG, there can be many
+* Metadata markers:
+** JFIF uses APP0.
+** Comments in COM.
+** Exif uses APP1, APP2.
+** XMP uses APP1.
+** IPTC uses APP13.
+** ICC uses APP2.
+* Details of JFIF: https://www.w3.org/Graphics/JPEG/jfif3.pdf
+
+Removing JPEG metadata (e.g. comments, JFIF, Exif etc.) markers:
 
 * jpegtran -copy none
   part of libjpeg
@@ -619,6 +676,7 @@ Removing JPEG comments, JFIF, EXIF etc. markers:
   Removes the APP0 JFIF thumbnail (if any), even with `jpegtran -copy all'.
 * jfifremove
   https://github.com/kormoc/imgopt/blob/master/jfifremove.c
+  Removes too much (18 bytes).
 * jpegrescan -s
   jpegrescan -i
   Perl script
