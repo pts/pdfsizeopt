@@ -7799,7 +7799,8 @@ class PdfData(object):
     trailer_obj_num = [None]
     # All values are in bytes.
     stats = {
-        'image_objs': 0,
+        'nonjpeg_image_objs': 0,
+        'jpeg_image_objs': 0,
         'xref': 0,
         'trailer': 0,
         # TODO(pts): Count hyperlinks seperately, but they may be part of
@@ -7825,7 +7826,8 @@ class PdfData(object):
     obj_size_by_num = {}
     drawing_obj_nums = set()
     font_data_obj_nums = set()
-    image_obj_nums = set()
+    nonjpeg_image_obj_nums = set()
+    jpeg_image_obj_nums = set()
     other_stream_obj_nums = set()
     other_nonstream_obj_nums = set()
 
@@ -7928,14 +7930,18 @@ class PdfData(object):
             pdf_obj.DetectInlineImage(objs=pdf.objs)):
           if obj_num in drawing_obj_nums:
             drawing_obj_nums.remove(obj_num)
-          image_obj_nums.add(obj_num)
+          if '/DCTDecode' in str(pdf_obj.Get('Filter')):
+            jpeg_image_obj_nums.add(obj_num)
+          else:
+            nonjpeg_image_obj_nums.add(obj_num)
 
     pdf.ParseSequentially(
         data=data, file_name=file_name, offsets_out=offsets_out,
         obj_num_by_ofs_out=obj_num_by_ofs_out,
         setitem_callback=SetItemCallback)
 
-    obj_num_arys = (image_obj_nums, drawing_obj_nums, font_data_obj_nums)
+    obj_num_arys = (nonjpeg_image_obj_nums, jpeg_image_obj_nums,
+                    drawing_obj_nums, font_data_obj_nums)
     for obj_nums in obj_num_arys:
       for obj_num in obj_nums:
         if obj_num in obj_size_by_num:
@@ -7951,10 +7957,14 @@ class PdfData(object):
       stats['other_stream_objs'] += obj_size_by_num[obj_num]
     for obj_num in other_nonstream_obj_nums:
       stats['other_nonstream_objs'] += obj_size_by_num[obj_num]
-    for obj_num in image_obj_nums:
+    for obj_num in nonjpeg_image_obj_nums:
       obj_size = obj_size_by_num.get(obj_num)
       if obj_size is not None:
-        stats['image_objs'] += obj_size
+        stats['nonjpeg_image_objs'] += obj_size
+    for obj_num in jpeg_image_obj_nums:
+      obj_size = obj_size_by_num.get(obj_num)
+      if obj_size is not None:
+        stats['jpeg_image_objs'] += obj_size
     for obj_num in drawing_obj_nums:
       obj_size = obj_size_by_num.get(obj_num)
       if obj_size is not None:
