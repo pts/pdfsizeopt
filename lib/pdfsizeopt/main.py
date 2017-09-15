@@ -8870,8 +8870,9 @@ def main(argv, script_dir=None, zip_file=None):
     return  # Version printed above.
   elif f.mode == 'stats':
     # TMP_PREFIX can be needed for /Type/ObjStm decompression with gs.
+    file_name = f.args[0]
     SetupTmpPrefix(file_name)
-    PdfData.ComputePdfStatistics(file_name=f.args[0])
+    PdfData.ComputePdfStatistics(file_name=file_name)
     return
   else:
     assert f.mode == 'optimize'  # Implemented below.
