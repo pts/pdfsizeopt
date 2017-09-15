@@ -8920,11 +8920,11 @@ def main(argv, script_dir=None, zip_file=None):
       has_not_found = True
     else:
       img_cmd_patterns_good.append(cmd_pattern)
-    if has_not_found and f.do_require_image_optimizers:
-      print >>sys.stderr, (
-          'error: not all image optimizers found (see above), '
-          'ignore with --do-require-image-optimizers=no')
-      sys.exit(3)
+  if has_not_found and f.do_require_image_optimizers:
+    print >>sys.stderr, (
+        'error: not all image optimizers found (see above), '
+        'ignore with --do-require-image-optimizers=no')
+    sys.exit(3)
   img_cmd_patterns = img_cmd_patterns_good
 
   if output_file_name is None:  # Just --do-debug-gs=yes.
