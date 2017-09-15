@@ -133,11 +133,19 @@ open a terminal window and run these commands (without the leading `$'):
 
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ wget -O pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
-  $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
   $ chmod +x pdfsizeopt.single
   $ ln -s pdfsizeopt.single pdfsizeopt
+
+Do a test optimization run, which exercises all dependencies of pdfsizeopt:
+
+  $ curl -L -o deptest.pdf https://github.com/pts/pdfsizeopt/raw/master/deptest/deptest.pdf
+  $ ~/pdfsizeopt/pdfsizeopt deptest.pdf
+
+... and open (view) deptest.pdf and the corresponding optimized
+deptest.pso.pdf .
 
 To optimize a PDF, run the following command
 
