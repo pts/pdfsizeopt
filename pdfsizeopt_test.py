@@ -617,20 +617,20 @@ class PdfSizeOptTest(unittest.TestCase):
     end_ofs_out = []
     obj = main.PdfObj(s, end_ofs_out=end_ofs_out)
     self.assertEqual('<</T<3e3e0a656e646f626a0a>/Length 3>>', obj.head)
-    self.assertEqual([len(s)], end_ofs_out)
+    self.assertEqual([43, len(s)], end_ofs_out)
     self.assertEqual('ABD', obj.stream)
     end_ofs_out = []
     obj = main.PdfObj(t + '\r\n\tANYTHING', end_ofs_out=end_ofs_out)
     self.assertEqual('<</T 5/Length 3>>', obj.head)
-    self.assertEqual([len(t) + 1], end_ofs_out)
+    self.assertEqual([43, len(t) + 1], end_ofs_out)
     end_ofs_out = []
     obj = main.PdfObj(
         '%s\n%s' % (s, t), start=len(s) + 1, end_ofs_out=end_ofs_out)
     self.assertEqual('ABE', obj.stream)
-    self.assertEqual([len(s) + 1 + len(t)], end_ofs_out)
+    self.assertEqual([107, len(s) + 1 + len(t)], end_ofs_out)
     obj = main.PdfObj('%s\n%s' % (s, t), start=len(s))
     self.assertEqual('ABE', obj.stream)
-    self.assertEqual([len(s) + 1 + len(t)], end_ofs_out)
+    self.assertEqual([107, len(s) + 1 + len(t)], end_ofs_out)
     # Exception because start points to '#', not an `X Y obj'.
     self.assertRaisesX(
         main.PdfTokenParseError,
@@ -703,11 +703,48 @@ class PdfSizeOptTest(unittest.TestCase):
                       '42 0 obj /foo#b endobj')
     self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
                       '42 0 obj /foo#bxar endobj')
-    obj = main.PdfObj('42 0 obj[. -. . .]endobj')
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                      '42 0 obj [()<a endobj')
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                      '42 0 obj [()<g> endobj')
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                      '42 0 obj [<a endobj')
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                      '42 0 obj [<g> endobj')
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                      '42 0 obj %\n\nendobj')
+    end_ofs_out = []
+    obj = main.PdfObj('42 0 obj 5  endobj\r\n x', end_ofs_out=end_ofs_out)
+    self.assertEqual('5', obj.head)
+    self.assertEqual([20], end_ofs_out)
+    end_ofs_out = []
+    obj = main.PdfObj('42 0 obj () endobj\r\n x', end_ofs_out=end_ofs_out)
+    self.assertEqual('()', obj.head)
+    self.assertEqual([20], end_ofs_out)
     # !!! TODO(pts): Fix bad numbers, all this to 0.
+    obj = main.PdfObj('42 0 obj[. -. . .]endobj')
     self.assertEqual('[. -. . .]', obj.head)
 
     # TODO(pts): Add more tests.
+
+  def testCheckSafePdfTokens(self):
+    F = main.PdfObj.CheckSafePdfTokens
+    F('')
+    F('<<')
+    F(']][<<[]>>-12.34 fooBar /Foo#2a (hello) <a>')
+    self.assertRaisesX(main.PdfTokenParseError, F, '\n')
+    self.assertRaisesX(main.PdfTokenParseError, F, 'foo\n')
+    self.assertRaisesX(main.PdfTokenParseError, F, '%')
+    self.assertRaisesX(main.PdfTokenParseError, F, '\1')
+    F('(\200)')
+    self.assertRaisesX(main.PdfTokenParseError, F, '\200')
+    self.assertRaisesX(main.PdfTokenParseError, F, '(\\200)')
+    self.assertRaisesX(main.PdfTokenParseError, F, '(\\101)')
+    self.assertRaisesX(main.PdfTokenParseError, F, '/pedal.*')
+    self.assertRaisesX(main.PdfTokenParseError, F, '<a')
+    self.assertRaisesX(main.PdfTokenParseError, F, '<ag>')
+    F('x<ab>y')
+    self.assertRaisesX(main.PdfTokenParseError, F, 'x<ag>y')
 
   def testPdfUnsafeRegexpSubsets(self):
     a_re = main.PdfObj.PDF_TOKENS_UNSAFE_CHARS_RE
@@ -721,6 +758,13 @@ class PdfSizeOptTest(unittest.TestCase):
     b_re = main.PdfObj.PDF_SAFE_KEEP_HEX_ESCAPED_RE
     self.assertFalse(a_re.match('*'))
     self.assertTrue(b_re.match('*'))
+    for i in xrange(256):  # Test that b_re is a subset of a_re.
+      self.assertTrue(not a_re.match(chr(i)) or b_re.match(chr(i)), i)
+
+    a_re = main.PdfObj.PDF_TOKENS_UNSAFE_CHARS_RE
+    b_re = main.PdfObj.PDF_STRING_UNSAFE_CHAR_RE
+    self.assertFalse(a_re.match('('))
+    self.assertTrue(b_re.match('('))
     for i in xrange(256):  # Test that b_re is a subset of a_re.
       self.assertTrue(not a_re.match(chr(i)) or b_re.match(chr(i)), i)
 
