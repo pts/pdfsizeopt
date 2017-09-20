@@ -1717,8 +1717,7 @@ class PdfObj(object):
     """Parse PDF trailer at offset start."""
     # !!! TODO(pts): Add unit test.
     # !!! TODO(pts): Do proper PDF token sequence parsing, for the end of the dict.
-    scanner = PdfObj.PDF_TRAILER_RE.scanner(data, start)
-    match = scanner.match()
+    match = PdfObj.PDF_TRAILER_RE.match(data, start)
     if not match:
       raise PdfTokenParseError(
           'bad trailer data: %r' % data[start : start + 256])
@@ -1970,7 +1969,7 @@ class PdfObj(object):
         break
       start = match.end()
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
-    if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
+    if not cls.PDF_WHITESPACE_AT_EOS_RE.match(data, start, end):
       raise PdfTokenNotSimplest(
           'not simplest at %d, got %r' % (start, data[start : start + 16]))
     return dict_obj
@@ -2021,7 +2020,7 @@ class PdfObj(object):
       dict_obj[match.group(1)] = cls.ParseSimpleValue(match.group(2))
 
     # Continue with non-simplest keys.
-    if not cls.PDF_WHITESPACE_AT_EOS_RE.scanner(data, start, end).match():
+    if not cls.PDF_WHITESPACE_AT_EOS_RE.match(data, start, end):
       list_obj = cls._ParseTokens(
           data=data, start=start, end=end,
           count_limit=end)
@@ -3182,7 +3181,7 @@ class PdfObj(object):
             if re.match(' -?\d+\Z', output[-1]):
               # We have parsed `5' from `5 6 R', try to find the rest.
               # TODO(pts): raise PdfTokenTruncated if not available?
-              match = cls.REST_OF_R_RE.scanner(data, i, len(data)).match()
+              match = cls.REST_OF_R_RE.match(data, i, len(data))
               if match:
                 num2 = int(match.group(1))
                 if int(output[-1]) <= 0 or num2 < 0:
@@ -3537,8 +3536,7 @@ class PdfObj(object):
     numbers = PdfObj.ParseTokenList(
         objstm_data, 2 * n, end_ofs_out=end_ofs_ary)
     end_ofs = end_ofs_ary[0]
-    match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(
-        objstm_data, end_ofs).match()
+    match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.match(objstm_data, end_ofs)
     if match:  # Skip whitespace and comments after the last number.
       # TODO(pts): Maybe skip only one character of whitespace?
       end_ofs = match.end()
@@ -4519,7 +4517,7 @@ class PdfData(object):
       # TODO(pts): For testing: issue58.pdf.
       if not isinstance(prev, int) or prev < 9:
         raise PdfXrefStreamError('invalid /Prev at %d: %r' % (xref_ofs, prev))
-      match = PdfObj.PDF_OBJ_DEF_RE.scanner(data, prev).match()
+      match = PdfObj.PDF_OBJ_DEF_RE.match(data, prev)
       if not match:
         raise PdfXrefStreamError('could not find obj at /Prev at %d: %d' %
                                  (xref_ofs, prev))
@@ -4654,7 +4652,7 @@ class PdfData(object):
     if not match:
       raise PdfXrefError('startxref+%%EOF not found')
     xref_ofs = int(match.group(1))
-    match = PdfObj.PDF_OBJ_DEF_RE.scanner(data, xref_ofs).match()
+    match = PdfObj.PDF_OBJ_DEF_RE.match(data, xref_ofs)
     if match:
       xref_obj_num = int(match.group(1))
       xref_generation = int(match.group(2))
@@ -7733,8 +7731,7 @@ class PdfData(object):
     xref_ofs = None
     i = data.rfind('startxref')
     if i >= 0:
-      scanner = PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.scanner(data, i - 1)
-      match = scanner.match()
+      match = PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.match(data, i - 1)
       if match:
         xref_ofs = int(match.group(1))
 
@@ -7761,8 +7758,7 @@ class PdfData(object):
 
       # It's important that it doesn't match leading whitespace, so we'll count
       # leading whitespace as wasted.
-      scanner = PdfObj.PDF_OBJ_DEF_OR_XREF_RE.scanner(data, i)
-      match = scanner.search()
+      match = PdfObj.PDF_OBJ_DEF_OR_XREF_RE.search(data, i)
       if not match:
         raise PdfTokenParseError(
             'next obj or xref or startxref not found at ofs=%d' % i)
@@ -7776,8 +7772,7 @@ class PdfData(object):
         break
       if prefix.startswith('xref'):
         i0 = i
-        scanner = PdfObj.PDF_TRAILER_WORD_RE.scanner(data, i)
-        match = scanner.search()
+        match = PdfObj.PDF_TRAILER_WORD_RE.search(data, i)
         if not match:
           raise PdfTokenParseError('cannot find trailer after xref')
         trailer_ofs = match.start(1)
@@ -7805,10 +7800,10 @@ class PdfData(object):
           i += 1
         i1 = i
         # Usually there is a single space only.
-        match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i).match()
+        match = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.match(data, i)
         if match:
           i = match.end()
-        if PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.scanner(data, i - 1).match():
+        if PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.match(data, i - 1):
           callback_calls.append((None, data[trailer_ofs : i1], 'trailer'))
           if i > i1:
             callback_calls.append(
@@ -7819,7 +7814,7 @@ class PdfData(object):
           break
         # We reach this point in case of a linearized PDF. We usually have
         # `startxref <offset> %%EOF' here, and then we get new objs.
-        match = PdfObj.PDF_STARTXREF_EOF_RE.scanner(data, i - 1).match()
+        match = PdfObj.PDF_STARTXREF_EOF_RE.match(data, i - 1)
         if match:
           i = match.end()
         elif data[i : i + 9].startswith('startxref'):  # Fallback.
@@ -7864,8 +7859,7 @@ class PdfData(object):
     # Postcondition of the loop above.
     assert data[i : i + 9].startswith('startxref')
     offsets_out.append(i)  # startxref
-    scanner = PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.scanner(data, i - 1)
-    match = scanner.match()
+    match = PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.match(data, i - 1)
     if not match:
       raise PdfTokenParseError('startxref syntax error at ofs=%d' % i)
     assert xref_ofs == int(match.group(1))
