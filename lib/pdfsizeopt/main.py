@@ -7838,8 +7838,9 @@ class PdfData(object):
               do_ignore_generation_numbers=self.do_ignore_generation_numbers)
         j = obj_starts[exc.length_obj_num]
         if exc.length_obj_num not in length_objs:
-          length_objs[exc.length_obj_num] = PdfObj(
-              data, start=j, file_ofs=j)
+          if not isinstance(j, PdfObj):
+            j = PdfObj(data, start=j, file_ofs=j)
+          length_objs[exc.length_obj_num] = j
         pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i,
                          objs=length_objs)
       if offsets_out is not None:
