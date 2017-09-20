@@ -781,23 +781,30 @@ class PdfObj(object):
       PDF_COMMENTS_OR_WHITESPACE_RE.pattern[:-1] + r'+')
   """Matches any number (>= 1) of terminated comments and whitespace."""
 
+  PDF_JUST_OBJ_DEF_RE = re.compile(
+      r'(\d+)[\0\t\n\r\f ](\d+)[\0\t\n\r\f ]+obj'
+      r'(?=[\0\t\n\r\f %/<\[({])')
+  """Matches an `obj' definition without leading or trailing whitespace."""
+
   PDF_OBJ_DEF_RE = re.compile(
-      r'[\0\t\n\r\f ]*(\d+)[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+obj'
-      r'(?=[\0\t\n\r\f %/<\[({])' +
+      r'[\0\t\n\r\f ]*' + PDF_JUST_OBJ_DEF_RE.pattern +
       PDF_COMMENTS_OR_WHITESPACE_RE.pattern)
-  """Matches an `obj' definition no leading, with trailing whitespace."""
+  """Matches an `obj' definition with maybe leading and trailing whitespace.
 
-  PDF_OBJ_DEF_CAPTURE_RE_STR = (
-      r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj'
-      r'(?=[\0\t\n\r\f /<\[({])[\0\t\n\r\f ]*')
-  PDF_OBJ_DEF_CAPTURE_RE = re.compile(PDF_OBJ_DEF_CAPTURE_RE_STR)
-  """Matches an `obj' definition no leading, with trailing whitespace.
+  Trailing whitespace and comments are ignored.
 
-  Captures the object number and the generation number."""
+  Captures the object number and the generation number.
+  """
 
   PDF_OBJ_DEF_OR_XREF_RE = re.compile(
-      PDF_OBJ_DEF_RE.pattern + r'|xref[\0\t\n\r\f]*|startxref[\0\t\n\r\f]*')
-  """Matches an `obj' definition, xref or startxref."""
+      PDF_JUST_OBJ_DEF_RE.pattern + r'[\0\t\n\r\f ]*'
+      r'|xref[\0\t\n\r\f ]+|startxref[\0\t\n\r\f ]+')
+  """Matches an `obj' definition, xref or startxref.
+
+  It's important that leading whitespace is not ignored.
+
+  Trailing whitespace (but not comments) is ignored.
+  """
 
   PDF_HEXTOKENS_SAFE_HEX_ESCAPE_RE = re.compile(
       r'[^-+A-Za-z0-9_./#\[\]()<>{}\0\t\n\r\f ]')
@@ -4512,7 +4519,7 @@ class PdfData(object):
       # TODO(pts): For testing: issue58.pdf.
       if not isinstance(prev, int) or prev < 9:
         raise PdfXrefStreamError('invalid /Prev at %d: %r' % (xref_ofs, prev))
-      match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, prev).match()
+      match = PdfObj.PDF_OBJ_DEF_RE.scanner(data, prev).match()
       if not match:
         raise PdfXrefStreamError('could not find obj at /Prev at %d: %d' %
                                  (xref_ofs, prev))
@@ -4647,7 +4654,7 @@ class PdfData(object):
     if not match:
       raise PdfXrefError('startxref+%%EOF not found')
     xref_ofs = int(match.group(1))
-    match = PdfObj.PDF_OBJ_DEF_CAPTURE_RE.scanner(data, xref_ofs).match()
+    match = PdfObj.PDF_OBJ_DEF_RE.scanner(data, xref_ofs).match()
     if match:
       xref_obj_num = int(match.group(1))
       xref_generation = int(match.group(2))
@@ -7751,10 +7758,9 @@ class PdfData(object):
       if i >= len(data):
         raise PdfTokenParseError('unexpeted EOF in PDF')
       i0 = i
-      if data[i] == '%' or data[i] in ws:
-        scanner = PdfObj.PDF_COMMENTS_OR_WHITESPACE_RE.scanner(data, i)
-        i = scanner.match().end()  # Always matches.
 
+      # It's important that it doesn't match leading whitespace, so we'll count
+      # leading whitespace as wasted.
       scanner = PdfObj.PDF_OBJ_DEF_OR_XREF_RE.scanner(data, i)
       match = scanner.search()
       if not match:
@@ -7824,7 +7830,8 @@ class PdfData(object):
       if prefix.startswith('trailer'):
         raise PdfTokenParseError(
             'unexpected trailer at ofs=%d' % i)
-      del end_ofs_out[:]
+      del end_ofs_out[:]  # Save memory.
+      obj_num = int(match.group(1))
       try:
         pdf_obj = PdfObj(data, start=i, end_ofs_out=end_ofs_out, file_ofs=i,
                          objs=length_objs)
@@ -7842,10 +7849,6 @@ class PdfData(object):
                          objs=length_objs)
       if offsets_out is not None:
         offsets_out.append(i)
-      scanner = PdfObj.PDF_INT_RE.scanner(data, i)
-      match = scanner.match()
-      assert match
-      obj_num = int(match.group())
       obj_num_by_ofs_out[i] = obj_num
       if xref_ofs == i:
         self.trailer = pdf_obj
