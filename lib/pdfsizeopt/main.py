@@ -4663,7 +4663,11 @@ class PdfData(object):
       xref_head = data[xref_ofs : xref_ofs + 128]
       # Maybe PDF doesn't allow multiple consecutive `xref's,
       # but we accept that.
+      #
+      # Some broken PDFs have whitespace in front the xref, so we accept that.
+      # Example: Cohn.pdf in https://github.com/pts/pdfsizeopt/issues/42
       match = re.match(
+          r'[\0\t\n\r\f ]*'
           r'(xref[\0\t\n\r\f ]+)\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+', xref_head)
       if not match:
         raise PdfXrefError('xref table not found at %s' % xref_ofs)
