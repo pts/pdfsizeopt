@@ -391,7 +391,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaisesX(main.PdfTokenParseError, e, '/foo#a')
     self.assertEqual('/foo#AB', e('/foo#ab'))
     self.assertEqual('/foo42', e('/foo#34#32'))
-    self.assertEqual('/foo#2A', e('/foo*'))  # !!! Normalized.
+    self.assertEqual('/foo#2A', e('/foo*'))  # Normalized.
     self.assertEqual('/#FAce#5BB', e('/\xface#5b#42\f'))
 
   def DoTestParseSimplestDict(self, e):
@@ -922,6 +922,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('/Size 42', F('/Size 42 ', end_ofs_out=end_ofs_out))
     self.assertEqual([9], end_ofs_out)
     self.assertEqual('[/Size 42]', F('[/Size 42]'))
+    self.assertEqual('<</Size 42>>', F('<</Size 42>>'))
     self.assertEqual('[true 42]', F('[true\n%korte\n42]'))
     self.assertEqual('[true 42]', F('[true%korte\n42]'))
     self.assertEqual('hello world', F('hello \n\t world\n\t'))
@@ -938,14 +939,22 @@ class PdfSizeOptTest(unittest.TestCase):
                      F(' [ (hel\\051lo\\012\\010w\\050or\\051ld) ]'))
     self.assertRaisesX(main.PdfTokenTruncated,
                      F, ' [ (hel\\051lo\\012\\010w\\050or\\051ld) ]<')
+    self.assertEqual('<<<5c>', F('<< <5C>'))
+    self.assertEqual('<5c>>>', F('<5C> >>'))
+    self.assertEqual('()<<<5c>', F('()<< <5C>'))
+    self.assertEqual('()<5c>>>', F('()<5C> >>'))
     self.assertRaisesX(main.PdfTokenTruncated, F, '<')
     self.assertRaisesX(main.PdfTokenTruncated, F, '< ')
     self.assertEqual('>', F('>'))  # !!! Bug! Check with CheckSafePdfTokens.
     self.assertEqual('<<', F('< <'))  # !!! Bug! Check with CheckSafePdfTokens.
     self.assertEqual('>>', F('> >'))  # !!! Bug! Check with CheckSafePdfTokens.
-    self.assertEqual('()>', F('()>'))  # !!! Bug! Check with CheckSafePdfTokens.
+    self.assertEqual('>>>', F('>>>'))  # !!! Bug! Check with CheckSafePdfTokens.
+    self.assertRaisesX(main.PdfTokenTruncated, F, '<<<')
+    self.assertRaisesX(main.PdfTokenParseError, F, '()>')
     self.assertRaisesX(main.PdfTokenParseError, F, '()< <')
-    self.assertEqual('()>>', F('()> >'))  # !!! Bug! Check with CheckSafePdfTokens.
+    self.assertRaisesX(main.PdfTokenParseError, F, '()> >')
+    self.assertRaisesX(main.PdfTokenParseError, F, '()>>>')
+    self.assertRaisesX(main.PdfTokenTruncated, F, '()<<<')
     self.assertEqual('[>>', F('[ >>'))
     self.assertRaisesX(main.PdfTokenTruncated,
                       F, '[ (hel\\)lo\\n\\bw(or)ld) <')

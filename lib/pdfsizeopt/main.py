@@ -926,7 +926,7 @@ class PdfObj(object):
       r'(/[-+A-Za-z0-9_.]*[^<>(){}\[\]/\0\t\n\r\f %\-+A-Za-z0-9_.][^<>(){}\[\]/\0\t\n\r\f %]*)|' +  # 4. Name with explicit hex (#AB) escape or name which needs hex-escaping. !!! Reuse PDF_SAFE_KEEP_HEX_ESCAPED_RE.
       r'(/(?=[<>(){}\[\]/\0\t\n\r\f %]|\Z))|'  # 5. An empty name token.
       r'(' + PDF_HEX_STRING_LITERAL_OR_DICT_RE.pattern + ')|'  # 6. Hex string literal or stray <.
-      r'([{}\\\v\)])|'  # 7. Invalid PDF tokens. (At least invalid outside name tokens.)
+      r'([{}\\\v\)]|>>?)|'  # 7. Invalid PDF tokens (except for >>). (At least invalid outside name tokens.)
       + PDF_STREAM_OR_ENDOBJ_RE.pattern)  # 8. stream or endobj.
   """Matches interesting parts of a non-simple obj head."""
 
@@ -1362,7 +1362,10 @@ class PdfObj(object):
               output.append('(%s)' % strdata_dec)
             strdata = strdata_dec = ()  # Save memory.
         elif match.group(7):
-          raise PdfTokenParseError('Invalid PDF token: %r' % match.group())
+          if match.group() == '>>':
+            output.append('>>')
+          else:
+            raise PdfTokenParseError('Invalid PDF token: %r' % match.group())
         elif (not match.start() or
              data[match.start() - 1] not in '<>[](){}/\0\t\n\r\f '):
           pass  # `endobj' in the middle of a name token.
@@ -1390,9 +1393,10 @@ class PdfObj(object):
 
       def ReplacementWhiteSpace(match):
         # It's OK that match.group(2) is empty.
-        if match.group(1) in '<>[]/' or match.group(2) in '<>[]/':
-          return match.group(1)
-        return match.group(1) + ' '
+        a, b = match.group(1), match.group(2)
+        if a in '<>[]/' or b in '<>[]/':
+          return a
+        return a + ' '
 
       def ReplacementAngle(match):
         data = match.group()
@@ -1418,10 +1422,13 @@ class PdfObj(object):
       # !!! Report statistics about nonsimple obj parsing percentage.
       if cls.PDF_EMPTY_NAME_TOKEN_RE.search(data):
         raise PdfTokenParseError('Found empty name token.')
+      # !!! Bug: this changes '< <' to '<<' and '> >' to '>>'. But it's hard
+      # to fix, because we want '<< <5c>' changed to '<<<5c>' and '<5c> >>'
+      # changed to '<5c>>>'.
       data = cls.PDF_WHITESPACE_IN_SIMPLE_RE.sub(ReplacementWhiteSpace, data)
       if not ((data.startswith('<<') and data.find('<', 2) < 0) or
-              data.find('<') < 0):
-        end = len(data)
+              data.find('<') < 0):  # The `if' is just a shortcut for speed.
+        end = len(data)  # Recompute it, len(data) has changed.
         data = cls.PDF_HEX_STRING_LITERAL_OR_DICT_RE.sub(
             ReplacementAngle, data)
 
