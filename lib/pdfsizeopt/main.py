@@ -985,12 +985,12 @@ class PdfObj(object):
 
   PDF_XREF_ENTRY_OR_TRAILER_RE = re.compile(
       r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+|'
-      r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]|trailer(?:[\0\t\n\r\f ]))')
+      r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]|trailer(?:[\0\t\n\r\f ]|<<))')
   """Matches a PDF xref entry, or the 'xref' or 'trailer' keyword."""
 
   PDF_OBJ_OR_TRAILER_RE = re.compile(
       r'[\n\r](?:(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj\b|'
-      r'trailer(?=[\0\t\n\r\f ]))')
+      r'trailer(?=[\0\t\n\r\f ]|<<))')
   """Matches an 'obj' start or a 'trailer' start."""
 
   PDF_TRAILER_WORD_RE = re.compile(r'[\0\t\n\r\f ](trailer[\0\t\n\r\f ]*<<)')
