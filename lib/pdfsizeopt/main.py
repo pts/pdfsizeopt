@@ -983,10 +983,23 @@ class PdfObj(object):
   pdf.a9p4/5176.CFF.a9p4.pdf
   """
 
-  PDF_XREF_ENTRY_OR_TRAILER_RE = re.compile(
+  PDF_XREF_SECTION_RE = re.compile(
+      r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]+)\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+')
+  """Matches the start of a PDF xref section.
+
+  Some broken PDFs have whitespace in front the xref, so we accept that.
+  Example: Cohn.pdf in https://github.com/pts/pdfsizeopt/issues/42
+  """
+
+  PDF_XREF_SUBSECTION_OR_TRAILER_RE = re.compile(
       r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+|'
       r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]|trailer(?:[\0\t\n\r\f ]|<<))')
   """Matches a PDF xref entry, or the 'xref' or 'trailer' keyword."""
+
+  PDF_XREF_ENTRY_RE = re.compile(
+      r'(\d{10})[\0\t\n\r\f ](\d{5})[\0\t\n\r\f ]([nf])'
+      r'[\0\t\n\r\f ]{2}')
+  """Matches a single PDF xref entry: obj_num, offset and slot type."""
 
   PDF_OBJ_OR_TRAILER_RE = re.compile(
       r'[\n\r](?:(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj\b|'
@@ -4682,20 +4695,16 @@ class PdfData(object):
     obj_starts_rev = {}
     # Set of object numbers not to be overwritten.
     keep_obj_nums = set()
-    _xref_re = PdfObj.PDF_XREF_ENTRY_OR_TRAILER_RE
+    _xref_re = PdfObj.PDF_XREF_SUBSECTION_OR_TRAILER_RE
+    _xref_section_re = PdfObj.PDF_XREF_SECTION_RE
+    _xref_entry_re = PdfObj.PDF_XREF_ENTRY_RE
     while 1:
-      xref_head = data[xref_ofs : xref_ofs + 128]
-      # Maybe PDF doesn't allow multiple consecutive `xref's,
+      # Maybe PDF doesn't allow multiple consecutive `xref' sections,
       # but we accept that.
-      #
-      # Some broken PDFs have whitespace in front the xref, so we accept that.
-      # Example: Cohn.pdf in https://github.com/pts/pdfsizeopt/issues/42
-      match = re.match(
-          r'[\0\t\n\r\f ]*'
-          r'(xref[\0\t\n\r\f ]+)\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+', xref_head)
+      match = _xref_section_re.match(data, xref_ofs)
       if not match:
         raise PdfXrefError('xref table not found at %s' % xref_ofs)
-      xref_ofs += match.end(1)
+      xref_ofs = match.end(1)
       while 1:
         # Start a new subsection.
         # For testing whitespace before trailer: enc.pdf
@@ -4711,10 +4720,7 @@ class PdfData(object):
         obj_count = int(match.group(2))
         xref_ofs = match.end()
         while obj_count > 0:
-          match = re.match(
-              r'(\d{10})[\0\t\n\r\f ](\d{5})[\0\t\n\r\f ]([nf])'
-              r'[\0\t\n\r\f ]{2}',
-              data[xref_ofs : xref_ofs + 20])
+          match = _xref_entry_re.match(data, xref_ofs)
           if not match:
             raise PdfXrefError('syntax error in xref entry at %s' % xref_ofs)
           if match.group(3) == 'n':
