@@ -6780,6 +6780,19 @@ class PdfData(object):
           not obj.stream is not None or
           obj.Get('Subtype') != '/Image'):
         continue
+
+      smask = obj.Get('SMask')
+      if isinstance(smask, str):
+        try:
+          smask = PdfObj.ParseSimpleValue(smask)
+        except PdfTokenParseError:
+          pass
+      if isinstance(smask, str):
+        match = PdfObj.PDF_REF_AT_EOS_RE.match(smask)
+        if match:
+          # The target image of an /SMask must be /ColorSpace /DeviceGray.
+          force_grayscale_obj_nums.add(int(match.group(1)))
+
       if obj.Get('Type') is not None:
         if obj.Get('Type') != '/XObject':
           continue  # Something is wrong with this object, don't touch it.
@@ -6797,18 +6810,6 @@ class PdfData(object):
       # representation would be smaller.
       if ('/JPXDecode ' in filter2 or '/DCTDecode ' in filter2):
         continue
-
-      smask = obj.Get('SMask')
-      if isinstance(smask, str):
-        try:
-          smask = PdfObj.ParseSimpleValue(smask)
-        except PdfTokenParseError:
-          pass
-      if isinstance(smask, str):
-        match = PdfObj.PDF_REF_AT_EOS_RE.match(smask)
-        if match:
-          # The target image of an /SMask must be /ColorSpace /DeviceGray.
-          force_grayscale_obj_nums.add(int(match.group(1)))
 
       # TODO(pts): Support color key mask for /DeviceRGB and /DeviceGray:
       # convert the /Mask to RGB8, remove it, and add it back (properly
@@ -7258,10 +7259,13 @@ class PdfData(object):
       method_sizes = ','.join(
           ['%s:%s' % (obj_info[1], obj_info[0]) for obj_info in obj_infos])
 
+      #assert 0, [(obj_info[1], obj_info[3].head) for obj_info in obj_infos]
       if obj_infos[0][4] is None:
         # TODO(pts): Diagnose this: why can't we generate a smaller image?
-        # !! Originals in eurotex2006.final.pdf tend to be smaller here because
-        #    they have ColorSpace in a separate XObject.
+        # * Sometimes the original image has the same size as the
+        #   optimized ones, e.g. when running pdfsizeopt again.
+        # * !! Originals in eurotex2006.final.pdf tend to be smaller here,
+        #   because they have ColorSpace in a separate XObject.
         print >>sys.stderr, (
             'info: keeping original image XObject %s, '
             'replacements too large: %s' %
