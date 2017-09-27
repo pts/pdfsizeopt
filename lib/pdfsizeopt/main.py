@@ -3716,12 +3716,18 @@ class ImageData(object):
     elif self.color_type == 'rgb':
       return '/DeviceRGB'
     elif self.color_type == 'indexed-rgb':
-      assert self.plte
-      assert len(self.plte) % 3 == 0
-      # TODO(pts): Save as /Indexed/DeviceGray instead if possible.
-      # Don't use SerializePdfString, it makes the PdfObj head unsafe.
+      plte = self.plte
+      assert plte
+      assert len(plte) % 3 == 0
+      for i in xrange(0, len(plte), 3):
+        if plte[i] != plte[i + 1] or plte[i] != plte[i + 2]:
+          break
+      else:
+        return '[/Indexed/DeviceGray %d%s]' % (
+            len(plte) / 3 - 1, PdfObj.SerializePdfStringSafe(''.join(
+                plte[i] for i in xrange(0, len(plte), 3))))
       return '[/Indexed/DeviceRGB %d%s]' % (
-          len(self.plte) / 3 - 1, PdfObj.SerializePdfStringSafe(self.plte))
+          len(plte) / 3 - 1, PdfObj.SerializePdfStringSafe(plte))
     else:
       assert False, 'cannot convert to PDF color space'
 
@@ -6820,6 +6826,7 @@ class PdfData(object):
         do_remove_mask = True
       if (isinstance(mask, str) and mask and
           not do_remove_mask and
+          # TODO(pts): Remove /Mask [].
           not re.match(r'\[[\0\t\n\r\f ]*\]\Z', mask)):
         continue
 
