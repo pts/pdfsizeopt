@@ -630,6 +630,10 @@ class PdfTokenParseError(Error):
   """Raised if a string cannot be parsed to a PDF token sequence."""
 
 
+class PdfMissingRootError(Error):
+  """Raised when the /Root reference is missing from the PDF trailer."""
+
+
 class UnexpectedStreamError(Error):
   """Raised when ResolveReferences gets a ref to an obj with stream."""
 
@@ -978,6 +982,11 @@ class PdfObj(object):
   TODO(pts): Match more generally, see multiple trailers for testing in:
   pdf.a9p4/5176.CFF.a9p4.pdf
   """
+
+  PDF_XREF_ENTRY_OR_TRAILER_RE = re.compile(
+      r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+|'
+      r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]|trailer(?:[\0\t\n\r\f ]))')
+  """Matches a PDF xref entry, or the 'xref' or 'trailer' keyword."""
 
   PDF_OBJ_OR_TRAILER_RE = re.compile(
       r'[\n\r](?:(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj\b|'
@@ -4303,6 +4312,9 @@ class PdfData(object):
            ShellQuoteFileName(os.path.splitext(self.file_name)[0] +
            '.decrypted.pdf')))
 
+    if not (self.trailer.Get('Root') or '').endswith('R'):
+      raise PdfMissingRootError('/Root reference not found in trailer.')
+
     def ComparePair(a, b):
       return a[0].__cmp__(b[0]) or a[1].__cmp__(b[1])
 
@@ -4670,6 +4682,7 @@ class PdfData(object):
     obj_starts_rev = {}
     # Set of object numbers not to be overwritten.
     keep_obj_nums = set()
+    _xref_re = PdfObj.PDF_XREF_ENTRY_OR_TRAILER_RE
     while 1:
       xref_head = data[xref_ofs : xref_ofs + 128]
       # Maybe PDF doesn't allow multiple consecutive `xref's,
@@ -4684,22 +4697,19 @@ class PdfData(object):
         raise PdfXrefError('xref table not found at %s' % xref_ofs)
       xref_ofs += match.end(1)
       while 1:
-        xref_head = data[xref_ofs : xref_ofs + 128]
         # Start a new subsection.
         # For testing whitespace before trailer: enc.pdf
         # obj_count == 0 is fine, see
         # http://code.google.com/p/pdfsizeopt/issues/detail?id=25
-        match = re.match(
-            r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+|[\0\t\n\r\f ]*'
-            r'(xref|trailer)[\0\t\n\r\f ]', xref_head)
+        match = _xref_re.match(data, xref_ofs)
         if not match:
           raise PdfXrefError('xref subsection syntax error at %d' % xref_ofs)
-        if match.group(3) is not None:
-          xref_ofs += match.start(3)
+        if match.group(3) is not None:  # 'xref' or 'trailer'.
+          xref_ofs = match.start(3)
           break
         obj_num = int(match.group(1))
         obj_count = int(match.group(2))
-        xref_ofs += match.end()
+        xref_ofs = match.end()
         while obj_count > 0:
           match = re.match(
               r'(\d{10})[\0\t\n\r\f ](\d{5})[\0\t\n\r\f ]([nf])'
@@ -4807,7 +4817,7 @@ class PdfData(object):
 
     # TODO(pts): Learn to parse no trailer in PDF-1.5
     # (e.g. pdf_reference_1-7-o.pdf)
-    assert prev_obj_num == 'trailer'
+    assert prev_obj_num == 'trailer', prev_obj_num
     return obj_starts, has_generational_objs
 
   @classmethod
