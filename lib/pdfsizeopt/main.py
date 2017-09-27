@@ -7284,6 +7284,10 @@ class PdfData(object):
         assert obj_infos[0][3].Get('Width') == obj.Get('Width')
         assert obj_infos[0][3].Get('Height') == obj.Get('Height')
         self.objs[obj_num] = obj = obj_infos[0][3]
+        if (obj_num in force_grayscale_obj_nums and
+            obj.Get('ColorSpace') != '/DeviceGray'):
+          raise AssertionError(
+              'SMask image %d must have /ColorSpace /DeviceGray.' % obj_num)
         # At this point, obj.Get('Mask') contains `x y R' if it contained it
         # before.
 
