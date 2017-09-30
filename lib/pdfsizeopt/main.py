@@ -5082,7 +5082,7 @@ class PdfData(object):
     objstm_obj_numbers = None
 
     if do_generate_object_stream:
-      objstm_output = ['9']  # Simulated digit for IsSpaceNeeded below.
+      objstm_output = ['', '>']  # Sentinel for IsSpaceNeeded below.
       objstm_size = 0  # In bytes.
       objstm_numbers = []
       objstm_objcount = 0
@@ -5134,7 +5134,10 @@ class PdfData(object):
         # sum of the individual objects, don't use it.
         # Replace the simulated digit.
         objstm_output[0] = ' '.join(str(i) for i in objstm_numbers)
-        objstm_first = len(objstm_output[0])
+        objstm_output[1] = ' ' * (
+            len(objstm_output) > 2 and
+            PdfObj.IsSpaceNeeded(objstm_output[0], objstm_output[2]))
+        objstm_first = len(objstm_output[0]) + len(objstm_output[1])
         objstm_output = ''.join(objstm_output)
         objstm_obj = PdfObj(None)
         objstm_obj.head = '<<>>'
