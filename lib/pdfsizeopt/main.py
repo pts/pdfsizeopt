@@ -1059,7 +1059,7 @@ class PdfObj(object):
   PDF_NONNAME_CHAR_RE = re.compile('[%s]' % re.escape(PDF_NONNAME_CHARS))
   """Matches a single character which can't be part of a PDF name."""
 
-  PDF_NAME_LITERAL_RE = re.compile(r'/[^\[\]{}()<>/%\0\t\n\r\f ]+')
+  PDF_NAME_LITERAL_RE = re.compile(r'/([^\[\]{}()<>/%\0\t\n\r\f ]+)')
   """Matches a PDF /name literal."""
 
   PDF_INT_RE = re.compile(r'([-+]?\d+)')
@@ -1098,7 +1098,7 @@ class PdfObj(object):
   PDF_FONT_FILE_KEYS = ('FontFile', 'FontFile2', 'FontFile3')
   """Tuple of keys in /Type/FontDescriptor referring to the font data obj."""
 
-  INLINE_IMAGE_UNABBREVIATIONS = {
+  PDF_NAME_ABBREVIATIONS = {
       'BPC': 'BitsPerComponent',
       'CS': 'ColorSpace',
       'D': 'Decode',
@@ -1107,7 +1107,7 @@ class PdfObj(object):
       'H': 'Height',
       'W': 'Width',
       'IM': 'ImageMask',
-      'I': 'Interpolate',  # ambiguous for Indexed
+      'I': 'Interpolate',  # Can also be Indexed.
       'G': 'DeviceGray',
       'RGB': 'DeviceRGB',
       'CMYK': 'DeviceCMYK',
@@ -1279,6 +1279,8 @@ class PdfObj(object):
       if end_ofs_out is not None:
         end_ofs_out.append(stream_end_idx + match.end())
     self.stream = other[stream_start_idx : stream_end_idx]
+    if isinstance(self.Get('Filter'), str):
+      self.Set('Filter', self.ExpandAbbreviations(self.Get('Filter')))
 
   @classmethod
   def ParseTokensToSafe(cls, data, start=0, end_ofs_out=None,
@@ -3023,17 +3025,21 @@ class PdfObj(object):
     stream_end = len(stream) - len(stream_tail) + match.start()
     stream = stream[stream_start : stream_end]
 
-    inline_dict = self.PDF_NAME_LITERAL_RE.sub(
-        lambda match: '/' + self.INLINE_IMAGE_UNABBREVIATIONS.get(
-            match.group(0)[1:], match.group(0)[1:]),
-        inline_dict)
-    image_obj = PdfObj('0 0 obj<<%s>>endobj' % inline_dict)
+    image_obj = PdfObj('0 0 obj<<%s>>endobj' %
+                       self.ExpandAbbreviations(inline_dict))
     if (image_obj.Get('Width') != width or
         image_obj.Get('Height') != height):
       return None
     image_obj.Set('Length', len(stream))
     image_obj.stream = stream
     return width, height, image_obj
+
+  @classmethod
+  def ExpandAbbreviations(cls, data):
+    """Expands /Fl to /FlateDecode, /IM to /ImageMask etc."""
+    _abbrs = cls.PDF_NAME_ABBREVIATIONS
+    return cls.PDF_NAME_LITERAL_RE.sub(
+        lambda match: '/' + _abbrs.get(match.group(1), match.group(1)), data)
 
   @classmethod
   def _NormalizeNumber(cls, number_match):
@@ -6572,7 +6578,7 @@ class PdfData(object):
       # http://www.faqs.org/rfcs/rfc1951.html). We may just check the last
       # 4 bytes (adler32).
       if colorspace.startswith('[/Interpolate/'):
-        # Fix bad decoding in INLINE_IMAGE_UNABBREVIATIONS.
+        # Fix bad decoding in PDF_NAME_ABBREVIATIONS.
         colorspace = '[/Indexed' + colorspace[13:]
         image_obj.Set('ColorSpace', colorspace)
       # TODO(pts): Get rid of /Type/XObject etc. from other objects as well

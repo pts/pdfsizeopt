@@ -724,8 +724,28 @@ class PdfSizeOptTest(unittest.TestCase):
     # !!! TODO(pts): Fix bad numbers, all this to 0.
     obj = main.PdfObj('42 0 obj[. -. . .]endobj')
     self.assertEqual('[. -. . .]', obj.head)
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
+                      'stream endstream endobj')
+    self.assertEqual('<</Filter[/LZWDecode/ASCIIHexDecode]/Length 0>>',
+                     obj.head)
+    self.assertEqual('', obj.stream)
+    # Not changed because no stream.
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]>>endobj')
+    self.assertEqual('<</Filter[/LZW/AHx]>>', obj.head)
 
     # TODO(pts): Add more tests.
+
+  def testExpandAbbreviatoins(self):
+    F = main.PdfObj.ExpandAbbreviations
+    self.assertEqual('', F(''))
+    self.assertEqual('/Foo', F('/Foo'))
+    self.assertEqual(' /AHxy ', F(' /AHxy '))
+    self.assertEqual(' /ASCIIHexDecode ', F(' /AHx '))
+    self.assertEqual(' /ASCIIHexDecode ', F(' /ASCIIHexDecode '))
+    self.assertEqual('\t/ImageMask\f', F('\t/IM\f'))
+    self.assertEqual('[/ASCIIHexDecode/ASCII85Decode/LZWDecode '
+                     '/FlateDecode/RunLengthDecode/CCITTFaxDecode/DCTDecode]',
+                     F('[/AHx/A85/LZW /Fl/RL/CCF/DCT]'))
 
   def testCheckSafePdfTokens(self):
     F = main.PdfObj.CheckSafePdfTokens
@@ -745,6 +765,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaisesX(main.PdfTokenParseError, F, '<ag>')
     F('x<ab>y')
     self.assertRaisesX(main.PdfTokenParseError, F, 'x<ag>y')
+    self.assertRaisesX(main.PdfTokenParseError, F, '< <')
+    self.assertRaisesX(main.PdfTokenParseError, F, '> >')
+    self.assertRaisesX(main.PdfTokenParseError, F, '<<<')
+    self.assertRaisesX(main.PdfTokenParseError, F, '>>>')
 
   def testParseTokensToSafe(self):
     def F(data, **kwargs):
