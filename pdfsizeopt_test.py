@@ -604,7 +604,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Length 4>>', obj.head)
     self.assertEqual('ABC ', obj.stream)
     obj = main.PdfObj('42 0 obj<</Length  4>>endobj')
-    self.assertEqual('<</Length 4>>', obj.head)
+    self.assertEqual('<<>>', obj.head)
     self.assertEqual(None, obj.stream)
     obj = main.PdfObj(
         '42 0 obj<</T[/Length 99]/Length  3>>stream\r\nABC endstream endobj')
@@ -729,9 +729,9 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Filter[/LZWDecode/ASCIIHexDecode]/Length 0>>',
                      obj.head)
     self.assertEqual('', obj.stream)
-    # Not changed because no stream.
-    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]>>endobj')
-    self.assertEqual('<</Filter[/LZW/AHx]>>', obj.head)
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 42'
+                      '/DecodeParms 43/Foo /Bar>>endobj')
+    self.assertEqual('<</Foo/Bar>>', obj.head)
 
     # TODO(pts): Add more tests.
 

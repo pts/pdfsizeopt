@@ -1202,6 +1202,13 @@ class PdfObj(object):
 
     if stream_start_idx is None:
       self.stream = None
+      if head.startswith('<<'):
+        if '/Filter' in head:
+          self.Set('Filter', None)
+        if '/DecodeParms' in head:
+          self.Set('DecodeParms', None)
+        if '/Length' in head:
+          self.Set('Length', None)
       return
 
     if not head.startswith('<<') and head.endswith('>>'):
