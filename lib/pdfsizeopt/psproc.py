@@ -345,63 +345,16 @@ TYPE1C_CONVERTER = r'''
   % As a workaround for `S1' above, we skip a font with too many
   % /CharStrings.
   dup /CharStrings get length 256 lt {
-    dup /Encoding .knownget not {[]} if
+    % Create /Encoding from sorted keys of /CharStrings.
+    [1 index /CharStrings get {pop} forall] NameSort
+    % Pad it to size 256.
+    dup length 256 lt { [exch aload length 1 255 {pop/.notdef} for] } if
+    1 index exch /Encoding exch put
 
-    % Convert all null entries to /.notdef
-    % For testing: lshort-kr.pdf
-    [ exch { dup null eq { pop /.notdef } if } forall ]
-    dup 2 index exch /Encoding exch put
-
-    % stack: <fake-font> <encoding-array>
-    << exch -1 exch { exch 1 add dup } forall pop >>
-    dup /.notdef undef
+    dup /Encoding get << exch -1 exch { exch 1 add dup } forall pop >>
     % _EncodingDict maps glyph names in th /Encoding to their last encoded
     % value. Example: << /space 32 /A 65 >>
     /_EncodingDict exch def
-    % stack: <fake-font>
-    [ 1 index /CharStrings get {
-      pop dup _EncodingDict exch known {
-        pop
-      } {
-        dup /.notdef eq { pop } if
-      } ifelse
-    } forall ]
-    % stack: <fake-font> <unencoded-list>
-    dup length 0 ne {
-      NameSort
-      1 index /Encoding .knownget not {[]} if
-      % stack: <fake-font> <sorted-unencoded-list> <encoding>
-      dup length 256 lt {
-        [exch aload length 1 255 {pop/.notdef} for]
-      } {
-        dup length array copy
-      } ifelse
-      exch
-      /_TargetI 2 index length 1 sub def  % length(Encoding) - 1 (usually 255)
-      % stack: <fake-font> <encoding-padded-to-256> <sorted-unencoded-list>
-      {
-        % stack: <fake-font> <encoding> <unencoded-glyphname>
-        { _TargetI 0 lt { exit } if
-          1 index _TargetI get /.notdef eq { exit } if
-          /_TargetI _TargetI 1 sub def
-        } loop
-        _TargetI 0 lt {
-          % Failed to add all missing glyphs to /Encoding. Give up silently.
-          pop exit  % from forall
-        } if
-        1 index exch _TargetI exch put
-        /_TargetI _TargetI 1 sub def
-      } forall
-      1 index exch /Encoding exch put
-      currentdict /_TargetI undef
-    } {
-      pop
-    } ifelse
-
-    % Regenerate _EncodingDict, now with /.notdef
-    dup /Encoding .knownget not {[]} if
-      << exch -1 exch { exch 1 add dup } forall pop >>
-      /_EncodingDict exch def
 
     %dup /FID undef  % undef not needed.
     % We have to unset /OrigFont (for Ghostscript 8.61) and /.OrigFont
