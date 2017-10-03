@@ -3032,7 +3032,7 @@ class PdfObj(object):
     stream_end = len(stream) - len(stream_tail) + match.start()
     stream = stream[stream_start : stream_end]
 
-    image_obj = PdfObj('0 0 obj<<%s>>endobj' %
+    image_obj = PdfObj('0 0 obj<</Length 0 %s>>stream endstream endobj' %
                        self.ExpandAbbreviations(inline_dict))
     if (image_obj.Get('Width') != width or
         image_obj.Get('Height') != height):
