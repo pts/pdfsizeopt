@@ -288,11 +288,17 @@ TYPE1C_CONVERTER = r'''
   % stack: <decompressed-file> (containing a Type1 font program)
   % Undefine all fonts before running our font program.
   systemdict /FontDirectory get {pop undefinefont} forall
-  count /_Count exch def  % remember stack depth instead of mark depth
-  /_OrigFontName null def
-  9 dict begin dup mark exch cvx exec end  % eexec will set /_OrigFontName
-  count -1 _Count 1 add {pop pop}for  % more reliable than cleartomark
-  closefile
+  % Push a copy of userdict: userdict-copy.
+  userdict dup length dict copy
+  % .loadfont never leaves junk on the stack.
+  % .loadfont is better than `cvx exec', because .loadfont can load PFB fonts
+  % (in addition to PFA fonts),
+  % while `cvx exec' fails for PFB fonts with something like:
+  % /syntaxerror in (bin obj seq, type=128, elements=1, size=59650, non-zero unused field)
+  exch dup .loadfont closefile
+  dup /_OrigFontName _OrigFontName put  % Add to userdict-copy.
+  % Copy from userdict-copy back to userdict.
+  userdict dup {pop 1 index exch undef} forall copy pop
   systemdict /FontDirectory get
   dup length 0 eq {/NoFontDefined /invalidfileaccess signalerror} if
   _OrigFontName null eq {
