@@ -345,6 +345,9 @@ TYPE1C_CONVERTER = r'''
   % As a workaround for `S1' above, we skip a font with too many
   % /CharStrings.
   dup /CharStrings get length 256 lt {
+    (obj encoding ) print _ObjNumber ===only ( ) print
+    dup /Encoding .knownget not {[]} if ===
+
     % Create /Encoding from sorted keys of /CharStrings.
     [1 index /CharStrings get {pop} forall] NameSort
     % Pad it to size 256.
