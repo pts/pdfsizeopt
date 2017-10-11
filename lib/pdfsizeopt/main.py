@@ -261,6 +261,10 @@ def GetGsCommand(is_verbose=False, _cache=[]):
     # and converting relative paths to absolute paths in the Ghostscript
     # command-line (done in ShellQuoteFileName(..., is_gs=True)).
     prefix = 'c:&cd \\&'
+  elif not sys.platform.startswith('win'):
+    # Make Ghostscript use the same temporary directory as pdfsizeopt.
+    # This fixes the startup problem on Docker.
+    prefix = 'TEMP=. '
   data = None
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
