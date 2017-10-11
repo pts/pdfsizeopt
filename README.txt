@@ -34,7 +34,7 @@ open a terminal window and run these commands (without the leading `$'):
   $ chmod +x pdfsizeopt.single
   $ ln -s pdfsizeopt.single pdfsizeopt
 
-To optimize a PDF, run the following command
+To optimize a PDF, run the following command:
 
   ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
 
@@ -69,6 +69,48 @@ command pdfsizeopt will work from any directory.
 You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you
 like.
 
+Installation instructions and usage with Docker on Linux and macOS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+There is no installer, you need to run some commands in the command line to
+download and install. pdfsizeopt is a command-line only application, there
+is no GUI.
+
+To optimize a PDF, install Docker, and then run this command:
+
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt input.pdf output.pdf
+
+If the input PDF has many images or large images, pdfsizeopt can be very
+slow. You can speed it up by disabling pngout, the slowest image optimization
+method, like this:
+
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt --use-pngout=no input.pdf output.pdf
+
+pdfsizeopt creates lots of temporary files (psotmp.*) in the output
+directory, but it also cleans up after itself.
+
+It's possible to optimize a PDF outside the current directory. To do that,
+specify the pathname (including the directory name) in the command-line.
+
+To avoid typing a long command, run
+
+  (echo '#! /bin/sh'; echo 'exec docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt "$@"') >pdfsizeopt && chmod 755 pdfsizeopt
+
+, and then copy the pdfsizeopt script to your PATH, then open a new terminal
+window, and now this command will also work to optimize a PDF:
+
+  pdfsizeopt input.pdf output.pdf
+
+Please note that the ptspts/pdfsizeopt Docker image is updated very rarely.
+To use a more up-to-date version, run these commands to download (without
+the leading `$'):
+
+  $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  $ chmod +x pdfsizeopt.single
+
+Then run this command to optimize a PDF:
+
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt ./pdfsizeopt.single --use-pngout=no input.pdf output.pdf
+
 Installation instructions and usage on Windows
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 There is no installer, you need to run some commands in the command line
@@ -84,7 +126,7 @@ Download
 https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
 and save it to C:\pdfsizeopt, as C:\pdfsizeopt\pdfsizeopt.single .
 
-To optimize a PDF, run the following command
+To optimize a PDF, run the following command:
 
   C:\pdfsizeopt\pdfsizeopt input.pdf output.pdf
 
@@ -147,7 +189,7 @@ Do a test optimization run, which exercises all dependencies of pdfsizeopt:
 ... and open (view) deptest.pdf and the corresponding optimized
 deptest.pso.pdf .
 
-To optimize a PDF, run the following command
+To optimize a PDF, run the following command:
 
   ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
 
