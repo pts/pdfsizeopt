@@ -5725,11 +5725,9 @@ class PdfData(object):
           match = obj.PDF_REF_AT_EOS_RE.match(str(obj.Get('FontDescriptor')))
           if match:
             fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
-            if (fd_obj_num in encodings and
-                self.IsFontBuiltInEncodingUsed(
-                    obj.ResolveReferences(obj.Get('Encoding'),
-                    objs=self.objs)[0])):
-              obj.Set('Encoding', self.FormatEncoding(encodings[fd_obj_num]))
+            if fd_obj_num in encodings:
+              self._MergeBaseEncodingToFontObj(
+                  obj, encodings[fd_obj_num], self.objs)
 
     return self
 
