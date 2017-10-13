@@ -1710,8 +1710,12 @@ class PdfObj(object):
         items[-1][2].stream = zlib.compress(''.join(output), 9)
         items[-1][2].Set('Length', len(items[-1][2].stream))
         items[-1][2].Set('Filter', '/FlateDecode')
+        # Oddly enough, Multivalent fails if /Predictor 10 or /Predictor 11
+        # is specified for the /Type /XRef obj; but it succeeds with
+        # /Predictor 12. See https://github.com/pts/pdfsizeopt/issues/56
+        # for example PDF 1206.3686v1.pdf .
         items[-1][2].Set('DecodeParms',
-                         '<</Predictor 10/Columns %d>>' % predictor_width)
+                         '<</Predictor 12/Columns %d>>' % predictor_width)
         items[-1][0] = items[-1][2].size
 
         output = []
