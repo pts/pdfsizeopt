@@ -1085,8 +1085,14 @@ class PdfObj(object):
   PDF_COMMENT_RE = re.compile(r'%[^\r\n]*')
   """Matches a single comment line without a terminator."""
 
-  PDF_SIMPLE_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b')
-  """Matches `<obj> 0 R', not allowing comments."""
+  PDF_SIMPLE2_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b')
+  """Matches `<obj> 0 R', not allowing comments.
+
+  TODO(pts): Remove this, in favor of PDF_SIMPLE_REF_RE.
+  """
+
+  PDF_SIMPLE_REF_RE = re.compile(r'([-+]?\d+) 0 R\b')
+  """Matches an <x> 0 R, separated by a single space."""
 
   PDF_HEX_STRING_OR_DICT_RE = re.compile(r'<<|<(?!<)([^>]*)>')
   """Matches a hex string or <<."""
@@ -2558,9 +2564,9 @@ class PdfObj(object):
           # TODO(pts): Keep the original generation number (match.group(2))
           return '%s 0 R' % obj_num
 
-      data = cls.PDF_SIMPLE_REF_RE.sub(ReplacementRef, data)
+      data = cls.PDF_SIMPLE2_REF_RE.sub(ReplacementRef, data)
     elif old_obj_nums_ret is not None:
-      for match in cls.PDF_SIMPLE_REF_RE.finditer(data):
+      for match in cls.PDF_SIMPLE2_REF_RE.finditer(data):
         old_obj_nums_ret.append(int(match.group(1)))
 
     def ReplacementWhiteOrString(match):
@@ -7440,6 +7446,36 @@ class PdfData(object):
           obj.Set('BBox', obj.GetBadNumbersFixed(bbox))
     return self
 
+  def RemoveUnusedObjs(self):
+    """Removes unused objects from self.objs."""
+    # Since PdfObj.head is a safe token sequence, we can use PDF_SIMPLE_REF_RE
+    # to find references.
+    _simple_ref_re = PdfObj.PDF_SIMPLE_REF_RE
+    objs = self.objs
+    reached_obj_nums = set()
+    todo = [self.trailer.head]
+    depth = 0
+    while todo:
+      depth += 1
+      todo2 = []
+      for head in todo:
+        for match in _simple_ref_re.finditer(head):
+          obj_num = int(match.group(1))
+          if obj_num not in reached_obj_nums:
+            obj = objs.get(obj_num)
+            if obj:
+              reached_obj_nums.add(obj_num)
+              todo2.append(obj.head)
+      todo = todo2
+    unused_count = 0
+    for obj_num in sorted(objs):
+      if obj_num not in reached_obj_nums:
+        del objs[obj_num]
+        unused_count += 1
+    if unused_count:
+      print >>sys.stderr, 'info: eliminated %d unused objs, depth=%d' % (
+          unused_count, depth)
+
   @classmethod
   def FindEqclasses(cls, objs, do_remove_unused=False, do_renumber=False,
                     do_unify_pages=True):
@@ -7607,7 +7643,7 @@ class PdfData(object):
           new_obj_num = new_class[0][0]
           return '%s 0 R' % obj_num_map.get(new_obj_num, new_obj_num)
 
-      head = PdfObj.PDF_SIMPLE_REF_RE.sub(ReplacementRef, head_minus)
+      head = PdfObj.PDF_SIMPLE2_REF_RE.sub(ReplacementRef, head_minus)
       assert not refs_to_rev
 
       # Since above we've called PdfObj.CompressValue(...,
@@ -9163,6 +9199,7 @@ def main(argv, script_dir=None, zip_file=None):
   pdf = PdfData(
       do_ignore_generation_numbers=f.do_ignore_generation_numbers,
       ).Load(file_name)
+  pdf.RemoveUnusedObjs()
   pdf.FixAllBadNumbers()
   if f.do_optimize_fonts:
     pdf.ConvertType1FontsToType1C()

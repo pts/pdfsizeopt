@@ -1002,6 +1002,11 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<</Pages -333 -1 R>>', F('<</Pages -333 -1 R\n>>'))
     self.assertEqual('<</Pages 0 55 R>>', F('<</Pages 0 55 R\n>>'))
 
+    self.assertEqual('<313220332052>', F('(12 3 R)'))
+    # It's important that this returns a hex string, so that it doesn't trigger a false match on
+    # PDF_SIMPLE_REF_RE.
+    self.assertEqual('<61312031322030205273>', F('(a1 12 0 Rs)'))
+
     # !!! Copy tests from testPdfObjParse.
 
   def testPdfUnsafeRegexpSubsets(self):
