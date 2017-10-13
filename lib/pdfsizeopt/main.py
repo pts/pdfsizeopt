@@ -8704,10 +8704,13 @@ class PdfData(object):
         'info: written %s bytes to Multivalent input PDF: %s' %
         (in_data_size, in_pdf_tmp_file_name))
 
-    # See http://code.google.com/p/pdfsizeopt/issues/detail?id=30
-    # and http://multivalent.sourceforge.net/Tools/pdf/Compress.html .
-    # TODO(pts): Implement -nocore14 (unembewdding the core 14 fonts) as a
-    # pdfsizeopt feature, also implement it if Multivalent is not used.
+    # * TODO(pts): Implement -nocore14 (unembedding the core 14 fonts) as a
+    #   pdfsizeopt feature, also implement it if Multivalent is not used.
+    # * TODO(pts): Should we add -nostruct?
+    # * TODO(pts): Should we add -nwebcap?
+    # * Don't add -jpeg, it introduces lossy compression.
+    # * Don't add -subset, it's expreimental.
+    # * FYI http://code.google.com/p/pdfsizeopt/issues/detail?id=30 .
     multivalent_flags = '-nopagepiece -noalt -mon'
 
     # TODO(pts): Work around exception for emptypage.pdf:
