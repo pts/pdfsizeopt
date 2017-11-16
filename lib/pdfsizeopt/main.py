@@ -181,7 +181,6 @@ __pychecker__ = (
     'maxlines=999 maxlocals=99 unusednames=self,cls maxreturns=99 '
     'maxbranches=9999')
 
-import array
 import getopt
 import os
 import os.path
@@ -198,6 +197,12 @@ from pdfsizeopt import psproc
 class Error(Exception):
   """Comon base class for exceptions defined in this module."""
 
+try:
+  bytearray_tostring = bytearray.__str__  # Python 2.6 and 2.7.
+except NameError:  # Python 2.4 and Python 2.5
+  import array
+  bytearray = lambda data: array.array('B', data)
+  bytearray_tostring = array.array.tostring
 
 TMP_PREFIX = '///dev/null/psotmp..'  # Will be overridden in main.
 
@@ -1700,11 +1705,11 @@ class PdfObj(object):
         i = predictor_width
         while i < len(data):
           output.append('\x02')  # y-predictor mark
-          b = array.array('B', data[i : i + predictor_width])
+          b = bytearray(data[i : i + predictor_width])
           k = i - predictor_width
           for j in xrange(predictor_width):  # Implement the y predictor.
             b[j] = (b[j] - ord(data[k + j])) & 255
-          output.append(b.tostring())
+          output.append(bytearray_tostring(b))
           i += predictor_width
         items.append([None, 'zip-pred10', PdfObj(self)])
         items[-1][2].stream = zlib.compress(''.join(output), 9)
@@ -1722,11 +1727,11 @@ class PdfObj(object):
         output.append(data[:predictor_width])
         i = predictor_width
         while i < len(data):
-          b = array.array('B', data[i : i + predictor_width])
+          b = bytearray(data[i : i + predictor_width])
           k = i - predictor_width
           for j in xrange(predictor_width):  # Implement the y predictor.
             b[j] = (b[j] - ord(data[k + j])) & 255
-          output.append(b.tostring())
+          output.append(bytearray_tostring(b))
           i += predictor_width
         items.append([None, 'zip-pred2', PdfObj(self)])
         items[-1][2].stream = zlib.compress(''.join(output), 9)
@@ -8432,7 +8437,7 @@ class PdfData(object):
     w0, w1, w2, unused_index, xref_data = trailer_obj.GetXrefStream()
     if (do_generate_xref_stream and
         bool(do_generate_object_stream) == bool(has_objstm_obj)):
-      xref_out = array.array('B', xref_data)
+      xref_out = bytearray(xref_data)
     else:
       # We're sure we won't need xref_out, so we're not computing it.
       xref_out = None
@@ -8595,7 +8600,7 @@ class PdfData(object):
               obj_ofs=out_ofs_by_num, objstm_obj_num=None,
               objstm_obj_numbers=None, is_flate_ok=is_flate_ok)
         else:
-          xref_out = xref_out.tostring()
+          xref_out = bytearray_tostring(xref_out)
           # For testing: Multivalent generates
           # /DecodeParms<</Predictor 12/Columns 5>>
           # for agilerails3.pdf, which is 9K, instead of 22K without predictor.
