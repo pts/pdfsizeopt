@@ -4,11 +4,22 @@ CFF file format documentation:
 http://www.adobe.com/devnet/font/pdfs/5176.CFF.pdf
 """
 
-import itertools
 import re
 import struct
 
 from pdfsizeopt import float_util
+
+
+try:
+  from itertools import izip
+except ImportError:
+  def izip(*iterables):  # Fallback for pythonmu2.7-static.
+    iterables = map(iter, iterables)
+    while 1:
+      result = tuple(it.next() for it in iterables)  # Raises StopIteration.
+      if not result:
+        break
+      yield result
 
 
 class Error(Exception):
@@ -573,7 +584,7 @@ def ParseCffHeader(data, do_need_single_font=True, do_parse_rest=True):
     cff_rest2_ofs = rest_ofs
   return ((major, minor),
           cff_font_name,
-          tuple(itertools.izip(font_name_bufs, top_dict_bufs)),
+          tuple(izip(font_name_bufs, top_dict_bufs)),
           cff_string_bufs,
           cff_global_subr_bufs,
           cff_rest_buf,
@@ -705,7 +716,7 @@ def IsCffValueEqual(a, b):
   elif isinstance(a, (list, tuple)):
     if not isinstance(b, (list, tuple)) or len(a) != len(b):
       return False
-    for av, bv in itertools.izip(a, b):
+    for av, bv in izip(a, b):
       if not IsCffValueEqual(av, bv):
         return False
     return True
@@ -1474,7 +1485,7 @@ def ParseCff1(data, is_careful=False):
   charset = parsed_dict.get('charset', 0)  # Default same as _CFF_TOP_OP_MAP.
   charset = ParseCffCharset(
       charset, buffer(data, charset), len(charstring_bufs), cff_all_string_bufs)
-  parsed_dict['CharStrings'] = dict(itertools.izip(
+  parsed_dict['CharStrings'] = dict(izip(
       (glyph_name[1:] for glyph_name in charset),
       ('<%s>' % str(buf).encode('hex') for buf in charstring_bufs)))
   del charstring_bufs
