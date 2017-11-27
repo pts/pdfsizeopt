@@ -57,7 +57,7 @@ FLAGS_HELP = r"""
   Run the specified image optimizer programs (comma-separated list) for
   optimizing images embedded in PDF. Can be specified multiple times. If
   specified, the default because --use-pngout=no and --use-jbig2=no. Only some
-  will-known, built-in PROG values can be specified (e.g. sam2p, pngout, jbig2,
+  well-known, built-in PROG values can be specified (e.g. sam2p, pngout, jbig2,
   zopflipng, optipng, ECT, advpng). Specifying the same program multiple times
   would run it multiple times, so don't do it. The special values no or none
   indicate that no program should be run (but more values can be appended
