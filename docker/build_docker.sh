@@ -27,5 +27,6 @@ chmod 755 pdfsizeopt.single
 # Reads Dockerfile.
 docker build -t ptspts/pdfsizeopt .
 rm -rf pdfsizeopt_libexec
+: docker push ptspts/pdfsizeopt
 
 : build_docker.sh OK.

@@ -69,6 +69,13 @@ command pdfsizeopt will work from any directory.
 You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you
 like.
 
+Additionally, you can install some extra image imptimizers (see more in the
+``Image optimizers'' section below):
+
+  $ cd ~/pdfsizeopt
+  $ wget -O pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
+  $ tar xzvf pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
+
 Installation instructions and usage with Docker on Linux and macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 There is no installer, you need to run some commands in the command line to
@@ -104,12 +111,18 @@ Please note that the ptspts/pdfsizeopt Docker image is updated very rarely.
 To use a more up-to-date version, run these commands to download (without
 the leading `$'):
 
-  $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
-  $ chmod +x pdfsizeopt.single
+  wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  chmod +x pdfsizeopt.single
 
 Then run this command to optimize a PDF:
 
   docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt ./pdfsizeopt.single --use-pngout=no input.pdf output.pdf
+
+If you want to have extra image optimizers included, use
+ptspts/pdfsizeopt-with-extraimgopt instead of ptspts/pdfsizeopt in the
+commands above. Example:
+
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt-with-extraimgopt pdfsizeopt --use-image-optimizer=sam2p,jbig2,pngout,zopflipng,optipng,advpng,ECT input.pdf output.pdf
 
 Installation instructions and usage on Windows
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -332,7 +345,9 @@ ignore those which are missing, specify --do-require-image-optimizers=no .
 It's your (the user's) responsibility to install the image optimizers and
 add them to the PATH. If you follow the installation instructions for
 Windows and Linux above, the default image optimizers (sam2p, jbig2 and
-pngout) will be installed for you.
+pngout) will be installed for you. For Linux, there are also installation
+instructions above for extra image optimizers (zopflipng, optipng, advpng
+and ECT).
 
 Troubleshooting
 ~~~~~~~~~~~~~~~

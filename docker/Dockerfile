@@ -2,7 +2,7 @@
 #
 # Run:
 #
-#   $ docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" -it ptspts/pdfsizeopt pdfizeopt INPUT.pdf
+#   $ docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt input.pdf output.pdf
 #
 # Building in a separate `context' directory so that only a few bytes have
 # to be sent to the Docker daemon.
