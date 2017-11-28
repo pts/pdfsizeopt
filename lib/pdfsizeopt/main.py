@@ -1524,6 +1524,9 @@ class PdfObj(object):
           head, do_emit_safe_names=False, do_emit_safe_strings=False)
     output.append(head)  # Implicit whitespace later.
     space = ' ' * int(head[-1] not in '>])}')
+    #sys.stdout.write(output[-2][:-1] + ' ')
+    #sys.stdout.write(output[-1])
+    #sys.stdout.write('%sendobj\n' % space)
     if self.stream is not None:
       if self._cache:
         assert self.Get('Length') == len(self.stream)
@@ -2344,7 +2347,7 @@ class PdfObj(object):
       # TODO(pts): Be more specific, e.g. if we get this in a truncated
       # string literal `(foo'.
       raise PdfTokenParseError(
-          'token list parse error at %d, got %r' %
+          'token sequence parse error at %d, got %r' %
           (start, data[start : start + 16]))
     if end_ofs_out is not None:
       end_ofs_out.append(start)
@@ -3600,7 +3603,7 @@ class PdfObj(object):
           % (obj_num, first, end_ofs))
     if len(numbers) != 2 * n:
       raise PdfXrefStreamError(
-          'expected %d, but got %d values in token list objstm obj %d' %
+          'expected %d, but got %d values in token sequence objstm obj %d' %
           (2 * n, len(numbers), obj_num))
     compressed_obj_nums = []
     # List of (str) buffer objects corresponding to the PDF token sequence
@@ -5172,6 +5175,8 @@ class PdfData(object):
         objstm_first = len(objstm_output[0]) + len(objstm_output[1])
         objstm_output = ''.join(objstm_output)
         objstm_obj = PdfObj(None)
+        #sys.stdout.write(objstm_output)
+        #sys.stdout.write('\n')
         objstm_obj.head = '<<>>'
         # For the statistics below.
         objstm_size = len(objstm_output) + objstm_overhead_size

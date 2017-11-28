@@ -116,7 +116,6 @@
   sam2p: Notice: applyProfile: applied OutputRule #4
   sam2p: Notice: job: written OutputFile: lme_v6/00008.sam2p.pdf
   Success.
-
   real	1m16.780s
   user	1m9.492s
   sys	0m6.632s
@@ -125,14 +124,12 @@
   additional compression may be possible with:
            -compact -jpeg
   => new length = 1246436, saved 12%, elapsed time = 13 sec
-
   real	0m14.039s
   user	0m13.705s
   sys	0m0.356s
   $ time ./optipng lme_v6/00008.optipng.png
   OptiPNG 0.6.2: Advanced PNG optimizer.
   Copyright (C) 2001-2008 Cosmin Truta.
-
   ** Processing: lme_v6/00008.optipng.png
   17382x23547 pixels, 1 bit/pixel, grayscale
   Input IDAT size = 1371588 bytes
@@ -142,10 +139,8 @@
     zc = 9  zm = 8  zs = 1  f = 0		IDAT size = 1241149
     zc = 9  zm = 8  zs = 0  f = 5		IDAT size = 1090056
     zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
-
   Selecting parameters:
     zc = 9  zm = 8  zs = 1  f = 5		IDAT size = 1085643
-
   Output IDAT size = 1085643 bytes (285945 bytes decrease)
   Output file size = 1085762 bytes (287949 bytes = 21.02% decrease)
   real	2m28.465s
@@ -293,7 +288,6 @@ info: optimized image XObject 89 best_method=4 file_name=type1cconv-89.pngout.pn
 info: replacements are {1: 141101, 2: 69353, 3: 69315, 4: 61667} <= 75941 bytes
 info: saving PDF to: lme_v6/300dpi_all.type1c.pdf
 info: generated 1420015 bytes (82%)
-
 real	40m7.868s
 user	38m45.777s
 sys	0m42.015s
@@ -493,13 +487,11 @@ additional compression may be possible with:
   (sffb1000.pfb)?
 * about /PostScript in CFF:
     These were found if cff.pgs:
-
       '/FSType 0 def'
       '/FSType 14 def'
       '/FSType 4 def'
       '/FSType 8 def'
       '/OrigFontType /TrueType def'
-
     5176.CFF.pdf says about /FSType and /OrigFontType:
     When OpenType fonts are converted into CFF for embedding in
     a document, the font embedding information specified by the
@@ -526,6 +518,14 @@ additional compression may be possible with:
 * MuPDF is a lightweight PDF, XPS and CBZ viewer and parser/rendering library.
   git clone http://mupdf.com/repos/mupdf.git
   it contains all the PDF decoding filters
+* qpdf --decrypt ~/Downloads/pdf_reference_1-7.pdf ~/Downloads/pdf_reference_1-7.decrypted.pdf
+  ... invalid password
+  even qpdf.xstatic reports this
+  $ pdftk ~/Downloads/pdf_reference_1-7.pdf cat output ~/Downloads/pdf_reference_1-7.decrypted.pdf
+  WARNING: The creator of the input PDF:
+    /usr/local/google/home/pts/Downloads/pdf_reference_1-7.pdf
+     has set an owner password (which is not required to handle this PDF).
+     You did not supply this password. Please respect any copyright.
 
 --- JPEG:
 
