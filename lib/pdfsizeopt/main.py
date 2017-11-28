@@ -1310,15 +1310,15 @@ class PdfObj(object):
     """Parses a PDF token sequence to a safe PDF token sequence.
 
     Args:
-      data: str or buffer containing a PDF token sequence with and explicit
-        'endobj' or 'stream' as the terminator.
+      data: str or buffer containing a PDF token sequence.
         !!! Make it work without 'endobj'.
-        !!! Add unit tests (also with buffer), copy then from testCompressValue and and testPdfObjParse.
+        !!! Add unit tests (also with buffer), copy them from testCompressValue and and testPdfObjParse.
       start: Offset in data to start parsing.
       end_ofs_out: None or an empty array output parameter for the end offset
         `endobj' + single whitespace.
-      do_expect_endobj: bool indicating whether endobj or stream is expected
-        in data. If true, parsing will terminate there.
+      do_expect_endobj: bool indicating whether endobj or stream is required
+        in data. If true, parsing will terminate there, and it's an error if
+        it is missing.
     Returns:
       (safe_data, stream_start_idx) pair, where safe_data is a string
       containing a safe PDF token sequence, and stream_start_idx is the start
