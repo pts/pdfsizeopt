@@ -5068,16 +5068,21 @@ class PdfData(object):
                           do_generate_xref_stream=True,
                           do_generate_object_stream=True,
                           do_emit_short_unsafe=True,
-                          may_obj_heads_contain_comments=True,
                           is_flate_ok=True):
     """Appends a serialized PDF file to the list output.
 
     Args:
       output: A list of strings, will be appended in place. Must be empty
         in the beginning.
-      do_hide_images: Bool indicating whether to hide images from Multivalent.
-      may_obj_heads_contain_comments: Bool indicating whether
-        self.objs[...].head may contain comments.
+      do_hide_images: bool indicating whether to hide images from Multivalent.
+      do_generate_xref_stream: bool indicating if we should generate a PDF
+        containing a cross-reference stream.
+      do_generate_object_stream: bool indicating if we should generate a PDF
+        containing all non-stream objects packed to an object stream (objstm).
+      do_emit_short_unsafe: bool indicating whether to emit unsafe PDF token
+        squences. If true, pdfsizeopt wouldn't be able to process these strings
+        further without additional parsing by PdfObj.ParseTokensToSafe. So true
+        is OK for output .pdf files.
       is_flate_ok: bool indicating if it's OK to generate xref and object
         streams with /Filter/FlateDecode.
     Returns:
@@ -5142,10 +5147,6 @@ class PdfData(object):
           # TODO(pts): Renumber objstm objects, group them together, so the
           # xref stream can be compressed to become shorter.
           head = pdf_obj.head
-          if may_obj_heads_contain_comments and '%' in head:
-            # We use PdfObj.CompressValue just to get rid of the PDF comments
-            # within head.
-            head = pdf_obj.CompressValue(head)
           # The PDF reference says that objects who are just `X Y R' must
           # not be part of an object stream. So we skip them here.
           if not (head.endswith('R') and PdfObj.PDF_REF_END_RE.search(head)):
@@ -5174,6 +5175,10 @@ class PdfData(object):
             PdfObj.IsSpaceNeeded(objstm_output[0], objstm_output[2]))
         objstm_first = len(objstm_output[0]) + len(objstm_output[1])
         objstm_output = ''.join(objstm_output)
+        if do_emit_short_unsafe:
+          objstm_output = PdfObj.CompressValue(
+              objstm_output,
+              do_emit_safe_names=False, do_emit_safe_strings=False)
         objstm_obj = PdfObj(None)
         #sys.stdout.write(objstm_output)
         #sys.stdout.write('\n')
@@ -8293,6 +8298,8 @@ class PdfData(object):
         in the beginning.
       do_generate_xref_stream: bool indicating if we should generate a PDF
         containing a cross-reference stream.
+      do_generate_object_stream: bool indicating if we should generate a PDF
+        containing all non-stream objects packed to an object stream (objstm).
       is_flate_ok: bool indicating if it's OK to generate xref and object
         streams with /Filter/FlateDecode.
     Returns:
@@ -8539,7 +8546,6 @@ class PdfData(object):
       pdf.AppendSerializedPdf(output=output,
                               do_generate_xref_stream=True,
                               do_generate_object_stream=True,
-                              may_obj_heads_contain_comments=False,
                               is_flate_ok=is_flate_ok)
       del pdf  # Save memory.
     else:
@@ -8672,7 +8678,6 @@ class PdfData(object):
   PDFDATA_MULTIVALENT_EXT_SUB_RE = re.compile(r'[.][^.]+\Z')
 
   def _RunMultivalent(self, do_escape_images,
-                      may_obj_heads_contain_comments,
                       multivalent_compress_command):
     """Run Multivalent, and read its output.
 
@@ -8702,8 +8707,7 @@ class PdfData(object):
     in_data_size = self.AppendSerializedPdf(
         output=tmp_output, do_hide_images=do_escape_images,
         do_generate_xref_stream=True,
-        do_generate_object_stream=True,
-        may_obj_heads_contain_comments=may_obj_heads_contain_comments)
+        do_generate_object_stream=True)
     f = open(in_pdf_tmp_file_name, 'wb')
     try:
       f.write(''.join(tmp_output))
@@ -8763,7 +8767,6 @@ class PdfData(object):
            do_escape_images_from_multivalent,
            do_generate_xref_stream,
            do_generate_object_stream,
-           may_obj_heads_contain_comments,
            is_flate_ok):
     """Save this PDF to a file, with or without Multivalent.
 
@@ -8772,8 +8775,6 @@ class PdfData(object):
       display_file_name: PDF file name to display.
       multivalent_compress_command: None, or a string containing a command
         prefix for running Multivalent tool.pdf.Compress.
-      may_obj_heads_contain_comments: bool indicating whether
-        self.objs[...].head may contain comments.
       do_update_file_meta: bool indicating whether self.file_name and
         self.file_size should be updated after a successful save.
       is_flate_ok: bool indicating if it's OK to generate xref and object
@@ -8818,7 +8819,6 @@ class PdfData(object):
     if multivalent_compress_command:
       multivalent_output_data, tmp_files_to_remove = self._RunMultivalent(
           do_escape_images=do_escape_images_from_multivalent,
-          may_obj_heads_contain_comments=may_obj_heads_contain_comments,
           multivalent_compress_command=multivalent_compress_command)
     else:
       tmp_files_to_remove = ()
@@ -8831,9 +8831,7 @@ class PdfData(object):
             data=multivalent_output_data, output=output, **job[0])
       else:
         output_size = self.AppendSerializedPdf(
-            output=output,
-            may_obj_heads_contain_comments=may_obj_heads_contain_comments,
-            **job[0])
+            output=output, **job[0])
       if len(jobs) > 1:
         print >>sys.stderr, 'info: job %s generated %d bytes %s(%s)' % (
             job[1], output_size, with_multivalent_msg,
@@ -9233,17 +9231,14 @@ def main(argv, script_dir=None, zip_file=None):
     # more duplicate objs (in case the same stream data was compressed
     # differently).
     pdf.OptimizeStreams(do_decompress_only=f.do_decompress_most_streams)
-  may_obj_heads_contain_comments = True
   if f.do_optimize_objs or f.do_remove_generational_objs:
     # TODO(pts): Do only a simpler optimization with renumbering if
     # f.do_optimize_objs is false and f.do_remove_generational_objs is true.
     pdf.OptimizeObjs(do_unify_pages=f.do_unify_pages)
-    may_obj_heads_contain_comments = False  # OptimizeObj removes comments.
   elif f.do_optimize_obj_heads:
     pdf.trailer.head = PdfObj.CompressValue(pdf.trailer.head)
     for obj in pdf.objs.itervalues():
       obj.head = PdfObj.CompressValue(obj.head)
-    may_obj_heads_contain_comments = False  # CompressValue removes comments.
   if f.do_decompress_most_streams:
     # TODO(pts): Also decompress in Multivalent output.
     pdf.DecompressStreams(is_flate_only=False)
@@ -9265,7 +9260,6 @@ def main(argv, script_dir=None, zip_file=None):
       do_escape_images_from_multivalent=f.do_escape_images_from_multivalent,
       do_generate_xref_stream=f.do_generate_xref_stream,
       do_generate_object_stream=f.do_generate_object_stream,
-      may_obj_heads_contain_comments=may_obj_heads_contain_comments,
       is_flate_ok=(f.do_compress_uncompressed_streams and
                    not f.do_decompress_most_streams))
   Rename(output_file_name + '.tmp', output_file_name)
