@@ -1411,7 +1411,7 @@ class PdfObj(object):
         elif match.group(5):  # An empty name token (/).
           raise PdfTokenParseError('Found empty name token.')
         elif match.group(6):  # A hex-escape (usually in a name or a keyword).
-          output.append(_escape_hex(data))
+          output.append(_escape_hex(match.group(6)))
         elif match.group(7):  # A hex string literal or <<.
           if match.group() == '<<':
             output.append('<<')
