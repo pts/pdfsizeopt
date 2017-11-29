@@ -772,9 +772,10 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertRaisesX(main.PdfTokenParseError, F, '<<<')
     self.assertRaisesX(main.PdfTokenParseError, F, '>>>')
 
-  def testParseTokensToSafe(self):
+  def testParseTokensToSafeSimple(self, is_simple_ok=True):
     def F(data, **kwargs):
-      return main.PdfObj.ParseTokensToSafe(data, **kwargs)[0]
+      return main.PdfObj.ParseTokensToSafe(
+          buffer(data), is_simple_ok=is_simple_ok, **kwargs)[0]
 
     self.assertEqual('hello world', F('hello  world'))
     self.assertEqual('foo', F('foo\t\f\0\r \n'))
@@ -787,6 +788,43 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('/Foo#2C#2C 42', F('/Foo,, 42'))
     self.assertEqual('/Foo#2C#2C 42', F('/Foo#2c#2C 42'))
     self.assertEqual('/Foo#2C#2C 42', F('/Foo,#2c 42'))
+    self.assertRaisesX(main.PdfTokenParseError, F, '/')
+    # PdfTokenTruncated would be better.
+    self.assertRaisesX(main.PdfTokenParseError, F, '/#')
+    # PdfTokenTruncated would be better.
+    self.assertRaisesX(main.PdfTokenParseError, F, '/#2')
+    # PdfTokenTruncated would be better.
+    self.assertRaisesX(main.PdfTokenParseError, F, '#')
+    # PdfTokenTruncated would be better.
+    self.assertRaisesX(main.PdfTokenParseError, F, '#2')
+    self.assertRaisesX(main.PdfTokenTruncated, F, '(')
+    self.assertRaisesX(main.PdfTokenTruncated, F, '<')
+    self.assertEqual('[', F('['))
+    self.assertEqual('/#2A', F('/#2a'))
+    self.assertEqual('/J', F('/#4a'))
+    self.assertEqual('#2A', F('#2a'))
+    self.assertEqual('J', F('#4a'))
+
+    self.assertEqual('', F('\x00'))
+    self.assertEqual('\x01', F('\x01'))  # !!! #01
+    self.assertEqual('\x7f', F('\x7f'))  # !!! #7F
+    self.assertEqual('\x80', F('\x80'))  # !!! #80
+    self.assertEqual('\xff', F('\xff'))  # !!! #FF
+    self.assertEqual('#01', F('#01'))
+    self.assertEqual('#7F', F('#7f'))
+    self.assertEqual('#80', F('#80'))
+    self.assertEqual('#FF', F('#fF'))
+    self.assertRaisesX(main.PdfTokenParseError, F, '/')
+    self.assertRaisesX(main.PdfTokenParseError, F, '/\x00')
+    self.assertEqual('/#01', F('/\x01'))
+    self.assertEqual('/#7F', F('/\x7f'))
+    self.assertEqual('/#80', F('/\x80'))
+    self.assertEqual('/#FF', F('/\xff'))
+    self.assertEqual('/#00', F('/#00'))
+    self.assertEqual('/#01', F('/#01'))
+    self.assertEqual('/#7F', F('/#7f'))
+    self.assertEqual('/#80', F('/#80'))
+    self.assertEqual('/#FF', F('/#fF'))
 
     # Most of these tests copied from testCompressValue. (Not everything was
     # copied.)
@@ -978,25 +1016,17 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<5c>>>', F('<5C> >>'))
     self.assertEqual('()<<<5c>', F('()<< <5C>'))
     self.assertEqual('()<5c>>>', F('()<5C> >>'))
+    self.assertRaisesX(main.PdfTokenParseError, F, '{')
+    self.assertRaisesX(main.PdfTokenParseError, F, '}')
+    self.assertRaisesX(main.PdfTokenParseError, F, '{}')
     self.assertRaisesX(main.PdfTokenTruncated, F, '<')
     self.assertRaisesX(main.PdfTokenTruncated, F, '< ')
-    # !!! Run the tests with both simple and complicated parsing in ParseTokensToSafe.
-    try:
-      self.assertEqual('>', F('>'))  # !!! Bug in simple! Check with CheckSafePdfTokens.
-    except main.PdfTokenParseError:
-      pass
-    try:
-      self.assertEqual('<<', F('< <'))  # !!! Bug in simple! Check with CheckSafePdfTokens.
-    except main.PdfTokenParseError:
-      pass
-    try:
-      self.assertEqual('>>', F('> >'))  # !!! Bug in simple! Check with CheckSafePdfTokens.
-    except main.PdfTokenParseError:
-      pass
-    try:
-      self.assertEqual('>>>', F('>>>'))  # !!! Bug in simple! Check with CheckSafePdfTokens.
-    except main.PdfTokenParseError:
-      pass
+    self.assertRaisesX(main.PdfTokenParseError, F, '>')
+    self.assertRaisesX(main.PdfTokenParseError, F, '> >')
+    self.assertRaisesX(main.PdfTokenParseError, F, '>>>')
+    self.assertRaisesX(main.PdfTokenTruncated, F, '<<<')
+    self.assertRaisesX(main.PdfTokenTruncated, F, '<<<ff')
+    self.assertRaisesX(main.PdfTokenParseError, F, '<<<foo')
     self.assertRaisesX(main.PdfTokenTruncated, F, '<<<')
     self.assertRaisesX(main.PdfTokenParseError, F, '()>')
     self.assertRaisesX(main.PdfTokenParseError, F, '()< <')
@@ -1032,6 +1062,9 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('<61312031322030205273>', F('(a1 12 0 Rs)'))
 
     # !!! Copy tests from testPdfObjParse.
+
+  def testParseTokensToSafeComplicated(self):
+    self.testParseTokensToSafeSimple(is_simple_ok=False)
 
   def testPdfUnsafeRegexpSubsets(self):
     a_re = main.PdfObj.PDF_TOKENS_UNSAFE_CHARS_RE

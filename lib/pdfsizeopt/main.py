@@ -907,10 +907,15 @@ class PdfObj(object):
   On single-character input, PDF_TOKENS_UNSAFE_CHARS_RE is a subset of
   PDF_STRING_UNSAFE_CHAR_RE.
 
-  !!! Use this for additional checking (not in PdfObj.__init__).
-
-  !!! Check for { and } always, explicitly.
+  !!! Use this for additional checking (not in PdfObj.__init__) on the (test)
+      output of PdfObj.__init__ and ParseTokensToSafe.
   """
+
+  PDF_ANGLE_BRACKET_FOR_SIMPLE_RE = re.compile(
+      r'<(?:<|[\0\t\n\r\f 0-9a-fA-F]*>?)|>(?:>)?')
+  """Matches angle bracket constructs.
+
+  Useful for detecting PDF token sequence syntax errors in simple parsing."""
 
   PDF_HEX_STRING_LITERAL_OR_DICT_RE = re.compile(
       r'<(?:<|[\0\t\n\r\f 0-9a-fA-F]*>?)')
@@ -931,7 +936,6 @@ class PdfObj(object):
   are matched by PDF_SAFE_KEEP_HEX_ESCAPED_RE.
   """
 
-  # !!! Add tests with \1 and other invalid characters to complicated parsing.
   PDF_TOKENS_NONSIMPLE_CHAR_RE = re.compile(
       r'[^-+A-Za-z0-9_.#/\[\]<>\0\t\n\r\f ' +
       PDF_UNSAFE_NAME_IN_SIMPLE_RE.pattern[1 : -1] + r']')
@@ -949,7 +953,6 @@ class PdfObj(object):
   """
 
   # !!! Faster regexps by splitting. Do some benchmarks on huge PDFs.
-  # !!! Does it match properly at end-of-string (e.g. '/')?
   PDF_TOKENS_INTERESTING_RE = re.compile(
       PDF_COMMENT_OR_WHITESPACE_RE.pattern + r'(?=([^\0\t\n\r\f ]|\Z))|'  # 1. Comment or whitespace.
       r'\(([^\\()\r]*)\)|'  # 2. Simple string: without parens or backslash.
@@ -1321,19 +1324,23 @@ class PdfObj(object):
 
   @classmethod
   def ParseTokensToSafe(cls, data, start=0, end_ofs_out=None,
-                        do_expect_endobj=False):
+                        do_expect_endobj=False, is_simple_ok=True):
     """Parses a PDF token sequence to a safe PDF token sequence.
 
     Args:
       data: str or buffer containing a PDF token sequence.
-        !!! Make it work without 'endobj'.
-        !!! Add unit tests (also with buffer), copy them from testCompressValue and and testPdfObjParse.
       start: Offset in data to start parsing.
       end_ofs_out: None or an empty array output parameter for the end offset
         `endobj' + single whitespace.
       do_expect_endobj: bool indicating whether endobj or stream is required
         in data. If true, parsing will terminate there, and it's an error if
         it is missing.
+      is_simple_ok: bool indicating whether it is OK to use the simple (and
+        fast) parsing method. The simple parsing method is used if is_simple_ok
+        is true and the input string is deemed (autodetected) to be simple
+        enough. The simple and the complicated methods are equivalent: they
+        return the same output and they raise the same exceptions (possibly
+        with a different message).
     Returns:
       (safe_data, stream_start_idx) pair, where safe_data is a string
       containing a safe PDF token sequence, and stream_start_idx is the start
@@ -1362,7 +1369,8 @@ class PdfObj(object):
     _whitespace_re = cls.PDF_WHITESPACE_RE
     _unsafe_string_char_re = cls.PDF_STRING_UNSAFE_CHAR_RE
     _escape_hex = cls._EscapePdfNamesInHexTokensSafe
-    if cls.PDF_TOKENS_NONSIMPLE_CHAR_RE.search(data, start, end_for_simple):
+    if (not is_simple_ok or
+        cls.PDF_TOKENS_NONSIMPLE_CHAR_RE.search(data, start, end_for_simple)):
       # Our simple parsing approach has failed, maybe because we've
       # found the wrong (early) 'endobj' in e.g. '(endobj rest) endobj'.
       output, i = [], start
@@ -1492,14 +1500,27 @@ class PdfObj(object):
           return '(%s)' % data_dec
 
       data = buffer(data, start, end_for_simple - start)
-      # !!! Benchmark this relatively to previous implementation. This is the simple case.
+      # !!! Benchmark this relatively to complicated implementation.
+      #     (token_parsing_speed.txt)
       #     Seems to be tolerable for pdf_reference_1-7.pdf with >100000 objs.
       # !!! Report statistics about nonsimple obj parsing percentage.
       if cls.PDF_EMPTY_NAME_TOKEN_RE.search(data):
         raise PdfTokenParseError('Found empty name token.')
-      # !!! Bug: this changes '< <' to '<<' and '> >' to '>>'. But it's hard
+      end = len(data)
+      # We check for syntax errors before ReplacementWhiteSpace changes '< <'
+      # to '<<' etc.
+      for match in cls.PDF_ANGLE_BRACKET_FOR_SIMPLE_RE.finditer(data):
+        a = match.group()
+        if len(a) < 2 or a[-1] not in '<>':
+          if (a[0] == '<' and a[1 : 2] != '<' and end == match.end() and
+              not do_expect_endobj):
+            raise PdfTokenTruncated('Truncated hex string.')
+          else:
+            raise PdfTokenParseError('Invalid < or > token.')
+      # !!!! Bug: add these tests:
       # to fix, because we want '<< <5c>' changed to '<<<5c>' and '<5c> >>'
       # changed to '<5c>>>'.
+      # This changes '< <' to '<<' and '> >' to '>>'. It's OK here.
       data = cls.PDF_WHITESPACE_IN_SIMPLE_RE.sub(ReplacementWhiteSpace, data)
       if '#' in data:
         data = _escape_hex(data)
@@ -2196,7 +2217,7 @@ class PdfObj(object):
       _cache = [PDF_SAFE_KEEP_HEX_ESCAPED_RE.sub(
           lambda match: '#%02X' % ord(match.group()),
           chr(i)) for i in xrange(256)],
-      ):  # !!! Add unit tests
+      ):  # !!! Add unit tests.
     """Data is a PDF token sequence containing all strings as <hex>."""
     if '#' in data:  # Works for both strings and buffers.
       # This unescapes e.g. #41 to A, and keeps e.g. #20 escaped. It doesn't
@@ -2217,7 +2238,7 @@ class PdfObj(object):
       _cache = [PDF_OPTIMIZED_KEEP_HEX_ESCAPED_RE.sub(
           lambda match: '#%02X' % ord(match.group()),
           chr(i)) for i in xrange(256)],
-      ):  # !!! Add unit tests
+      ):  # !!! Add unit tests.
     """Data is a PDF token sequence containing all strings as <hex>."""
     if '#' not in data:  # Works for both strings and buffers.
       return str(data)
@@ -2244,7 +2265,7 @@ class PdfObj(object):
     As soon as count_limit is reached, the rest of the string is not parsed,
     and it is not even checked for syntax errors.
 
-    !!! Most of this can be simplified if the input is safe PDF token
+    !!! Most of this can be simplified if the input is a safe PDF token
     sequence. Reuse ParseTokensToSafe.
 
     Raises:
@@ -2699,7 +2720,7 @@ class PdfObj(object):
     return ''.join(output)
 
   @classmethod
-  def SerializePdfStringSafe(cls, data):  # !!! add tests
+  def SerializePdfStringSafe(cls, data):
     """Serializes a string as a PDF string: (...) if safe, otherwise <...>."""
     if cls.PDF_STRING_UNSAFE_CHAR_RE.search(data):
       return '<%s>' % data.encode('hex')
@@ -2911,7 +2932,7 @@ class PdfObj(object):
     colorspace = colorspace.strip(cls.PDF_WHITESPACE_CHARS)
     if colorspace == '/DeviceGray':
       return True
-    # !!! TODO(pts): Do proper PDF token sequence parsing.
+    # !!! TODO(pts): Do proper PDF token sequence parsing (ParseTokensToSafe).
     match = re.match(r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*'
                      r'(/DeviceRGB|/DeviceGray)'
                      r'[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]*(?s)([<(].*)]\Z',
@@ -2990,7 +3011,7 @@ class PdfObj(object):
         'invalid palette size: %s' % palette_size)
     return palette_size - palette_mod
 
-  # !!! Do proper PDF token sequence parsing.
+  # !!! Do proper PDF token sequence parsing (ParseTokensToSafe).
   PDFDATA_IS_INDEXED_RGB_OR_GRAY_RE = re.compile(
       r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*/Device(?:RGB|Gray)'
       r'[\0\t\n\r\f ]+\d')
@@ -3000,7 +3021,7 @@ class PdfObj(object):
     return colorspace and cls.PDFDATA_IS_INDEXED_RGB_OR_GRAY_RE.match(
         colorspace)
 
-  # !!! Do proper PDF token sequence parsing.
+  # !!! Do proper PDF token sequence parsing (ParseTokensToSafe).
   PDFDATA_INDEXED_RGB_OR_GRAY_RE = re.compile(
       r'\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*/Device(RGB|Gray)'
       r'[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]*([<(](?s).*)\]\Z')
@@ -6918,7 +6939,7 @@ class PdfData(object):
 
   SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
 
-  # !!! Do proper PDF token sequence parsing.
+  # !!! Do proper PDF token sequence parsing (ParseTokensToSafe).
   PDFDATA_INDEXED_COLORSPACE_FOR_SUB_RE = re.compile(
       r'\A\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*'
       r'/([^\0\t\n\r\f /<(]+)(?s).*')
