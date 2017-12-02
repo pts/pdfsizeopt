@@ -1751,6 +1751,25 @@ class PdfSizeOptTest(unittest.TestCase):
                      F('C:\\pdfsizeopt\\pdfsizeopt.exe'))
     self.assertEqual('"|\\\\"', F('|\\'))
 
+  def testRedirectOutputUnix(self):
+    F = main.RedirectOutputUnix
+    self.assertEqual('exec>&2;\nfoo bar  baz\nby\t', F('\nfoo bar  baz\nby\t'))
+    self.assertEqual('exec 2>&1;\nfoo bar  baz\nby\t',
+                     F('\nfoo bar  baz\nby\t', is_out=True))
+
+  def testRedirectOutputWindows(self):
+    F = main.RedirectOutputWindows
+    self.assertEqual('foo bar  baz>&2\nbye>&2', F('\nfoo bar  baz\nbye\t'))
+    self.assertEqual('foo bar  baz>&2', F('foo bar  baz'))
+    self.assertEqual('foo bar  baz 2>&1', F('foo bar  baz', is_out=True))
+    self.assertEqual('foo "bar  baz">&2', F('foo "bar  baz"'))
+    self.assertEqual('foo "bar & baz &&">&2&by>&2', F('foo "bar & baz &&"&by'))
+    self.assertEqual(r'foo "bar & \\baz &&"&by>&2',
+                     F(r'foo "bar & \\baz &&"&by'))  # Too complicated.
+    self.assertEqual('foo bar  >&2& baz  >&2&&>&2', F('foo bar  & baz  &&'))
+    self.assertEqual('foo bar   2>&1& baz   2>&1&& 2>&1',
+                     F('foo bar  & baz  &&', is_out=True))
+
   def testGetBadNumbersFixed(self):
     F = main.PdfObj.GetBadNumbersFixed
     self.assertEqual('/Hello/World', F('/Hello/World'))

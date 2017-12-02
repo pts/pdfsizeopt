@@ -344,6 +344,47 @@ def GetGsCommand(is_verbose=False, _cache=[]):
   return gs_cmd
 
 
+def RedirectOutputUnix(cmd, is_out=False):
+  """Returns cmd with output redirected.
+
+  Args:
+    cmd: A single-line shell command.
+    is_out: If true, stderr is redirected to stdout, otherwise stdout is
+        redirected to stderr.
+  Returns:
+    A modified shell command-line with stdout and stderr redirected.
+    The stdout of the command will be redirected to its stderr.
+  """
+  suffix = ('>&2', ' 2>&1')[bool(is_out)]
+  # Separate function for unit testing.
+  return 'exec%s;%s' % (suffix, cmd + '')
+
+
+WINDOWS_COMMAND_QUOTED_OR_SEP_RE = re.compile(r'"[^"]+"|&&?|\r\n|\n')
+"""Matches a double-quoted string literal or a command separator
+(& or && or newline) on a Windows cmd.exe command-line.
+
+TODO(pts): Handle \" and \\ better in quoted strings.
+"""
+
+def RedirectOutputWindows(cmd, is_out=False):
+  # These command suffixes indeed work on Windows.
+  # https://serverfault.com/a/132964/27885
+  suffix = ('>&2', ' 2>&1')[bool(is_out)]
+  # Separate function for unit testing.
+  cmd = cmd.strip()
+  if (r'\\' in cmd or r'\"' in cmd or  # Too complicated to parse.
+      ('&' not in cmd and '\n' not in cmd)):  # Simple, appending will do.
+    return cmd + suffix
+  return WINDOWS_COMMAND_QUOTED_OR_SEP_RE.sub(
+      lambda match: suffix * (match.group()[0] != '"') + match.group(),
+      cmd) + suffix
+
+
+RedirectOutput = (RedirectOutputUnix, RedirectOutputWindows)[
+    sys.platform.startswith('win')]
+
+
 def FindMultivalentJar(file_name):
   """Find Multivalent.jar
 
@@ -562,7 +603,7 @@ def FindOnPath(file_name):
   is_win = sys.platform.startswith('win')
   if path is None and not is_win:
     path = '/bin:/usr/bin'
-  # TODO(pts): On Win32, do we want to append .exe to file_name?
+  # TODO(pts): On Windows, do we want to append .exe to file_name?
   for item in path.split(os.pathsep):
     if (is_win and item.startswith('"') and item.endswith('"') and
         len(item) >= 2):
@@ -610,7 +651,7 @@ NONWORD_RE = re.compile(r'\W+')
 
 
 def GetCmdName(cmd_pattern):
-  cmd_name = cmd_pattern.split()  # TODO(pts): Win32 unquote "...".
+  cmd_name = cmd_pattern.split()  # TODO(pts): Windows unquote "...".
   if not cmd_name:
     return None
   cmd_name = os.path.basename(cmd_name[0].lower())
@@ -3466,6 +3507,7 @@ class PdfObj(object):
     print >>sys.stderr, (
         'info: decompressing %d bytes with Ghostscript '
         '/Filter%s%s' % (len(self.stream), filter_value, decodeparms_pair))
+    sys.stdout.flush()
     f = os.popen(gs_defilter_cmd, 'rb')
     # On Windows, data would start with 'Error: ' on a Ghostscript error, and
     # data will be '' if gswin32c is not found.
@@ -5531,7 +5573,7 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: executing Type1CConverter with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
-    p = os.popen(gs_cmd, 'rb')
+    p = os.popen(RedirectOutput(gs_cmd, is_out=True), 'rb')
     encoding_prefix = 'obj encoding '
     skip_prefix = 'skipping big-CharStrings font obj '
     big_charstrings_obj_nums = set()
@@ -5562,14 +5604,14 @@ class PdfData(object):
             raise ValueError('Encoding for obj %d too long.' % obj_num)
           encodings[obj_num] = encoding
         else:
-          sys.stdout.write(line)
+          sys.stderr.write(line)
     finally:
       try:
         p.read()
       except IOError:
         pass
       status = p.close()
-    sys.stdout.flush()
+    sys.stderr.flush()
     if status:
       print >>sys.stderr, 'info: Type1CConverter failed, status=0x%x' % status
       assert False, 'Type1CConverter failed (status)'
@@ -5654,7 +5696,7 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: executing Type1CParser with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
-    status = os.system(gs_cmd)
+    status = os.system(RedirectOutput(gs_cmd))
     if status:
       print >>sys.stderr, 'info: Type1CParser failed, status=0x%x' % status
       assert False, 'Type1CParser failed (status)'
@@ -6152,7 +6194,7 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: executing Type1CGenerator with Ghostscript: %s' % gs_cmd)
     sys.stdout.flush()
-    status = os.system(gs_cmd)
+    status = os.system(RedirectOutput(gs_cmd))
     if status:
       print >>sys.stderr, 'info: Type1CGenerator failed, status=0x%x' % status
       assert False, 'Type1CGenerator failed (status)'
@@ -6655,7 +6697,7 @@ class PdfData(object):
     print >>sys.stderr, (
         'info: executing image converter %s: %s' % (cmd_name, cmd))
     sys.stdout.flush()
-    status = os.system(cmd)
+    status = os.system(RedirectOutput(cmd))
     if (return_none_if_status is not None and
         status == return_none_if_status):
       EnsureRemoved(targetfn)
@@ -6889,24 +6931,25 @@ class PdfData(object):
            ShellQuoteFileName(ps_tmp_file_name, is_gs=True)))
     print >>sys.stderr, (
         'info: executing ImageRenderer with Ghostscript: %s' % gs_cmd)
+    sys.stdout.flush()
     # We could add a 3rd argument `0' to os.popen to disable buffering, but
     # it fails on Windows and Python 2.6 with
     # ValueError('popen() arg 3 must be -1'). Fortunately we don't need this
     # argument, output is not buffered even without it (on Linux and Windows).
-    p = os.popen(gs_cmd, 'rb')
+    p = os.popen(RedirectOutput(gs_cmd, is_out=True), 'rb')
     lines = []
     try:
       for line in iter(p.readline, ''):
         if line.startswith('  '):  # Stack dump.
-          sys.stdout.write(line.rstrip('\r\n')[:76] + '...\n')  # Truncate.
+          sys.stderr.write(line.rstrip('\r\n')[:76] + '...\n')  # Truncate.
         else:
-          sys.stdout.write(line)
+          sys.stderr.write(line)
         if line.startswith('ImageRenderer: rendering image XObject '):
           del lines[:]
         lines.append(line)
     finally:
       status = p.close()
-    sys.stdout.flush()
+    sys.stderr.flush()
     if status:
       print >>sys.stderr, 'info: ImageRenderer failed, status=0x%x' % status
       # Example line: 'Error: /ioerror in --.reusablestreamdecode--\n'.
