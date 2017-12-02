@@ -107,7 +107,8 @@ def Minify(source, output_func):
       if is_at_bol:
         output_func(' ' * i)
         is_at_bol = is_at_bof = 0
-      if pt in _NAME_OR_NUMBER and tt in _NAME_OR_NUMBER:
+      if pt in _NAME_OR_NUMBER and (tt in _NAME_OR_NUMBER or
+          (tt == _STRING and ts[0] in 'rb')):
         output_func(' ')
       output_func(ts)
       pt, ps, is_empty_indent = tt, ts, 0
