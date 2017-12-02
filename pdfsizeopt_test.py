@@ -1754,8 +1754,8 @@ class PdfSizeOptTest(unittest.TestCase):
   def testRedirectOutputUnix(self):
     F = main.RedirectOutputUnix
     self.assertEqual('exec>&2;\nfoo bar  baz\nby\t', F('\nfoo bar  baz\nby\t'))
-    self.assertEqual('exec 2>&1;\nfoo bar  baz\nby\t',
-                     F('\nfoo bar  baz\nby\t', is_out=True))
+    self.assertEqual('exec 2>&1;\nfoo bar  baz\nby>o\t',
+                     F('\nfoo bar  baz\nby>o\t', is_out=True))
 
   def testRedirectOutputWindows(self):
     F = main.RedirectOutputWindows
@@ -1766,9 +1766,15 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual('foo "bar & baz &&">&2&by>&2', F('foo "bar & baz &&"&by'))
     self.assertEqual(r'foo "bar & \\baz &&"&by>&2',
                      F(r'foo "bar & \\baz &&"&by'))  # Too complicated.
+    self.assertEqual(r'c1 2>f1 & c2 2>f2>&2',
+                     F(r'c1 2>f1 & c2 2>f2'))  # Too complicated.
     self.assertEqual('foo bar  >&2& baz  >&2&&>&2', F('foo bar  & baz  &&'))
     self.assertEqual('foo bar   2>&1& baz   2>&1&& 2>&1',
                      F('foo bar  & baz  &&', is_out=True))
+    self.assertEqual('c1  2>&1>f1 & c2  2>&1&& "&c3"  2>&1>f3',
+                     F('c1 >f1 & c2 && "&c3" >f3', is_out=True))
+    self.assertEqual('c1 >f1 & c2 >&2&& "&c3" >f3',  # Don't change c1 and c3.
+                     F('c1 >f1 & c2 && "&c3" >f3'))
 
   def testGetBadNumbersFixed(self):
     F = main.PdfObj.GetBadNumbersFixed

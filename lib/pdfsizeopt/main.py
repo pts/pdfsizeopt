@@ -360,25 +360,36 @@ def RedirectOutputUnix(cmd, is_out=False):
   return 'exec%s;%s' % (suffix, cmd + '')
 
 
-WINDOWS_COMMAND_QUOTED_OR_SEP_RE = re.compile(r'"[^"]+"|&&?|\r\n|\n')
+WINDOWS_COMMAND_QUOTED_OR_SEP_RE = re.compile(
+    r'"[^"]+"|>[^&\n]*(?:&&?|\r\n|\n|\Z)|&&?|\r\n|\n')
 """Matches a double-quoted string literal or a command separator
-(& or && or newline) on a Windows cmd.exe command-line.
+(& or && or newline) or an stdout-redirect until the separator
+on a Windows cmd.exe command-line.
+
+We assume that the command doesn't contain 2>...
 
 TODO(pts): Handle \" and \\ better in quoted strings.
 """
 
+
 def RedirectOutputWindows(cmd, is_out=False):
+  """See the docstring of RedirectOutputUnix."""
   # These command suffixes indeed work on Windows.
   # https://serverfault.com/a/132964/27885
-  suffix = ('>&2', ' 2>&1')[bool(is_out)]
+  is_out = bool(is_out)
+  suffix = ('>&2', ' 2>&1')[is_out]
   # Separate function for unit testing.
   cmd = cmd.strip()
-  if (r'\\' in cmd or r'\"' in cmd or  # Too complicated to parse.
-      ('&' not in cmd and '\n' not in cmd)):  # Simple, appending will do.
+  if (r'\\' in cmd or r'\"' in cmd or ' 2>' in cmd or  # Too complicated.
+      ('&' not in cmd and '\n' not in cmd and
+       (is_out or '>' not in cmd))):  # Simple, appending will do.
     return cmd + suffix
+  # If is_out is true and '>...' is in cmd, then prepend
+  # ' 2>&1' in front of '>...'.
+  ics = ('">', '"')[is_out]
   return WINDOWS_COMMAND_QUOTED_OR_SEP_RE.sub(
-      lambda match: suffix * (match.group()[0] != '"') + match.group(),
-      cmd) + suffix
+      lambda match: suffix * (match.group()[0] not in ics) + match.group(),
+      cmd + '\n').rstrip('\n')
 
 
 RedirectOutput = (RedirectOutputUnix, RedirectOutputWindows)[
