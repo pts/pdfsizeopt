@@ -1775,7 +1775,7 @@ class PdfSizeOptTest(unittest.TestCase):
                      F('c1 >f1 & c2 && "&c3" >f3', mode=True))
     self.assertEqual('foo bar  >nul 2>&1& baz  >nul 2>&1&&>nul 2>&1',
                      F('foo bar  & baz  &&', mode=None))
-    self.assertEqual('c1  2>nul>f1 & c2 >nul 2>&1&& "&c3"  2>nul>f3',
+    self.assertEqual('c1  2>nul >f1 & c2 >nul 2>&1&& "&c3"  2>nul >f3',
                      F('c1 >f1 & c2 && "&c3" >f3', mode=None))
     self.assertEqual('c1 >f1 & c2 >&2&& "&c3" >f3',  # Don't change c1 and c3.
                      F('c1 >f1 & c2 && "&c3" >f3'))

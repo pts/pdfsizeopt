@@ -437,7 +437,7 @@ def RedirectOutputWindows(cmd, mode=False):
   # These command suffixes indeed work on Windows.
   # https://serverfault.com/a/132964/27885
   if mode is None:
-    suffix, suffixb = '>nul 2>&1', ' 2>nul'
+    suffix, suffixb = '>nul 2>&1', ' 2>nul '
   else:
     mode = bool(mode)
     suffix = ('>&2', ' 2>&1')[mode]
