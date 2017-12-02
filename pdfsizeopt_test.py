@@ -1755,13 +1755,13 @@ class PdfSizeOptTest(unittest.TestCase):
     F = main.RedirectOutputUnix
     self.assertEqual('exec>&2;\nfoo bar  baz\nby\t', F('\nfoo bar  baz\nby\t'))
     self.assertEqual('exec 2>&1;\nfoo bar  baz\nby>o\t',
-                     F('\nfoo bar  baz\nby>o\t', is_out=True))
+                     F('\nfoo bar  baz\nby>o\t', mode=True))
 
   def testRedirectOutputWindows(self):
     F = main.RedirectOutputWindows
     self.assertEqual('foo bar  baz>&2\nbye>&2', F('\nfoo bar  baz\nbye\t'))
     self.assertEqual('foo bar  baz>&2', F('foo bar  baz'))
-    self.assertEqual('foo bar  baz 2>&1', F('foo bar  baz', is_out=True))
+    self.assertEqual('foo bar  baz 2>&1', F('foo bar  baz', mode=True))
     self.assertEqual('foo "bar  baz">&2', F('foo "bar  baz"'))
     self.assertEqual('foo "bar & baz &&">&2&by>&2', F('foo "bar & baz &&"&by'))
     self.assertEqual(r'foo "bar & \\baz &&"&by>&2',
@@ -1770,9 +1770,13 @@ class PdfSizeOptTest(unittest.TestCase):
                      F(r'c1 2>f1 & c2 2>f2'))  # Too complicated.
     self.assertEqual('foo bar  >&2& baz  >&2&&>&2', F('foo bar  & baz  &&'))
     self.assertEqual('foo bar   2>&1& baz   2>&1&& 2>&1',
-                     F('foo bar  & baz  &&', is_out=True))
+                     F('foo bar  & baz  &&', mode=True))
     self.assertEqual('c1  2>&1>f1 & c2  2>&1&& "&c3"  2>&1>f3',
-                     F('c1 >f1 & c2 && "&c3" >f3', is_out=True))
+                     F('c1 >f1 & c2 && "&c3" >f3', mode=True))
+    self.assertEqual('foo bar  >nul 2>&1& baz  >nul 2>&1&&>nul 2>&1',
+                     F('foo bar  & baz  &&', mode=None))
+    self.assertEqual('c1  2>nul>f1 & c2 >nul 2>&1&& "&c3"  2>nul>f3',
+                     F('c1 >f1 & c2 && "&c3" >f3', mode=None))
     self.assertEqual('c1 >f1 & c2 >&2&& "&c3" >f3',  # Don't change c1 and c3.
                      F('c1 >f1 & c2 && "&c3" >f3'))
 
