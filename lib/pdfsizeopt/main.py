@@ -4603,7 +4603,6 @@ class PdfData(object):
       objs_to_parse, objs_with_ilstream = objs_with_ilstream, None
 
     LogInfo('parsed %d objs' % len(self.objs), is_proportional)
-
     if not objs and not is_no_objs_ok:
       # Happens e.g. when no objs can be parsed.
       raise PdfNoObjsError('No objs found in PDF.')
@@ -5073,7 +5072,7 @@ class PdfData(object):
       assert trailer_obj_num not in objstm_obj_numbers  # Slow.
     need_w0 = False  # Do we need w0 be 1 instead of 0?
     max_w2 = -1
-    max_obj_num = obj_numbers[-1]
+    max_obj_num = (obj_numbers and obj_numbers[-1]) or 0
     if objstm_obj_numbers:
       assert objstm_obj_num
       need_w0 = True
@@ -5321,10 +5320,19 @@ class PdfData(object):
           # The PDF reference says that objects who are just `X Y R' must
           # not be part of an object stream. So we skip them here.
           if not (head.endswith('R') and PdfObj.PDF_REF_END_RE.search(head)):
+            if do_emit_short_unsafe:
+              # To Call this in the final objstm_output insted, we'd have to
+              # fix the offsets (objstm_numbers). See also
+              # https://github.com/pts/pdfsizeopt/issues/69 .
+              head = PdfObj.CompressValue(
+                  head,
+                  do_emit_safe_names=False, do_emit_safe_strings=False)
             if PdfObj.IsSpaceNeeded(objstm_output[-1], head[0]):
               objstm_output.append(' ')
               objstm_size += 1
             objstm_numbers.append(obj_num)
+            # If we append the wrong offset here, Ghostscript can still process
+            # the output PDF, because it ignores this offset.
             objstm_numbers.append(objstm_size)
             objstm_output.append(head)
             objstm_size += len(head)
@@ -5346,10 +5354,6 @@ class PdfData(object):
             PdfObj.IsSpaceNeeded(objstm_output[0], objstm_output[2]))
         objstm_first = len(objstm_output[0]) + len(objstm_output[1])
         objstm_output = ''.join(objstm_output)
-        if do_emit_short_unsafe:
-          objstm_output = PdfObj.CompressValue(
-              objstm_output,
-              do_emit_safe_names=False, do_emit_safe_strings=False)
         objstm_obj = PdfObj(None)
         #sys.stdout.write(objstm_output)
         #sys.stdout.write('\n')
