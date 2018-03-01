@@ -72,7 +72,7 @@ You can also put pdfsizeopt to a directory other than `~/pdfsizeopt`, as you
 like.
 
 Additionally, you can install some extra image imptimizers (see more in the
-_Image optimizers_ section below):
+[Image optimizers](#image-optimizers) section):
 
     cd ~/pdfsizeopt
     wget -O pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
@@ -84,7 +84,7 @@ There is no installer, you need to run some commands in the command line to
 download and install. pdfsizeopt is a command-line only application, there
 is no GUI.
 
-To optimize a PDF, install Docker, and then run this command:
+To optimize a PDF, install [Docker](https://www.docker.com/), and then run this command:
 
     docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt input.pdf output.pdf
 
@@ -120,7 +120,7 @@ Then run this command to optimize a PDF:
     docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt ./pdfsizeopt.single --use-pngout=no input.pdf output.pdf
 
 If you want to have extra image optimizers included, use
-`ptspts/pdfsizeopt-with-extraimgopt` instead of ptspts/pdfsizeopt in the
+`ptspts/pdfsizeopt-with-extraimgopt` instead of `ptspts/pdfsizeopt` in the
 commands above. Example:
 
     docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt-with-extraimgopt pdfsizeopt --use-image-optimizer=sam2p,jbig2,pngout,zopflipng,optipng,advpng,ECT input.pdf output.pdf
@@ -202,32 +202,30 @@ If the input PDF has many images or large images, pdfsizeopt can be very slow. Y
 
     ~/pdfsizeopt/pdfsizeopt --use-pngout=no input.pdf output.pdf
 
-Also, if you have an 32-bit Mac, then the pngout bundled with pdfsizeopt won't work (because it needs a 64-bit Mac), so you have to force `--use-pngout=no`. See the section _Image optimizers_ for alternatives of
+Also, if you have an 32-bit Mac, then the pngout bundled with pdfsizeopt won't work (because it needs a 64-bit Mac), so you have to force `--use-pngout=no`. See the section [Image optimizers](#image-optimizers) for alternatives of
 pngout.
 
 pdfsizeopt creates lots of temporary files (`psotmp.*`) in the output directory, but it also cleans up after itself.
 
 It's possible to optimize a PDF outside the current directory. To do that, specify the pathname (including the directory name) in the command-line.
 
-Please note that the commands above download most dependencies (including Ghostscript, but excluding Python) as well. Everything should work as instructed above, out of the box. If you are experiencing problems, please report an issue on https://github.com/pts/pdfsizeopt/issues .
+Please note that the commands above download most dependencies (including Ghostscript, but excluding Python) as well. Everything should work as instructed above, out of the box. If you are experiencing problems, please [report an issue](https://github.com/pts/pdfsizeopt/issues).
 
 To avoid typing `~/pdfsizeopt/pdfsizeopt`, add `$HOME/pdfsizeopt` to your `PATH` (probably in your `~/.bashrc`), open a new terminal window, and the command pdfsizeopt will work from any directory.
 
-You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you like.
+You can also put pdfsizeopt to a directory other than `~/pdfsizeopt`, as you like.
 
 ### FreeBSD
 
 There is no installer, you need to run some commands in the command line to download and install. pdfsizeopt is a command-line only application, there is no GUI.
 
-pdfsizeopt works perfectly on x86 FreeBSD systems with the Linux emulation layer enabled. So, enable the Linux emulation layer on your FreeBSD system, and then follow the [instructions for Linux].
+pdfsizeopt works perfectly on x86 FreeBSD systems with the Linux emulation layer enabled. So, enable the Linux emulation layer on your FreeBSD system, and then follow the [instructions for Linux](#linux).
 
-Alterantively, you can follow the [instructions for generic Unix], but that needs much more work on your part (and it's inconvenient and error-prone), because you need to install many dependencies separately, possibly compiling some of them from source.
+Alterantively, you can follow the [instructions for generic Unix](#generic-unix), but that needs much more work on your part (and it's inconvenient and error-prone), because you need to install many dependencies separately, possibly compiling some of them from source.
 
 ### Generic Unix
 
-There is no installer, you need to run some commands in the command line
-(black Command Prompt window) to download and install. pdfsizeopt is a
-command-line only application, there is no GUI.
+There is no installer, you need to run some commands in the command line to download and install. pdfsizeopt is a command-line only application, there is no GUI.
 
 pdfizeopt is a Python script. It works with Python 2.4, 2.5, 2.6 and 2.7 (but it doesn't work with Python 3.x). So please install Python first.
 
@@ -241,7 +239,7 @@ Rename it to pdfsizeopt and make it executable by running the following commands
     mv pdfsizeopt.single pdfsizeopt
     chmod +x pdfsizeopt
 
-If your Python executable is not `/usr/bin/python`, then edit the first line (starting with `#!') in the pdfsizeopt script accordingly.
+If your Python executable is not `/usr/bin/python`, then edit the first line (starting with `#!`) in the pdfsizeopt script accordingly.
 
 Try it with:
 
@@ -252,43 +250,43 @@ pdfsizeopt has many dependencies. For full functionality, you need all of them. 
 
 Dependencies:
 
-* Python (command: python). Version 2.4, 2.5, 2.6 and 2.7 work (3.x doesn't
-  work).
-* Ghostscript (command: gs): Version 9 or newer should work.
-* jbig2 (command: jbig2): Install from source:
-  https://github.com/pts/pdfsizeopt-jbig2
-  If you are unable to install, use pdfsizeopt --use-jbig2=no .
-* pngout (command: pngout): Download binaries from here:
-  http://www.jonof.id.au/kenutils Source code is not available.
-  If you are unable to install, use pdfsizeopt --use-pngout=no .
-* png22pnm (command: png22pnm): Install from source:
-  https://github.com/pts/tif22pnm
-  This is required by sam2p to open PNG files.
-  Please note that the bundled tif22pnm command is not needed.
-* sam2p (command: sam2p): Install from source:
-  https://github.com/pts/sam2p
-  If you are unable to install, use pdfsizeopt --do-optimize-images=no .
+* **Python** (command: python). Version 2.4, 2.5, 2.6 and 2.7 work (3.x doesn't work).
+* **Ghostscript** (command: gs): Version 9 or newer should work.
+* **jbig2** (command: jbig2): [Install from source](https://github.com/pts/pdfsizeopt-jbig2)
+  If you are unable to install, use pdfsizeopt `--use-jbig2=no`
+* **pngout** (command: pngout): [Download binaries from here](http://www.jonof.id.au/kenutils). Source code is not available.
+  If you are unable to install, use pdfsizeopt `--use-pngout=no`.
+* **png22pnm** (command: png22pnm): [Install from source](https://github.com/pts/tif22pnm).
+  This is required by sam2p to open PNG files. Please note that the bundled tif22pnm command is not needed.
+* **sam2p** (command: sam2p): [Install from source](https://github.com/pts/sam2p).
+  If you are unable to install, use pdfsizeopt `--do-optimize-images=no`.
   Some Linux distributions have sam2p binaries, but they tend to be too old.
   Please use version >=0.49.3.
+  
+Optional dependencies (for alternate [Image optimizers](#image-optimizers)):
+
+- **zopflipng** 
+- **optipng** 
+- **advpng** 
+- **ECT**
 
 After installation, use pdfsizeopt as:
 
     ./pdfsizeopt input.pdf output.pdf
 
-You can add the directory containing pdfsizeopt to the PATH, so the command `pdfsizeopt' will work from any directory.
+You can add the directory containing pdfsizeopt to the `PATH`, so the command `pdfsizeopt` will work from any directory.
 
 ## Image optimizers
 
-pdfsizeopt can use the following external tools to make images in embedded
-PDF files smaller:
+pdfsizeopt can use the following external tools to make images in embedded PDF files smaller:
 
-* sam2p (used by default, cannot be disabled)
-* jbig2 (used by default, disable with `--use-jbgi2=no`)
-* pngout (used by default, disable with `--use-pngout=no`)
-* zopflipng (not enabled by default)
-* optipng (not enabled by default)
-* advpng (not enabled by default)
-* ECT (not enabled by default)
+- **sam2p** (used by default, cannot be disabled)
+- **jbig2** (used by default, disable with `--use-jbgi2=no`)
+- **pngout** (used by default, disable with `--use-pngout=no`)
+- **zopflipng** (not enabled by default)
+- **optipng** (not enabled by default)
+- **advpng** (not enabled by default)
+- **ECT** (not enabled by default)
 
 To enable or disable any image optimizer, specify all image optimizers you
 want to be enabled like this: `--use-image-optimizer=optipng,jbig2`. This
@@ -319,53 +317,53 @@ and ECT).
 
 #### pdfsizeopt fails for some fonts.
 
-Specify --do-unify-fonts=no and --do-regenerate-all-fonts=no .
+Specify `--do-unify-fonts=no` and `--do-regenerate-all-fonts=no`
 
-If it still fails, specify -do-optimize-fonts=no .
+If it still fails, specify `-do-optimize-fonts=no` .
 
 In either case, please report it on https://github.com/pts/pdfsizeopt/issues
 
-#### pdfsizeopt fails for some images.
+#### pdfsizeopt fails for some images
 
-Specify --do-optimize-images=no .
+Specify `--do-optimize-images=no` .
 
 Please report it on https://github.com/pts/pdfsizeopt/issues
 
-#### pdfsizeopt is too slow processing images.
+#### pdfsizeopt is too slow processing images
 
-Specify --use-pngout=no . This disables pngout, which is the slowest
+Specify `--use-pngout=no`. This disables pngout, which is the slowest
 optimization step for images.
 
-#### pdfsizeopt fails without creating the output PDF.
+#### pdfsizeopt fails without creating the output PDF
 
 Please report it on https://github.com/pts/pdfsizeopt/issues , attaching the
 input PDF file and the console output of pdfsizeopt. Your report is very
 much appreciated.
 
 If pdfsizeopt exits with an uncaught exception, it may leave some temporary
-files (psotmp.*) behind in the current directory. You can remove these files.
+files (`psotmp.*`) behind in the current directory. You can remove these files.
 
 Please note that pdfsizeopt is not resilient in processing corrupt PDF
 files (i.e. those which are not compliant to the PDF standard). So if
 pdfsizeopt fails, then the reason may be a bug in pdfsizeopt or a corrupt
 PDF input file. Nevertheless, please report an issue (see above).
 
-#### The output PDF of pdfsizeopt doesn't look like the same as the input PDF.
+#### The output PDF of pdfsizeopt doesn't look like the same as the input PDF
 
 Please report it on https://github.com/pts/pdfsizeopt/issues , attaching the
-input PDF file and the output PDF file (.pso.pdf) and the console output of
+input PDF file and the output PDF file (`.pso.pdf`) and the console output of
 pdfsizeopt. Your report is very much appreciated.
 
-#### pdfsizeopt is unable to find some input files on Windows.
+#### pdfsizeopt is unable to find some input files on Windows
 
 This may happen if the filename or the full pathname contains any character
-other than the ASCII letters (a-z and A-Z), digits (0-9), underscore (_),
-ASCII dash (-), plus (+), dot (.), backslash (\) or slash (/). Typically
+other than the ASCII letters (`a-z` and `A-Z`), digits (`0-9`), underscore (`_`),
+ASCII dash (`-`), plus (`+`), dot (`.`), backslash (`\`) or slash (`/`). Typically
 these characters don't work:
 
 * spaces and tabs: This is easy to fix, just wrap the filename in double
-  quotes ("), the usual way.
-* double quotes ("): This can't happen, filenames on Windows are not allowed
+  quotes (`"`), the usual way.
+* double quotes (`"`): This can't happen, filenames on Windows are not allowed
   to contain double quotes. If you need to pass a non-filename argument with
   a double quote in it to pdfsizeopt, do this. Wrap the filename in double
   quotes ("), replace all double quotes (") with \", and replace a sequence
