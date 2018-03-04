@@ -4148,7 +4148,7 @@ class ImageData(object):
     self.file_name = file_name
     return self
 
-  def Load(self, file_name, do_remove_file_on_success=False, is_inverted=False):
+  def Load(self, file_name, is_inverted=False):
     """Load (parts of) a PNG or PDF image file to self, return self.
 
     Please note that this method discards possibly important PNG chunks.
@@ -4188,8 +4188,6 @@ class ImageData(object):
     else:
       LogProportionalInfo('loaded PNG IDAT of %s bytes' % len(self.idat))
     assert self.idat, 'image data empty'
-    if do_remove_file_on_success:
-      os.remove(file_name)
     return self
 
   def LoadPdf(self, f):
@@ -6791,16 +6789,15 @@ class PdfData(object):
         os.remove(targetfn)
       return result
     else:
-      image = ImageData().Load(
-          targetfn, do_remove_file_on_success=do_remove_targetfn_on_success,
-          is_inverted=is_inverted)
+      image = ImageData().Load(targetfn, is_inverted=is_inverted)
+      if do_remove_targetfn_on_success:
+        os.remove(targetfn)
       if need_gray and image.color_type != 'gray':
         # TODO(pts): Add relevant command-line flags (like pngout, optipng)
         #            for other converters to produce gray.
         LogProportionalInfo(
             'image converter %s produced non-gray output (%s), ignoring' %
             (cmd_name, image.color_type))
-        os.remove(targetfn)
         return None
       return cmd_name, image
 
@@ -7348,9 +7345,7 @@ class PdfData(object):
           # ImageRenderer does the inversion, we mustn't need to set
           # ImageData().Load(..., is_inverted=True) below.
           images[obj_num].append(
-              ('gs', ImageData().Load(
-                  file_name=rendered_images[obj_num],
-                  do_remove_file_on_success=False)))
+              ('gs', ImageData().Load(file_name=rendered_images[obj_num])))
 
     # Optimize images.
     bytes_saved = 0
@@ -7491,7 +7486,7 @@ class PdfData(object):
               # New pngout if: 'Unable to compress further: copying
               # original file'
               return_none_if_status = 0x200
-            image = self.ConvertImage(
+            image_item = self.ConvertImage(
                 sourcefn=pr_file_name,
                 is_inverted=is_inverted,
                 need_gray=(obj_num in force_grayscale_obj_nums),
@@ -7499,9 +7494,9 @@ class PdfData(object):
                 cmd_pattern=cmd_pattern,
                 cmd_name=cmd_name,
                 return_none_if_status=return_none_if_status)
-            if image is not None:
-              obj_images.append(image)
-              image = None
+            if image_item is not None:
+              obj_images.append(image_item)
+              image_item = None
 
           # No need for pr_file_name anymore, we've loaded it to obj_images
           # with cmd_name='sam2p_pr', and we've used it as an input for
