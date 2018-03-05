@@ -184,6 +184,13 @@ FLAGS_HELP = r"""
   999: Everything.
 --quiet
   Equivalent to --v=20 : print only errors, fatal errors, unhandled exceptions.
+--tmp-dir=DIR
+  Directory to save temporary files to. pdfsizeopt will delete these files unless
+  an uncaught exception is raised. If not specified or empty,
+  then the environment variable TMPDIR will be used (TEMP on Windows) if it
+  exists. If that's also missing, empty or it doesn't exist, then the directory
+  containing the output file is used. (If running pdfsizeopt within Docker, only
+  the default works.)
 """
 
 # TODO(pts): Add a shorthand for (and then allow override later in the command-line -- or also earlier?): --do-optimize-images=no --do-optimize-fonts=no --do-optimize-objs=no --do-optimize-streams=no --do-decompress-most-streams=yes --do-generate-xref-stream=no --do-generate-object-stream=no
@@ -326,7 +333,11 @@ def GetGsCommand(is_verbose=False, _cache=[]):
   elif not sys.platform.startswith('win'):
     # Make Ghostscript use the same temporary directory as pdfsizeopt.
     # This fixes the startup problem on Docker.
-    prefix = 'TEMP=. '
+    #
+    # Without this we get the error:
+    # GPL Ghostscript 9.05: **** Could not open temporary file /foo/gs_sYvSR7
+    tmp_dir = os.path.dirname(TMP_PREFIX) or '.'
+    prefix = 'TMPDIR=%s TEMP=%s ' % ((ShellQuote(tmp_dir),) * 2)
   data = None
   gs_cmd = os.getenv('PDFSIZEOPT_GS', None)
   if gs_cmd is None:
@@ -9146,10 +9157,20 @@ def PrependToPath(extrapath_dir):
       extrapath_dir, os.pathsep, os.getenv('PATH', ''))
 
 
-def SetupTmpPrefix(output_file_name):
+def SetupTmpPrefix(output_file_name, tmp_dir):
   global TMP_PREFIX  # !! TODO(pts): Pass it around? Or GetGsCommand()?
-  TMP_PREFIX = os.path.join(
-      os.path.dirname(output_file_name), 'psotmp.%d.' % os.getpid())
+  if not tmp_dir:
+    if sys.platform.startswith('win'):
+      tmp_dir = os.getenv('TEMP', '')
+    else:
+      tmp_dir = os.getenv('TMPDIR', '')
+    if not (tmp_dir and os.path.isdir(tmp_dir)):
+      tmp_dir = os.path.dirname(output_file_name)
+  tmp_basename = 'psotmp.%d.' % os.getpid()
+  if tmp_dir == '.':
+    TMP_PREFIX = tmp_basename
+  else:
+    TMP_PREFIX = os.path.join(tmp_dir, tmp_basename)
   if TMP_PREFIX.startswith('/') and sys.platform.startswith('win'):
     # pngout doesn't work otherwise, because it treats '/' as flag.
     TMP_PREFIX = TMP_PREFIX.replace('/', os.sep)
@@ -9184,6 +9205,7 @@ class Flags(object):
     f.img_cmds = []
     f.args = []
     f.verbosity = 190
+    f.tmp_dir = None
 
   def SetDefaultsFromHelp(self, help_text):
     _BOOL_FLAG_WITH_DEFAULT_RE = self.BOOL_FLAG_WITH_DEFAULT_RE
@@ -9241,6 +9263,8 @@ class Flags(object):
         f.verbosity = ParseUintFlag(key, value)
       elif flag_name == 'quiet':
         f.verbosity = 20
+      elif flag_name == 'tmp_dir':
+        setattr(f, flag_name, value)
       elif flag_name in f.bool_flag_names:
         setattr(f, flag_name, ParseBoolFlag(key, value))
       else:
@@ -9331,7 +9355,7 @@ def main(argv, script_dir=None, zip_file=None):
   if f.mode == 'stats':
     # TMP_PREFIX can be needed for /Type/ObjStm decompression with gs.
     file_name = f.args[0]
-    SetupTmpPrefix(file_name)
+    SetupTmpPrefix(file_name, f.tmp_dir)
     PdfData.ComputePdfStatistics(file_name=file_name)
     return
   assert f.mode == 'optimize'  # Implemented below.
@@ -9387,7 +9411,7 @@ def main(argv, script_dir=None, zip_file=None):
 
   if output_file_name is None:  # Just --do-debug-gs=yes.
     return
-  SetupTmpPrefix(output_file_name)
+  SetupTmpPrefix(output_file_name, f.tmp_dir)
 
   # It's OK that file_name == output_file_name: we don't read and write them
   # at the same time.
