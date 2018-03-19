@@ -30,6 +30,7 @@ open a terminal window and run these commands (without the leading `$'):
   $ cd ~/pdfsizeopt
   $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_linux-v3.tar.gz
   $ tar xzvf pdfsizeopt_libexec_linux.tar.gz
+  $ rm -f    pdfsizeopt_libexec_linux.tar.gz
   $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
   $ chmod +x pdfsizeopt.single
   $ ln -s pdfsizeopt.single pdfsizeopt
@@ -75,6 +76,7 @@ Additionally, you can install some extra image imptimizers (see more in the
   $ cd ~/pdfsizeopt
   $ wget -O pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
   $ tar xzvf pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
+  $ rm -f    pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
 
 Installation instructions and usage with Docker on Linux and macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -199,6 +201,7 @@ open a terminal window and run these commands (without the leading `$'):
   $ cd ~/pdfsizeopt
   $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
+  $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
   $ chmod +x pdfsizeopt.single
   $ ln -s pdfsizeopt.single pdfsizeopt
