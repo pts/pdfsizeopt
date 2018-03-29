@@ -737,6 +737,23 @@ class PdfSizeOptTest(unittest.TestCase):
 
     # TODO(pts): Add more tests.
 
+  def testParseTrailer(self):
+    F = main.PdfObj.ParseTrailer
+    self.assertEqual('<</Root 4 0 R>>',
+                     F('trailer<</Root 4 0 R>>startxref ').head)
+    self.assertEqual('<</Root 4 0 R>>',
+                     F('trailer<</Root 4 0 R>>xref ').head)
+    end_ofs_out = []
+    trailer = 'footrailer\t<< /Root\n4\n0\nR\r>>\fstartxref '
+    self.assertEqual('<</Root 4 0 R>>',
+                     F(trailer, start=3, end_ofs_out=end_ofs_out).head)
+    self.assertEqual('startxref ', trailer[end_ofs_out[0]:])
+    end_ofs_out = []
+    trailer = 'footrailer\t<< /Root\n4\n0\nR/Hi(\\041>>xref )\r>>%hi\n\fxref\t'
+    self.assertEqual('<</Root 4 0 R/Hi<213e3e7872656620>>>',
+                     F(trailer, start=3, end_ofs_out=end_ofs_out).head)
+    self.assertEqual('xref\t', trailer[end_ofs_out[0]:])
+
   def testExpandAbbreviatoins(self):
     F = main.PdfObj.ExpandAbbreviations
     self.assertEqual('', F(''))

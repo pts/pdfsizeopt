@@ -1087,7 +1087,7 @@ class PdfObj(object):
       r'(#[0-9a-fA-F]{0,2})|' +  # 6. A hex-escape (usually in a name or a keyword).
       r'(' + PDF_HEX_STRING_LITERAL_OR_DICT_RE.pattern + ')|'  # 7. Hex string literal or stray <.
       r'([{}\\\v\)]|>>?)|'  # 8. Invalid PDF tokens (except for >>). (At least invalid outside name tokens.)
-      + PDF_STREAM_OR_ENDOBJ_RE.pattern)  # 9. stream or endobj.
+      + PDF_STREAM_OR_ENDOBJ_RE.pattern[:-1] + '|startxref[\0\t\n\r\f ]|xref[\0\t\n\r\f ])' )  # 9. stream or endobj or startxref or xref.
   """Matches interesting parts of a non-simple obj head."""
 
   PDF_EMPTY_NAME_TOKEN_RE = re.compile('/(?:[<>(){}\[\]/\0\t\n\r\f %]|\Z)')
@@ -1134,6 +1134,11 @@ class PdfObj(object):
   TODO(pts): Match more generally, see multiple trailers for testing in:
   pdf.a9p4/5176.CFF.a9p4.pdf
   """
+
+  PDF_PREFIXED_STARTXREF_RE = re.compile(
+      '>>' + PDF_COMMENTS_OR_WHITESPACE_RE.pattern +
+      r'(startxref|xref)[\0\t\n\r\f ]')
+  """Matches startxref or xref in a PDF trailer, prefixed with >>."""
 
   PDF_XREF_SECTION_RE = re.compile(
       r'[\0\t\n\r\f ]*(xref[\0\t\n\r\f ]+)\d+[\0\t\n\r\f ]+\d+[\0\t\n\r\f ]+')
@@ -1352,7 +1357,7 @@ class PdfObj(object):
       #     have caught all already.
       self.CheckSafePdfTokens(head)
     except PdfTokenParseError, e:
-      # !!! TODO(pts): Traceback in Python 2.4 wasn't retained. Why?
+      # !!! TODO(pts): Traceback in Python 2.4 and 2.7 wasn't retained. Why?
       raise (e.__class__('In obj data between ofs %d and %d: %s' %
              (file_ofs, file_ofs + len(other) - start, e)), None,
              sys.exc_info()[2])
@@ -1449,17 +1454,22 @@ class PdfObj(object):
 
   @classmethod
   def ParseTokensToSafe(cls, data, start=0, end_ofs_out=None,
-                        do_expect_endobj=False, is_simple_ok=True):
+                        do_expect_endobj=False, do_expect_startxref=False,
+                        is_simple_ok=True):
     """Parses a PDF token sequence to a safe PDF token sequence.
 
     Args:
       data: str or buffer containing a PDF token sequence.
       start: Offset in data to start parsing.
       end_ofs_out: None or an empty array output parameter for the end offset
-        `endobj' + single whitespace.
+        `endobj' + single whitespace or for the start offset of 'startxref'
+        or 'xref'.
       do_expect_endobj: bool indicating whether endobj or stream is required
         in data. If true, parsing will terminate there, and it's an error if
         it is missing.
+      do_expect_startxref: bool indicating whether xref or startxref is
+        required in data. If true, parsing will terminate there, and it's an
+        error if it is missing.
       is_simple_ok: bool indicating whether it is OK to use the simple (and
         fast) parsing method. The simple parsing method is used if is_simple_ok
         is true and the input string is deemed (autodetected) to be simple
@@ -1476,6 +1486,8 @@ class PdfObj(object):
     """
     stream_start_idx, end, end_for_simple = None, len(data), len(data)
     if do_expect_endobj:
+      if do_expect_startxref:
+        raise ValueError
       # We do the simplest and fastest parsing approach first to find
       # endobj/endstream. This covers about 90% of the objs. Notable
       # exceptions are the /Producer, /CreationDate and /CharSet strings.
@@ -1483,6 +1495,12 @@ class PdfObj(object):
       if not match:
         raise PdfTokenParseError('endobj/stream not found.')
       end_for_simple = match.start(1)
+    elif do_expect_startxref:
+      match = cls.PDF_PREFIXED_STARTXREF_RE.search(data, start)
+      if not match:
+        raise PdfTokenParseError('startxref/xref not found.')
+      end_for_simple = match.start(1)
+      match = None
     else:
       # We need to remove leading whitespace explicitly, otherwise the rest
       # would break.
@@ -1507,6 +1525,8 @@ class PdfObj(object):
         if not match:
           if do_expect_endobj:
             raise PdfTokenParseError('Full endobj/stream not found.')
+          if do_expect_startxref:
+            raise PdfTokenParseError('Full startxref/xref not found.')
           output.append(data[i : end])
           if end_ofs_out is not None:
             end_ofs_out.append(end)
@@ -1575,16 +1595,24 @@ class PdfObj(object):
           output.append(match.group()[0])
           i = match.start() + 1
           continue
-        elif do_expect_endobj:
+        elif (do_expect_endobj and
+              (match.group().startswith('stream') or
+               match.group().startswith('endobj'))):
           if match.group().startswith('stream'):
             stream_start_idx = match.end(9)
           if end_ofs_out is not None:
             end_ofs_out.append(match.end())
           break
+        elif (do_expect_startxref and
+              (match.group().startswith('startxref') or
+               match.group().startswith('xref'))):
+          if end_ofs_out is not None:
+            end_ofs_out.append(match.start())
+          break
         else:
           match = cls.PDF_KEYWORD_RE.match(data, match.start())
-          # Appends the 'endobj' or 'stream' keyword, but not the following
-          # whitespace.
+          # Appends the 'endobj', 'stream', 'xref' or 'startxref' keyword,
+          # but not the following whitespace.
           output.append(data[match.start() : match.end()])
         i = match.end()
       if output and output[-1] == ' ':
@@ -1611,7 +1639,7 @@ class PdfObj(object):
         if data == '<<':
           return data
         if data[-1] != '>':
-          if match.end() == end and not do_expect_endobj:
+          if match.end() == end and not (do_expect_endobj or do_expect_startxref):
             raise PdfTokenTruncated('Truncated hex string.')
           else:
             raise PdfTokenParseError('Invalid < token.')
@@ -1638,7 +1666,7 @@ class PdfObj(object):
         a = match.group()
         if len(a) < 2 or a[-1] not in '<>':
           if (a[0] == '<' and a[1 : 2] != '<' and end == match.end() and
-              not do_expect_endobj):
+              not (do_expect_endobj or do_expect_startxref)):
             raise PdfTokenTruncated('Truncated hex string.')
           else:
             raise PdfTokenParseError('Invalid < or > token.')
@@ -1945,18 +1973,17 @@ class PdfObj(object):
   @classmethod
   def ParseTrailer(cls, data, start=0, end_ofs_out=None):
     """Parse PDF trailer at offset start."""
-    # !!! TODO(pts): Add unit test.
-    # !!! TODO(pts): Do proper PDF token sequence parsing, for the end of the dict.
     match = PdfObj.PDF_TRAILER_RE.match(data, start)
     if not match:
       raise PdfTokenParseError(
           'bad trailer data: %r' % data[start : start + 256])
-    if end_ofs_out is not None:
-      end_ofs_out.append(match.end(1))
+    # We don't use match.end(), because PDF_TRAILER_RE is not smart enough
+    # to find the end of the trailer. ParseTokensToSafe is smart.
+    start = match.start(1)  # Start of '<<'.
+
     trailer_obj = PdfObj(None)
-    # !!! TODO(pts): No need to strip with proper PDF token sequence parsing.
-    trailer_obj.head = match.group(1).strip(
-        PdfObj.PDF_WHITESPACE_CHARS)
+    trailer_obj.head, _ = cls.ParseTokensToSafe(
+        data, start=start, end_ofs_out=end_ofs_out, do_expect_startxref=True)
     trailer_obj.Set('XRefStm', None)
     # We don't remove 'Prev' here, the caller might be interested.
     return trailer_obj
@@ -4848,6 +4875,7 @@ class PdfData(object):
               (obj_num, compressed_obj_nums[i], objstm_obj_num, i))
         compressed_obj_nums[i] = None
         assert isinstance(compressed_obj_headbufs[i], (buffer, str))
+        print [obj_num, str(compressed_obj_headbufs[i])]
         obj_starts[obj_num] = compressed_obj_headbufs[i] = PdfObj(
             '%d 0 obj\n%s\nendobj\n' % (obj_num, compressed_obj_headbufs[i]))
     for obj_num in sorted(obj_streams):
@@ -7935,10 +7963,12 @@ class PdfData(object):
       what = 'decompressed'
     else:
       what = 'optimized'
+    if counts:
+      msg = ', '.join('%d %s' % (c, k) for k, c in sorted(counts.iteritems()))
+    else:
+      msg = 'none'
     LogInfo(
-        '%s %d streams, kept %s' %
-        (what, len(self.objs) - skipped_count,
-        ', '.join('%d %s' % (c, k) for k, c in sorted(counts.iteritems()))))
+        '%s %d streams, kept %s' % (what, len(self.objs) - skipped_count, msg))
 
   def DecompressStreams(self, is_flate_only):
     """Decompress stream data in most objects.
