@@ -6096,6 +6096,8 @@ class PdfData(object):
     target_value = cls.GetStrippedPrivate(target_font.get('Private'))
     source_value = cls.GetStrippedPrivate(source_font.get('Private'))
     if target_value != source_value:
+      # TODO(pts): Sometimes /BlueValues doesn't match, everything else matches.
+      # Should we merge anyway? How to merge /BlueValues?
       raise FontsNotMergeable(
           'mismatch in Private: target=%r source=%r' %
           (target_value, source_value))
@@ -6662,7 +6664,10 @@ class PdfData(object):
       obj = self.objs[obj_num]  # /Type/FontDescriptor
       assert obj.stream is None
       assert obj.Get('Flags') is not None
-      assert obj.Get('StemV') is not None
+      if obj.Get('StemV') is None:
+        # According to pdf_reference_1-7.pdf, /StemV is required.
+        # Counterexample: W16-36.pdf in https://github.com/pts/pdfsizeopt/issues/78
+        LogWarning('missing /StemV in Type1C font obj %d' % obj_num)
       assert str(obj.Get('FontName')).startswith('/')
       # For testing when ResolveReferences is needed:
       # combinatorics-of-compositions-and-words.pdf
@@ -6675,6 +6680,8 @@ class PdfData(object):
         obj.Set('FontBBox', fontbbox)  # Resolve the reference.
       # These entries are important only for finding substitute fonts, so
       # we can get rid of them.
+      #
+      # TODO(pts): Why not remove StemV?
       obj.Set('FontFamily', None)
       obj.Set('FontStretch', None)
       obj.Set('FontWeight', None)
