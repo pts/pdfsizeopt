@@ -4920,8 +4920,15 @@ class PdfData(object):
       NotImplementedError: If the PDF file needs parsing code not implemented.
       other: If the PDF file us totally unparsable. Example: zlib.error.
     """
-    match = PdfObj.PDF_STARTXREF_EOF_AT_EOS_RE.search(data[-128:])
-    if not match:
+    match = None
+    # Some PDFs have a few bytes of garbage at the end, so we don't anchor
+    # this regexp to the end of the string, but we try to find the last match.
+    #
+    # Example: server-based-java-programming.pdf in
+    # https://github.com/pts/pdfsizeopt/issues/80
+    for match in PdfObj.PDF_STARTXREF_EOF_RE.finditer(data[-128:]):
+      break
+    else:
       raise PdfXrefError('startxref+%%EOF not found')
     xref_ofs = int(match.group(1))
     match = PdfObj.PDF_OBJ_DEF_RE.match(data, xref_ofs)
