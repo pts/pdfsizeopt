@@ -4875,7 +4875,6 @@ class PdfData(object):
               (obj_num, compressed_obj_nums[i], objstm_obj_num, i))
         compressed_obj_nums[i] = None
         assert isinstance(compressed_obj_headbufs[i], (buffer, str))
-        print [obj_num, str(compressed_obj_headbufs[i])]
         obj_starts[obj_num] = compressed_obj_headbufs[i] = PdfObj(
             '%d 0 obj\n%s\nendobj\n' % (obj_num, compressed_obj_headbufs[i]))
     for obj_num in sorted(obj_streams):
