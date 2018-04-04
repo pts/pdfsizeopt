@@ -1122,7 +1122,7 @@ class PdfObj(object):
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
 
   PDF_VERSION_HEADER_RE = re.compile(
-      r'\A%PDF-(1[.]\d)(\r?\n%[\x80-\xff]{1,4}\r?\n|[\0\t\n\r\f ])')
+      r'%PDF-(1[.]\d)(\r?\n%[\x80-\xff]{1,4}\r?\n|[\0\t\n\r\f ])')
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
@@ -4512,9 +4512,15 @@ class PdfData(object):
     self.has_generational_objs = False
     self.file_name = f.name
     self.file_size = len(data)
-    match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
+    # For some PDFs, there are some junk bytes in front of thje %PDF- header.
+    # Just like Google Chrome, Evince and gv, We just ignore these junk bytes,
+    # and we assume that offset 0 of the PDF file is where %PDF- starts.
+    #
+    # Example: https://github.com/pts/pdfsizeopt/issues/76
+    match = PdfObj.PDF_VERSION_HEADER_RE.search(buffer(data, 0, 256))
     if not match:
       raise PdfTokenParseError('unrecognized PDF signature %r' % data[: 16])
+    data = data[match.start():]
     self.version = match.group(1)
     self.objs = objs = {}
     self.trailer = None
@@ -8117,9 +8123,10 @@ class PdfData(object):
     if setitem_callback is None:
       setitem_callback = DefaultSetItem
 
-    match = PdfObj.PDF_VERSION_HEADER_RE.match(data)
+    match = PdfObj.PDF_VERSION_HEADER_RE.search(buffer(data, 0, 256))
     if not match:
       raise PdfTokenParseError('unrecognized PDF signature %r' % data[: 16])
+    data = data[match.start():]
     version = match.group(1)
     header_end_ofs = match.end()
     setitem_callback(None, match.group(), 'header')
