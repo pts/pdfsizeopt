@@ -1122,7 +1122,7 @@ class PdfObj(object):
   """Matches whitespace (or >), startxref, offset, then EOF at EOS."""
 
   PDF_VERSION_HEADER_RE = re.compile(
-      r'%PDF-(1[.]\d)(\r?\n%[\x80-\xff]{1,4}\r?\n|[\0\t\n\r\f ])')
+      r'%PDF-(1[.]\d)%?(\r?\n%[\x80-\xff]{1,4}\r?\n|[\0\t\n\r\f ])')
   """Matches the header with the version at the beginning of the PDF."""
 
   PDF_TRAILER_RE = re.compile(
