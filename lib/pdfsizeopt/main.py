@@ -4932,7 +4932,8 @@ class PdfData(object):
     #
     # Example: server-based-java-programming.pdf in
     # https://github.com/pts/pdfsizeopt/issues/80
-    for match in PdfObj.PDF_STARTXREF_EOF_RE.finditer(data[-128:]):
+    # Example: https://github.com/pts/pdfsizeopt/issues/86
+    for match in PdfObj.PDF_STARTXREF_EOF_RE.finditer(data[-400:]):
       break
     else:
       raise PdfXrefError('startxref+%%EOF not found')
