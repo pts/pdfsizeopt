@@ -9155,6 +9155,7 @@ IMAGE_OPTIMIZER_CMD_MAP = {
     'advpng':  'advpng -z3 -f %(targetfnq)s',
     'advpng3': 'advpng -z3 -f %(targetfnq)s',
     'advpng4': 'advpng -z4 -f %(targetfnq)s',  # Slowest, this uses Zopfli.
+    'pngwolf': 'pngwolf --in=%(sourcefnq)s --out=%(targetfnq)s',  # Also for pngwolf-zopfli . See discussion on https://github.com/pts/pdfsizeopt/issues/87
 }
 
 def GetVersionSpec(zip_file):
