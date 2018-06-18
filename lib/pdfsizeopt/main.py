@@ -7439,9 +7439,12 @@ class PdfData(object):
       # !! TODO(pts): Don't load all images to memory (maximum 2).
       obj = self.objs[obj_num]
       obj_images = images[obj_num]
+      obj_width = PdfObj.ResolveReferences(obj.Get('Width'), self.objs)
+      obj_height = PdfObj.ResolveReferences(obj.Get('Height'), self.objs)
       for method, image in obj_images:
-        assert obj.Get('Width') == image.width
-        assert obj.Get('Height') == image.height
+        wd_ht = (obj_width, obj_height)
+        i_wd_ht = (image.width, image.height)
+        assert wd_ht == i_wd_ht, (obj_num, wd_ht, i_wd_ht, method, obj.head)
       assert len(obj_images) >= 1, obj_images
       assert obj_images[-1][0] in ('parse', 'gs')
       rendered_tuple = obj_images[-1][1].ToDataTuple()
@@ -7452,8 +7455,8 @@ class PdfData(object):
         # sam2p again.
         LogProportionalInfo(
             'using already rendered image for obj %s' % obj_num)
-        assert obj.Get('Width') == target_image.width
-        assert obj.Get('Height') == target_image.height
+        assert obj_width == target_image.width
+        assert obj_height == target_image.height
         obj_images.append(('#prev-rendered-best', target_image))
         image_tuple = target_image.ToDataTuple()
       else:
@@ -7492,8 +7495,8 @@ class PdfData(object):
 
         image_tuple = obj_images[-1][1].ToDataTuple()
         target_image = by_image_tuple.get(image_tuple)
-        assert image_tuple[0] == obj.Get('Width')
-        assert image_tuple[1] == obj.Get('Height')
+        assert image_tuple[0] == obj_width
+        assert image_tuple[1] == obj_height
         target_image = by_image_tuple.get(image_tuple)
         if target_image is not None:  # We have already optimized this image.
           # For testing: pts2.ziplzw.pdf
@@ -7612,19 +7615,22 @@ class PdfData(object):
                  obj_num))
           continue
         new_obj = PdfObj(obj)
+        # Resolve references.
+        new_obj.Set('Width', obj_width)
+        new_obj.Set('Height', obj_height)
         image_data.UpdatePdfObj(new_obj)
         obj_infos.append((new_obj.size, cmd_name, image_data.file_name,
                           new_obj, image_data))
       del obj_images[:]  # Free memory.
 
-      assert obj.Get('Width') == image_tuple[0]
-      assert obj.Get('Height') == image_tuple[1]
-      assert obj.Get('Width') == rendered_tuple[0]
-      assert obj.Get('Height') == rendered_tuple[1]
+      assert obj_width == image_tuple[0]
+      assert obj_height == image_tuple[1]
+      assert obj_width == rendered_tuple[0]
+      assert obj_height == rendered_tuple[1]
       for obj_info in obj_infos:
         if obj_info[4] is not None:
-          assert obj_info[4].width == obj.Get('Width')
-          assert obj_info[4].height == obj.Get('Height')
+          assert obj_info[4].width == obj_width
+          assert obj_info[4].height == obj_height
 
       # SUXX: Python2.4 min(...) and sorted(...) doesn't compare tuples
       # properly ([0] first)) if one of them is an object. So we implement
@@ -7663,8 +7669,8 @@ class PdfData(object):
         if ('/JBIG2Decode' in (obj_infos[0][3].Get('Filter') or '') and
             self.version < '1.4'):
           self.version = '1.4'
-        assert obj_infos[0][3].Get('Width') == obj.Get('Width')
-        assert obj_infos[0][3].Get('Height') == obj.Get('Height')
+        assert obj_infos[0][3].Get('Width') == obj_width
+        assert obj_infos[0][3].Get('Height') == obj_height
         self.objs[obj_num] = obj = obj_infos[0][3]
         if (obj_num in force_grayscale_obj_nums and
             obj.Get('ColorSpace') != '/DeviceGray'):
