@@ -1513,7 +1513,7 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(data, e(compressed[:-4]))
     self.assertRaisesX(zlib.error, e, compressed[:-5])
 
-  def testResolveReferences(self):
+  def testResolveReferencesChanged(self):
     def NewObj(head, stream=None, do_compress=False):
       obj = main.PdfObj(None)
       if stream is None:
@@ -1535,6 +1535,8 @@ class PdfSizeOptTest(unittest.TestCase):
         14: NewObj('\0(12  0  R \\040)'),
         15: NewObj('foo  bar %skip'),
         16: NewObj('15 0 R  bat'),
+        17: NewObj('/foobar'),
+        18: NewObj('\t42  '),
         21: NewObj('9 0 R'),
         31: NewObj('<</Foo 32 0 R>>'),
         32: NewObj('<</Bar 31 0 R>>'),
@@ -1545,10 +1547,12 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertTrue('/Length 5' in objs[41].head)
     self.assertTrue('/Filter/FlateDecode' in objs[42].head)
     self.assertFalse('/Length 42' in objs[42].head)
-    e = main.PdfObj.ResolveReferences
+    e = main.PdfObj.ResolveReferencesChanged
     self.assertEqual(('/FooBar  true', False), e('/FooBar  true', objs))
     self.assertEqual(('/FooBaR  true', False), e('/FooBaR  true', objs))
-    self.assertEqual(('foo  bar', True), e('12 0 R', objs))
+    self.assertRaisesX(main.PdfTokenParseError, e, '12 0 R', objs)
+    self.assertEqual(('/foobar', True), e('17 0 R', objs))
+    self.assertEqual((42, True), e('18 0 R', objs))
     self.assertEqual(('\rfoo  bar\t', True), e('\r12 0 R\t', objs))
     self.assertEqual(('[true\ffoo  bar false\nfoo  bar]', True),
                      e('[true\f12 0 R false\n12 0 R]', objs))
@@ -1573,8 +1577,9 @@ class PdfSizeOptTest(unittest.TestCase):
     # Unexpected stream.
     self.assertRaisesX(main.UnexpectedStreamError, e, '41 0 R', objs)
     self.assertRaisesX(main.UnexpectedStreamError, e, '42 0 R', objs)
-    self.assertEqual(('(hello)', True), e('41 0 R', objs, do_strings=True))
-    self.assertEqual(('(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)', True),
+    self.assertEqual(('<68656c6c6f>', True),
+                     e('41 0 R', objs, do_strings=True))
+    self.assertEqual(('<787878787878787878787878787878787878787878787878787878787878787878787878787878787878>', True),
                       e('42 0 R', objs, do_strings=True))
     self.assertEqual(
         ('/ColorSpace[/Indexed/DeviceRGB 14 (%s)]' % ('x' * 42), True),

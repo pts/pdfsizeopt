@@ -2255,7 +2255,8 @@ class PdfObj(object):
       data: String containing a PDF token sequence for a dict, like '<<...>>'.
         There must be no leading or trailing whitespace.
     Returns:
-      A dict mapping strings to values (usually strings).
+      A dict mapping strings to values (usually strings). The values are the
+      result of ParseSimpleValue, so they can be None, int, long, bool or str.
     Raises:
       PdfTokenParseError:
     """
@@ -3553,8 +3554,8 @@ class PdfObj(object):
     decodeparms = self.Get('DecodeParms') or ''
     if objs is None:
       objs = {}
-    filter_value, _ = self.ResolveReferences(filter_value, objs)
-    decodeparms, _ = self.ResolveReferences(decodeparms, objs)
+    filter_value = self.ResolveReferences(filter_value, objs)
+    decodeparms = self.ResolveReferences(decodeparms, objs)
     if not isinstance(filter_value, str):
       raise FilterError('/Filter is not a str: %r' % (filter_value,))
     if not isinstance(decodeparms, str):
@@ -3646,8 +3647,9 @@ class PdfObj(object):
       do_strings: bool indicating whether to embed the referred
         streams as strings.
     Returns:
-      (new_data, has_changed). has_changed may be True even if there
-      were no references found, but comments were removed.
+      new_data, which can be an int, a long, a float, a bool, None, or an str.
+      ParseSimpleValue is used on new_data (to convert str to other types) if
+      data is an str containing a single reference (R).
     Raises:
       PdfTokenParseError:
       PdfReferenceTargetMissing:
@@ -3658,13 +3660,13 @@ class PdfObj(object):
       raise TypeError
     if (data is None or isinstance(data, int) or isinstance(data, long) or
         isinstance(data, float) or isinstance(data, bool)):
-      return data, False
+      return data
     if not isinstance(data, str):
       raise TypeError
     if not ('R' in data and  # cls.PDF_END_OF_REF_RE.search(data) and
             cls.PDF_REF_RE.search(data)):
       # Shortcut if there are no references in data.
-      return data, False
+      return data
 
     current_obj_nums = []
 
@@ -3706,8 +3708,14 @@ class PdfObj(object):
               'unexpected stream in: %d 0 obj' % obj_num)
         return obj.SerializePdfStringSafe(obj.GetUncompressedStream(objs=objs))
 
+
+    match = cls.PDF_REF_AT_EOS_RE.match(data)
+    if match:  # Shortcut and type conversion.
+      return cls.ParseSimpleValue(Replacement(match))
+
     data0 = data
     if '(' in data or '%' in data:  # ')'
+      # !!! Is this necessary? Can `data' not be a safe PDF token sequence?
       data = cls.CompressValue(data, do_emit_strings_as_hex=True)
       # Compress strings back to non-hex once the references are
       # resolved.
@@ -3720,7 +3728,22 @@ class PdfObj(object):
     data = cls.PDF_REF_RE.sub(Replacement, data)
     if do_compress:
       data = cls.CompressValue(data)
-    return data, data0 != data
+    return data
+
+  @classmethod
+  def ResolveReferencesChanged(cls, data, objs, do_strings=False):
+    """Resolve references (<x> <y> R) in a PDF token sequence.
+
+    Like ResolveReferences, but returns has_changed as well.
+
+    Returns:
+      (new_data, has_changed). has_changed may be True even if there
+      were no references found, but comments were removed.
+    """
+    if not isinstance(data, str):
+      return data, False
+    data2 = cls.ResolveReferences(data, objs, do_strings)
+    return data2, data2 != data
 
   def FixFontNameInType1C(self, new_font_name='F', objs=None,
                           len_deltas_out=None):
@@ -5668,7 +5691,7 @@ class PdfData(object):
       # /Length1, /Length2 or /Length3 for parsing Type1 fonts, but they are
       # required by the PDF spec.
       for key in ('Length1', 'Length2', 'Length3', 'Subtype'):
-        data, has_changed = obj.ResolveReferences(obj.Get(key), ref_objs)
+        data, has_changed = obj.ResolveReferencesChanged(obj.Get(key), ref_objs)
         if data is not None and has_changed:
           if not new_obj:
             new_obj = obj = PdfObj(obj)
@@ -6222,7 +6245,7 @@ class PdfData(object):
     # font_obj: /Type/Font /Subtype/Type1 /Encoding
     #     <</Type/Encoding/Differences[40/parenleft/parenright 44/comma/]>>
     encoding_value = font_obj.ResolveReferences(
-        font_obj.Get('Encoding'), objs=objs)[0]
+        font_obj.Get('Encoding'), objs=objs)
     if cls.IsFontBuiltInEncodingUsed(encoding_value):
       if isinstance(encoding_value, str) and encoding_value.startswith('<<'):
         encoding_dict = PdfObj.ParseDict(encoding_value)
@@ -6401,7 +6424,7 @@ class PdfData(object):
           obj.Get('Type') == '/Font' and
           obj.Get('Subtype') == '/Type1' and
           self.IsFontBuiltInEncodingUsed(
-              obj.ResolveReferences(obj.Get('Encoding'), objs=self.objs)[0])):
+              obj.ResolveReferences(obj.Get('Encoding'), objs=self.objs))):
         match = obj.PDF_REF_AT_EOS_RE.match(str(obj.Get('FontDescriptor')))
         if match:
           fd_obj_num = int(match.group(1))  # /Type/FontDescriptor.
@@ -6686,7 +6709,7 @@ class PdfData(object):
       # combinatorics-of-compositions-and-words.pdf
       #
       # TODO(pts): Find and fix more mossing-reference-resolving bugs.
-      fontbbox, fontbbox_has_changed = PdfObj.ResolveReferences(
+      fontbbox, fontbbox_has_changed = PdfObj.ResolveReferencesChanged(
           obj.Get('FontBBox'), objs=self.objs)
       assert str(fontbbox).startswith('['), fontbbox
       if fontbbox_has_changed:
@@ -7158,7 +7181,7 @@ class PdfData(object):
           continue  # Something is wrong with this object, don't touch it.
         obj.Set('Type', None)  # Remove explicit default.
 
-      filter_value, filter_has_changed = PdfObj.ResolveReferences(
+      filter_value, filter_has_changed = PdfObj.ResolveReferencesChanged(
           obj.Get('Filter'), objs=self.objs)
       filter2 = (filter_value or '').replace(']', ' ]') + ' '
 
@@ -7180,7 +7203,7 @@ class PdfData(object):
       mask = obj.Get('Mask')
       do_remove_mask = False
       try:
-        mask, _ = PdfObj.ResolveReferences(mask, objs=self.objs)
+        mask = PdfObj.ResolveReferences(mask, objs=self.objs)
       except UnexpectedStreamError:
         assert isinstance(mask, str)
         mask = PdfObj.ParseSimpleValue(mask)
@@ -7191,7 +7214,7 @@ class PdfData(object):
           not re.match(r'\[[\0\t\n\r\f ]*\]\Z', mask)):
         continue
 
-      bpc, bpc_has_changed = PdfObj.ResolveReferences(
+      bpc, bpc_has_changed = PdfObj.ResolveReferencesChanged(
           obj.Get('BitsPerComponent'), objs=self.objs)
       if obj.Get('ImageMask'):
         if bpc != 1:
@@ -7226,7 +7249,7 @@ class PdfData(object):
 
       # TODO(pts): Inline this to reduce PDF size.
       # pdftex emits: /ColorSpace [/Indexed /DeviceRGB <n> <obj_num> 0 R]
-      colorspace, colorspace_has_changed = PdfObj.ResolveReferences(
+      colorspace, colorspace_has_changed = PdfObj.ResolveReferencesChanged(
           obj.Get('ColorSpace'), objs=self.objs, do_strings=True)
       if obj.Get('ImageMask'):
         if colorspace != '/DeviceGray':  # can be None
@@ -7256,7 +7279,7 @@ class PdfData(object):
         obj.Set('Mask', None)
       for name in ('Width', 'Height', 'Decode', 'DecodeParms', 'ImageMask'):
         value = obj.Get(name)
-        value, value_has_changed = PdfObj.ResolveReferences(
+        value, value_has_changed = PdfObj.ResolveReferencesChanged(
             value, objs=self.objs)
         if value_has_changed:
           if obj is obj0:
