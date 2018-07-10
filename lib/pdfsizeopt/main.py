@@ -4425,6 +4425,7 @@ class ImageData(object):
     self.Clear()
     idats = []
     need_plte = False
+    compression = 'zip-png'
     while 1:
       data = f.read(8)
       if not data:  # EOF
@@ -4466,9 +4467,13 @@ class ImageData(object):
           self.height = int(self.height)
           # Raise KeyError.
           self.color_type = self.COLOR_TYPE_PARSE_DICT[color_type]
-          assert compression_method == 0
-          assert filter_method == 0
-          assert interlace_method in (0, 1)
+          assert compression_method == 0, compression_method
+          # Only filter_method == 0 is standard PNG, values 1 and 2 can be
+          # emitted by imagedataopt, and value 1 is emitted by `imgdataopt
+          # -pdf:2 -c zip:1:9', i.e. sam2p_np (no-predictor).
+          assert 0 <= filter_method <= 2, filter_method
+          compression = ('zip-png', 'zip', 'zip-tiff')[filter_method]
+          assert interlace_method in (0, 1), interlace_method
           self.is_interlaced = bool(interlace_method)
           need_plte = self.color_type.startswith('indexed-')
         elif chunk_type == 'PLTE':
@@ -4486,7 +4491,7 @@ class ImageData(object):
           assert False, 'not ignored chunk of type %r' % chunk_type
     self.idat = ''.join(idats)
     assert not need_plte, 'missing PLTE chunk'
-    self.compression = 'zip-png'
+    self.compression = compression
     self.is_inverted = False
     assert self, 'could not load valid PNG image'
     return self
