@@ -20,8 +20,8 @@ including documentation, installation instructions, a white paper describing
 what optimizations are done in this script and why, and presentation slides
 about the same.
 
-This script needs a Unix system, with Ghostscript (gs), sam2p, pngout
-(--use-pngout=no to disable), jbig2 (--use-jbig2=no to disable)
+This script needs a Unix system, with Ghostscript (gs), sam2p or imgdataopt,
+pngout (--use-pngout=no to disable), jbig2 (--use-jbig2=no to disable)
 Future versions may relax the system requirements.
 
 This script doesn't optimize the serialization of objects it doesn't modify.
@@ -56,12 +56,12 @@ FLAGS_HELP = r"""
 --use-image-optimizer=PROG[,...]
   Run the specified image optimizer programs (comma-separated list) for
   optimizing images embedded in PDF. Can be specified multiple times. If
-  specified, the default because --use-pngout=no and --use-jbig2=no. Only some
-  well-known, built-in PROG values can be specified (e.g. sam2p, pngout, jbig2,
-  zopflipng, optipng, ECT, advpng). Specifying the same program multiple times
-  would run it multiple times, so don't do it. The special values no or none
-  indicate that no program should be run (but more values can be appended
-  later).
+  specified, the default because --use-pngout=no and --use-jbig2=no. Only
+  some well-known, built-in PROG values can be specified (e.g. sam2p,
+  imgdataopt, pngout, jbig2, zopflipng, optipng, ECT, advpng). Specifying
+  the same program multiple times would run it multiple times, so don't do
+  it. The special values no or none indicate that no program should be run
+  (but more values can be appended later).
 --use-image-optimizer=CMD_PATTERN
   Run the specified image optimizer program command-line for optimizing
   images embedded in PDF. This is in addition to the other values for the
@@ -178,7 +178,8 @@ FLAGS_HELP = r"""
   40: As above, plus a constant number of info messages containing progress
       updates.
   50: As above, plus info messages proportional to the input file size.
-  60: As above, plus tool output. (Example tools: Ghostscript, sam2p, jbig2.)
+  60: As above, plus tool output. (Example tools: Ghostscript, sam2p, imgdataopt,
+      jbig2.)
   190: As above.
   200: As above, plus debug info.
   999: Everything.
@@ -7302,9 +7303,11 @@ class PdfData(object):
 
       # Ignore images with exotic color spaces (e.g. DeviceCMYK, CalGray,
       # DeviceN).
+      #
       # TODO(pts): Support more color spaces. DeviceCMYK would be tricky,
-      # because neither PNG nor sam2p supports it. We can convert it to
-      # RGB, though.
+      # because neither PNG nor sam2p nor imgdataopt supports it. We can
+      # convert it to RGB, though.
+      #
       # !!! Do proper PDF token sequence parsing.
       if not re.match(r'(?:/Device(?:RGB|Gray)\Z|\[[\0\t\n\r\f ]*'
                       r'/Indexed[\0\t\n\r\f ]*'
@@ -7457,7 +7460,7 @@ class PdfData(object):
       if target_image is not None:  # We have already rendered this image.
         # For testing: pts2.zip.4timesb.pdf
         # This is just a speed optimization so we don't have to run
-        # sam2p again.
+        # sam2p or imgdataopt again.
         LogProportionalInfo(
             'using already rendered image for obj %s' % obj_num)
         assert obj_width == target_image.width
@@ -7468,10 +7471,6 @@ class PdfData(object):
         is_inverted = obj_images[-1][1].is_inverted
         rendered_image_file_name = obj_images[-1][1].file_name
         # TODO(pts): use KZIP or something to further optimize the ZIP stream
-        # !! shortcut for sam2p (don't need pngtopnm)
-        #    (add basic support for reading PNG to sam2p? -- just what GS
-        #    produces)
-        #    (or just add .gz support?)
         if obj_num in force_grayscale_obj_nums:
           sam2pnp_mode = self.SAM2P_GRAYSCALE_MODE
         else:
@@ -7492,7 +7491,7 @@ class PdfData(object):
             #    /RLEEncode; or /FlateEncode twice (!) to reduce zeroes in
             #    empty_page.pdf from !)
             # * We specify `sam2p -j:quiet' unconditionally, because the
-            #   console output of sam2p is useless.
+            #   console output of sam2p is useless. (Ignored by imgdataopt.)
             cmd_pattern=('sam2p -j:quiet -pdf:2 -c zip:1:9 -s ' +
                           ShellQuote(sam2pnp_mode) +
                           ' -- %(sourcefnq)s %(targetfnq)s'),
@@ -7505,8 +7504,8 @@ class PdfData(object):
         target_image = by_image_tuple.get(image_tuple)
         if target_image is not None:  # We have already optimized this image.
           # For testing: pts2.ziplzw.pdf
-          # The latest sam2p is deterministic, so the bytes of the file
-          # produced by sam2p depends only on the RGB image data.
+          # The latest sam2p and imgdataopt are deterministic, so the bytes
+          # of the file produced by them depend only on the RGB image data.
           LogProportionalInfo(
               'using already processed image for obj %s' % obj_num)
           obj_images.append(('#prev-processed-best', target_image))
@@ -9403,8 +9402,8 @@ def main(argv, script_dir=None, zip_file=None):
         f.img_cmds.append('pngout')
       img_cmd_patterns = []
       for cmd in f.img_cmds:
-        if cmd in ('', 'no', 'none', 'sam2p'):
-          # 'sam2p' is always used by default.
+        if cmd in ('', 'no', 'none', 'sam2p', 'imgdataopt'):
+          # 'sam2p' or 'imgdataopt' is always used by default.
           continue
         cmd_pattern = IMAGE_OPTIMIZER_CMD_MAP.get(cmd, cmd).strip()
         if not cmd_pattern:
