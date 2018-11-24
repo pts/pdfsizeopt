@@ -7522,15 +7522,16 @@ class PdfData(object):
                            '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
               cmd_name='sam2p_pr',
               do_remove_targetfn_on_success=False))  # Will remove manually.
-          pr_file_name = obj_images[-1][1].file_name
+          pr_image = obj_images[-1][1]
+          old_pr_file_name = pr_image.file_name
           # See force_grayscale_obj_nums why this image must be grayscale.
           # Image optimizers such as optipng (in img_cmd_pattern) need
           # grayscale input (in pr_image_file_name) to produce
           # grayscale output.
           assert (not (obj_num in force_grayscale_obj_nums) or
-                  obj_images[-1][1].color_type == 'gray'), (
+                  pr_image.color_type == 'gray'), (
               'Grayscale needed for np image, got %s' %
-              obj_images[-1][1].color_type)
+              pr_image.color_type)
 
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
@@ -7549,23 +7550,21 @@ class PdfData(object):
                 i += 1
             cmd_names_used.add(cmd_name)
             if 'jbig2' in cmd_name:
-              if (obj_images[-1][1].bpc == 1 and
-                  obj_images[-1][1].color_type in ('gray', 'indexed-rgb')):
-                obj_images.append((cmd_name, ImageData(obj_images[-1][1])))
-                gray_file_name = ''
+              if (pr_image.bpc == 1 and
+                  pr_image.color_type in ('gray', 'indexed-rgb')):
+                obj_images.append((cmd_name, ImageData(pr_image)))
                 if obj_images[-1][1].color_type != 'gray':
-                  # This changes obj_images[-1].file_name as well.
-                  gray_file_name = TMP_PREFIX + 'img-%d.gray.png' % obj_num
-                  obj_images[-1][1].SavePng(
-                      file_name=gray_file_name, do_force_gray=True)
+                  obj_images[-1][1].SavePng(  # Changes .file_name.
+                      file_name=TMP_PREFIX + 'img-%d.gray.png' % obj_num,
+                      do_force_gray=True)
                 obj_images[-1][1].idat = self.ConvertImage(
-                    sourcefn=pr_file_name,
+                    sourcefn=obj_images[-1][1].file_name,
                     targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
                     cmd_pattern=cmd_pattern,
                     cmd_name=cmd_name,
                     do_just_read=True)[1]
-                if gray_file_name:
-                  os.remove(gray_file_name)
+                if obj_images[-1][1].file_name != pr_image.file_name:
+                  os.remove(obj_images[-1][1].file_name)
                 obj_images[-1][1].compression = 'jbig2'
                 obj_images[-1][1].file_name = (
                     TMP_PREFIX + 'img-%d.jbig2' % obj_num)
@@ -7576,7 +7575,7 @@ class PdfData(object):
               # original file'
               return_none_if_status = 0x200
             image_item = self.ConvertImage(
-                sourcefn=pr_file_name,
+                sourcefn=pr_image.file_name,
                 is_inverted=is_inverted,
                 need_gray=(obj_num in force_grayscale_obj_nums),
                 targetfn=TMP_PREFIX + 'img-%d.%s.png' % (obj_num, cmd_name),
@@ -7587,10 +7586,12 @@ class PdfData(object):
               obj_images.append(image_item)
               image_item = None
 
-          # No need for pr_file_name anymore, we've loaded it to obj_images
-          # with cmd_name='sam2p_pr', and we've used it as an input for
-          # img_cmd_patterns.
-          os.remove(pr_file_name)
+          # No need for the file pr_image.filename on disk anymore, we've
+          # loaded it to obj_images with cmd_name='sam2p_pr', and we've used
+          # it as an input for img_cmd_patterns.
+          assert pr_image.file_name == old_pr_file_name
+          os.remove(pr_image.file_name)
+          pr_image = None  # Save memory later.
 
           # TODO(pts): For very small (10x10) images, try uncompressed too.
 
