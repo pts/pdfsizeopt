@@ -7530,7 +7530,7 @@ class PdfData(object):
           # grayscale output.
           assert (not (obj_num in force_grayscale_obj_nums) or
                   pr_image.color_type == 'gray'), (
-              'Grayscale needed for np image, got %s' %
+              'Grayscale needed for pr_image, got %s' %
               pr_image.color_type)
 
           # !! add /FlateEncode again to all obj_images to find the smallest
