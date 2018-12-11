@@ -53,6 +53,9 @@ FLAGS_HELP = r"""
 --use-jbig2=YES_NO; default: yes
   Run jbig2 for optimizing images embedded in PDF? Affects only images with
   2 colors. Needs the external optimizer tool jbig2.
+--use-sam2p-pr=YES_NO; default: yes
+  Run sam2p with predictors enabled for optimizing images embedded in PDF?
+  Needs external optimizer tool sam2p.
 --use-image-optimizer=PROG[,...]
   Run the specified image optimizer programs (comma-separated list) for
   optimizing images embedded in PDF. Can be specified multiple times. If
@@ -739,6 +742,10 @@ def GetCmdName(cmd_pattern):
   cmd_name = cmd_pattern.split()  # TODO(pts): Windows unquote "...".
   if not cmd_name:
     return None
+  if cmd_pattern.startswith('sam2p -j:quiet -pdf:2 -c zip:1:9 '):
+    return 'sam2p_np'
+  if cmd_pattern.startswith('sam2p -j:quiet -c zip:15:9 '):
+    return 'sam2p_pr'
   cmd_name = os.path.basename(cmd_name[0].lower())
   cmd_name = NONWORD_RE.sub('_', cmd_name)
   return cmd_name
@@ -6828,11 +6835,20 @@ class PdfData(object):
         'targetfnq': ShellQuoteFileName(targetfn),
         'pngout_gray_flags': '',
         'optipng_gray_flags': '',
+        'sam2p_np_gray_flags': '',
+        'sam2p_pr_gray_flags': '',
     }
     if need_gray:
       cmd_values_dict['pngout_gray_flags'] = '-c0 '
       # -nc: No color type reduction.
       cmd_values_dict['optipng_gray_flags'] = '-nc -np '
+      cmd_values_dict['sam2p_np_gray_flags'] = '-s Gray1:Gray2:Gray4:Gray8:stop '
+      cmd_values_dict['sam2p_pr_gray_flags'] = '-s Gray1:Gray2:Gray4:Gray8:stop '
+    else:
+      cmd_values_dict['sam2p_np_gray_flags'] = (
+          '-s Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
+          'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop ')
+
     assert '%(targetfnq)s' in cmd_pattern, cmd_pattern
     cmd = cmd_pattern % cmd_values_dict
 
@@ -7138,8 +7154,6 @@ class PdfData(object):
 
     return png_files
 
-  SAM2P_GRAYSCALE_MODE = 'Gray1:Gray2:Gray4:Gray8:stop'
-
   # !!! Do proper PDF token sequence parsing (ParseTokensToSafe).
   PDFDATA_INDEXED_COLORSPACE_FOR_SUB_RE = re.compile(
       r'\A\[[\0\t\n\r\f ]*/Indexed[\0\t\n\r\f ]*'
@@ -7421,6 +7435,19 @@ class PdfData(object):
     LogInfo('optimizing %s images of %s bytes in total' %
             (image_count, image_total_size))
 
+    sam2p_np_pattern = sam2p_pr_pattern = None
+    img_cmd_patterns2 = []
+    for cmd_pattern in img_cmd_patterns:
+      cmd_name = GetCmdName(cmd_pattern)
+      if cmd_name == 'sam2p_np':
+        sam2p_np_pattern = cmd_pattern
+      elif cmd_name == 'sam2p_pr':
+        sam2p_pr_pattern = cmd_pattern
+      else:
+        img_cmd_patterns2.append(cmd_pattern)
+    assert sam2p_np_pattern is not None, 'Missing sam2p_np command pattern.'
+    img_cmd_patterns = img_cmd_patterns2
+
     # Render images which we couldn't convert in-process, using ImageRenderer.
     for gs_device in sorted(device_image_objs):
       ps_tmp_file_name = TMP_PREFIX + 'conv.%s.tmp.ps' % gs_device
@@ -7489,14 +7516,10 @@ class PdfData(object):
         image_tuple = rendered_tuple
         target_image = None  # Save memory.
       else:
-        if obj_num in force_grayscale_obj_nums:
-          sam2pnp_mode = self.SAM2P_GRAYSCALE_MODE
-        else:
-          sam2pnp_mode = ('Gray1:Indexed1:Gray2:Indexed2:Rgb1:Gray4:Indexed4:'
-                          'Rgb2:Gray8:Indexed8:Rgb4:Rgb8:stop')
         obj_images.append(self.ConvertImage(
-            is_inverted=obj_images[-1][1].is_inverted,
             sourcefn=obj_images[-1][1].file_name,
+            is_inverted=obj_images[-1][1].is_inverted,
+            need_gray=(obj_num in force_grayscale_obj_nums),
             targetfn=TMP_PREFIX + 'img-%d.sam2p-np.pdf' % obj_num,
             # We specify -s here to explicitly exclude SF_Opaque for
             # single-color images.
@@ -7510,9 +7533,7 @@ class PdfData(object):
             #    empty_page.pdf from !)
             # * We specify `sam2p -j:quiet' unconditionally, because the
             #   console output of sam2p is useless. (Ignored by imgdataopt.)
-            cmd_pattern=('sam2p -j:quiet -pdf:2 -c zip:1:9 -s ' +
-                          ShellQuote(sam2pnp_mode) +
-                          ' -- %(sourcefnq)s %(targetfnq)s'),
+            cmd_pattern=sam2p_np_pattern,
             cmd_name='sam2p_np',
             do_remove_targetfn_on_success=False))
         os.remove(obj_images[-2][1].file_name)
@@ -7544,22 +7565,19 @@ class PdfData(object):
           os.remove(np_image.file_name)
           np_image = None  # Save memory reference.
         else:
-          if 0:  # TODO(pts): Do this with --use-sam2p-pr=no.
+          if sam2p_pr_pattern is None:
+            # No need for need_gray=..., sam2p_np has already done it.
             obj_images.append(('save_oi', ImageData(np_image)
                 .CompressToZipPng(do_try_invert=np_image.is_inverted, effort=9)
                 .SavePng(file_name=TMP_PREFIX + 'img-%d.save-oi.png' % obj_num)
                 ))
           else:
-            if obj_num in force_grayscale_obj_nums:
-              sam2p_s_flags = '-s %s ' % ShellQuote(self.SAM2P_GRAYSCALE_MODE)
-            else:
-              sam2p_s_flags = ''
             obj_images.append(self.ConvertImage(
-                is_inverted=np_image.is_inverted,
                 sourcefn=np_image.file_name,
+                is_inverted=np_image.is_inverted,
+                need_gray=(obj_num in force_grayscale_obj_nums),
                 targetfn=TMP_PREFIX + 'img-%d.sam2p-pr.png' % obj_num,
-                cmd_pattern=('sam2p -j:quiet ' + sam2p_s_flags +
-                             '-c zip:15:9 -- %(sourcefnq)s %(targetfnq)s'),
+                cmd_pattern=sam2p_pr_pattern,
                 cmd_name='sam2p_pr',
                 do_remove_targetfn_on_success=False))  # Will remove manually.
           os.remove(np_image.file_name)
@@ -7577,7 +7595,7 @@ class PdfData(object):
           cmd_names_used = set()
           for cmd_pattern in img_cmd_patterns:
             cmd_name = GetCmdName(cmd_pattern)
-            if not cmd_name:
+            if not cmd_name or cmd_name in ('sam2p_pr', 'sam2p_np'):
               continue
             if cmd_name in cmd_names_used:
               i = 2
@@ -9227,6 +9245,8 @@ IMAGE_OPTIMIZER_CMD_MAP = {
     'advpng3': 'advpng -z3 -f %(targetfnq)s',
     'advpng4': 'advpng -z4 -f %(targetfnq)s',  # Slowest, this uses Zopfli.
     'pngwolf': 'pngwolf --in=%(sourcefnq)s --out=%(targetfnq)s',  # Also for pngwolf-zopfli . See discussion on https://github.com/pts/pdfsizeopt/issues/87
+    'sam2p_np': 'sam2p -j:quiet -pdf:2 -c zip:1:9 %(sam2p_np_gray_flags)s-- %(sourcefnq)s %(targetfnq)s',
+    'sam2p_pr': 'sam2p -j:quiet -c zip:15:9 %(sam2p_pr_gray_flags)s-- %(sourcefnq)s %(targetfnq)s',
 }
 
 def GetVersionSpec(zip_file):
@@ -9323,7 +9343,7 @@ class Flags(object):
     f = self
     self.SetDefaultsFromHelp(FLAGS_HELP)  # Only for bools.
     # TODO(pts): Add =auto for use_pngout, use_jbig2, use_multivalent.
-    f.use_pngout = f.use_jbig2 = None
+    f.use_pngout = f.use_jbig2 = f.use_sam2p_pr = None
     f.mode = 'optimize'
     f.img_cmds = []
     f.args = []
@@ -9438,6 +9458,11 @@ def main(argv, script_dir=None, zip_file=None):
         f.img_cmds.append('jbig2')
       if f.use_pngout is True or (f.use_pngout is None and is_no_img_cmds):
         f.img_cmds.append('pngout')
+      if f.use_sam2p_pr is True or (f.use_sam2p_pr is None and is_no_img_cmds):
+        f.img_cmds.append('sam2p_pr')
+      if not [1 for cmd_pattern in f.img_cmds
+              if GetCmdName(cmd_pattern) == 'sam2p_np']:
+        f.img_cmds.append('sam2p_np')  # Enabled by default.
       img_cmd_patterns = []
       for cmd in f.img_cmds:
         if cmd in ('', 'no', 'none', 'sam2p', 'imgdataopt'):
