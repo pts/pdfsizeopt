@@ -4060,9 +4060,11 @@ class ImageData(object):
       pdf_image_data['Filter'] = '/JBIG2Decode'
     if self.bpc == 1 and self.color_type == 'indexed-rgb':
       # Such images are emitted by PNGOUT.
-      if self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0'):
+      plte = self.plte[:6]
+      if plte in ('\0\0\0\xff\xff\xff', '\0\0\0', '\0\0\0\0\0\0'):
         pdf_image_data['ColorSpace'] = '/DeviceGray'
-      elif self.plte in ('\xff\xff\xff\0\0\0', '\xff\xff\xff'):
+      elif plte in ('\xff\xff\xff\0\0\0', '\xff\xff\xff',
+                    '\xff\xff\xff\xff\xff\xff'):
         # TODO(pts): Test this.
         pdf_image_data['ColorSpace'] = '/DeviceGray'
         pdf_image_data['Decode'] = '[1 0]'
@@ -4074,8 +4076,9 @@ class ImageData(object):
     if self.bpc != 1:
       return False
     if (self.color_type == 'indexed-rgb' and
-        self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0',
-                      '\xff\xff\xff\0\0\0', '\xff\xff\xff')):
+        self.plte in ('\0\0\0\xff\xff\xff', '\0\0\0', '\0\0\0\0\0\0',
+                      '\xff\xff\xff\0\0\0', '\xff\xff\xff',
+                      '\xff\xff\xff\xff\xff\xff')):
       return True
     return self.color_type == 'gray'
 
@@ -7513,7 +7516,7 @@ class PdfData(object):
         wd_ht = (obj_width, obj_height)
         i_wd_ht = (image.width, image.height)
         assert wd_ht == i_wd_ht, (obj_num, wd_ht, i_wd_ht, method, obj.head)
-      assert len(obj_images) >= 1, obj_images
+      assert obj_images
       assert obj_images[-1][0] in ('parse', 'gs')
       rendered_tuple = obj_images[-1][1].ToDataTuple()
       target_image = by_rendered_tuple.get(rendered_tuple)
