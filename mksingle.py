@@ -244,6 +244,7 @@ def new_zipinfo(file_name, file_mtime, permission_bits=0644):
 
 
 def main(argv):
+  os.chdir(os.path.dirname(__file__))
   assert os.path.isfile('lib/pdfsizeopt/main.py')
   zip_output_file_name = 't.zip'
   single_output_file_name = 'pdfsizeopt.single'
