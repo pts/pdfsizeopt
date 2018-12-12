@@ -4082,6 +4082,19 @@ class ImageData(object):
       return True
     return self.color_type == 'gray'
 
+  def MaybeConvertToGray1(self):
+    """Tries to convert to color_type='gray', bpc=1. Returns self."""
+    if self.color_type == 'indexed-rgb' and self.bpc == 1:
+      plte = self.plte[:6]
+      if plte in ('\0\0\0\xff\xff\xff', '\0\0\0', '\0\0\0\0\0\0'):
+        self.color_type = 'gray'
+        self.plte = None
+      elif plte in ('\xff\xff\xff\0\0\0', '\xff\xff\xff',
+                    '\xff\xff\xff\xff\xff\xff'):
+        self.color_type = 'gray'
+        self.plte = None
+        self.is_inverted = not self.is_inverted
+
   def UpdatePdfObj(self, pdf_obj, do_check_dimensions=True):
     """Update the /Subtype/Image PDF XObject from self."""
     if not isinstance(pdf_obj, PdfObj):
@@ -7518,6 +7531,7 @@ class PdfData(object):
         assert wd_ht == i_wd_ht, (obj_num, wd_ht, i_wd_ht, method, obj.head)
       assert obj_images
       assert obj_images[-1][0] in ('parse', 'gs')
+      obj_images[-1][1].MaybeConvertToGray1()
       rendered_tuple = obj_images[-1][1].ToDataTuple()
       target_image = by_rendered_tuple.get(rendered_tuple)
       if target_image is not None:  # We have already rendered this image.
