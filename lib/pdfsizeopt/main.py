@@ -4140,6 +4140,9 @@ class ImageData(object):
       pdf_obj.Set('Decode', None)  # Use the default, it's shorter.
     pdf_obj.stream = pdf_image_data['.stream']
 
+  def CanCompressToZipPng(self):
+    return self.compression in ('zip-png', 'zip', 'none')
+
   def CompressToZipPng(
       self, do_try_invert=False, effort=9,
       _invert_table=''.join(chr(i) for i in xrange(255, -1, -1))):
@@ -7185,6 +7188,27 @@ class PdfData(object):
             'optipng' in cmd_name or 'ect' in cmd_name or
             'advpng' in cmd_name or 'pngwolf' in cmd_name)
 
+  def _ConvertImageWithJbig2(self, image, cmd_name, cmd_pattern, obj_num,
+                             color_type):
+    """Converts with jbig2. Assumes image is saved to image.file_name."""
+    old_image, image = image, ImageData(image)
+    if color_type != 'gray':
+      image.SavePng(  # Changes .file_name.
+          file_name=TMP_PREFIX + 'img-%d.gray.png' % obj_num,
+          do_force_gray=True)
+    image.idat = self.ConvertImage(
+        sourcefn=image.file_name,
+        is_inverted=image.is_inverted,
+        targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
+        cmd_pattern=cmd_pattern,
+        cmd_name=cmd_name,
+        do_just_read=True)[1]
+    if image.file_name != old_image.file_name:
+      os.remove(image.file_name)
+    image.compression = 'jbig2'
+    image.file_name = TMP_PREFIX + 'img-%d.jbig2' % obj_num
+    return cmd_name, image
+
   def OptimizeImages(self, img_cmd_patterns, do_fast_bilevel_images):
     """Optimize image XObjects in the PDF."""
     if not isinstance(img_cmd_patterns, (list, tuple)):
@@ -7545,7 +7569,35 @@ class PdfData(object):
         obj_images.append(('#prev-rendered-best', target_image))
         image_tuple = rendered_tuple
         target_image = None  # Save memory.
+      elif (do_fast_bilevel_images and has_jbig2 and
+            obj_images[-1][1].bpc == 1 and
+            obj_images[-1][1].color_type in ('gray', 'indexed-rgb') and
+            obj_images[-1][1].CanCompressToZipPng() and
+            (obj_width * obj_height) >> 16):  # Shortcut to do jbig2 only.
+        oi_image = obj_images[-1][1]
+        if not (oi_image.color_type == 'gray' and
+                oi_image.compression == 'zip-png' and
+                (oi_image.file_name or '').endswith('.png')):
+          oi_image = ImageData(oi_image)
+          oi_image.CompressToZipPng(
+              do_try_invert=oi_image.is_inverted, effort=3)
+          oi_image.SavePng(
+              file_name=TMP_PREFIX + 'img-%d.save-oi.png' % obj_num,
+              do_force_gray=True)
+          obj_images.append(('jbig2_oi', oi_image))
+        obj_images_size = len(obj_images)
+        for cmd_pattern in img_cmd_patterns:
+          cmd_name = GetCmdName(cmd_pattern)
+          if 'jbig2' in cmd_name:
+            obj_images.append(self._ConvertImageWithJbig2(
+                oi_image, cmd_name, cmd_pattern, obj_num, 'gray'))
+        oi_image = None  # Save memory later.
+        for _, old_image in obj_images[:obj_images_size]:
+          os.remove(old_image.file_name)
+        old_image = None   # Save memory.
+        image_tuple = rendered_tuple  # No more caching, just pacity.
       else:
+
         # TODO(pts): Don't even run sam2p_np if do_fast_bilevel_images and
         # (obj_width * obj_height) >> 16 and obj_images[-1][1].compression
         # in ('none', 'zip', 'zip-png') and obj_images[-1][1].color_type in
@@ -7570,7 +7622,9 @@ class PdfData(object):
             cmd_pattern=sam2p_np_pattern,
             cmd_name='sam2p_np',
             do_remove_targetfn_on_success=False))
-        os.remove(obj_images[-2][1].file_name)
+        for _, old_image in obj_images[:-1]:
+          os.remove(old_image.file_name)
+        old_image = None   # Save memory.
         np_image = obj_images[-1][1]
         assert np_image.width == obj_width
         assert np_image.height == obj_height
@@ -7656,23 +7710,9 @@ class PdfData(object):
             cmd_names_used.add(cmd_name)
             if 'jbig2' in cmd_name:
               if is_bilevel_image:
-                obj_images.append((cmd_name, ImageData(oi_image)))
-                if obj_images[-1][1].color_type != 'gray':
-                  obj_images[-1][1].SavePng(  # Changes .file_name.
-                      file_name=TMP_PREFIX + 'img-%d.gray.png' % obj_num,
-                      do_force_gray=True)
-                obj_images[-1][1].idat = self.ConvertImage(
-                    sourcefn=obj_images[-1][1].file_name,
-                    is_inverted=obj_images[-1][1].is_inverted,
-                    targetfn=TMP_PREFIX + 'img-%d.jbig2' % obj_num,
-                    cmd_pattern=cmd_pattern,
-                    cmd_name=cmd_name,
-                    do_just_read=True)[1]
-                if obj_images[-1][1].file_name != oi_image.file_name:
-                  os.remove(obj_images[-1][1].file_name)
-                obj_images[-1][1].compression = 'jbig2'
-                obj_images[-1][1].file_name = (
-                    TMP_PREFIX + 'img-%d.jbig2' % obj_num)
+                obj_images.append(self._ConvertImageWithJbig2(
+                    oi_image, cmd_name, cmd_pattern, obj_num,
+                    oi_image.color_type))
               continue
             return_none_if_status = None
             if 'pngout' in cmd_name:
@@ -7787,8 +7827,8 @@ class PdfData(object):
         # before.
 
       if obj_infos[0][4] is not None:
-        by_rendered_tuple[rendered_tuple] = obj_infos[0][4]
-        by_image_tuple[image_tuple] = obj_infos[0][4]
+        by_rendered_tuple[rendered_tuple] = by_image_tuple[image_tuple] = (
+            obj_infos[0][4])
         # TODO(pts): !! Cache something if obj_infos[0][4] is None, seperate
         # case for len(obj_info) == 1.
         # TODO(pts): Investigate why the original image can be the smallest.
