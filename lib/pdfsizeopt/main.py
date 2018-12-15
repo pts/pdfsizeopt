@@ -7474,9 +7474,9 @@ class PdfData(object):
           image1.compression = 'zip'
         if len(image1.idat) < len(image2.idat):
           # For testing: ./pdfsizeopt.py --use-pngout=false PLRM.pdf
+          # image1.file_name is None.
           images[obj_num].append(('parse-image1', image1))
-        # image2.file_name (*.parse.png) will be removed by
-        # os.remove(rendered_image_file_name).
+        # Saving it so it can be converted with sam2p_np.
         image2.SavePng(file_name=TMP_PREFIX + 'img-%d.parse.png' % obj_num)
         images[obj_num].append(('parse', image2))
 
@@ -7623,7 +7623,8 @@ class PdfData(object):
             cmd_name='sam2p_np',
             do_remove_targetfn_on_success=False))
         for _, old_image in obj_images[:-1]:
-          os.remove(old_image.file_name)
+          if old_image.file_name is not None:
+            os.remove(old_image.file_name)
         old_image = None   # Save memory.
         np_image = obj_images[-1][1]
         assert np_image.width == obj_width
