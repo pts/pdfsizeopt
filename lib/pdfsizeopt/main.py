@@ -1825,6 +1825,21 @@ class PdfObj(object):
     else:
       return data
 
+  @classmethod
+  def _CheckDictHead(self, head):
+    """Check syntax of a head of a dict or stream obj."""
+    if not head.startswith('<<'):
+      raise PdfTokenParseError(
+         'expected a dict or stream obj: %r')
+    if not head.endswith('>>'):
+      if '>>' in head:
+        if 'endobj' in head or 'endstream' in head:
+          raise PdfTokenParseError('syntax error in endobj/endstream')
+        else:
+          raise PdfTokenParseError('missing endobj/endstream')
+      else:
+        raise PdfTokenParseError('dict obj must end with >>')
+
   def Get(self, key, default=None):
     """Get value for key if self.head is a PDF dict.
 
@@ -1841,8 +1856,7 @@ class PdfObj(object):
       raise TypeError('slash in the key= argument')
     if self._cache is None:
       assert self._head is not None
-      assert self.head.startswith('<<') and self.head.endswith('>>'), (
-          'expected a dict or stream obj')
+      self._CheckDictHead(self.head)
       if ('/' + key) not in self._head:
         # Quick return False, without having to parse.
         # TODO(pts): Special casing for /Length, we don't want to parse that.
@@ -1871,8 +1885,7 @@ class PdfObj(object):
       self.SerializeSimpleValue(value)  # just for the TypeError
     if self._cache is None:
       assert self._head is not None
-      assert self.head.startswith('<<') and self.head.endswith('>>'), (
-          'expected a dict or stream obj')
+      self._CheckDictHead(self.head)
       self._cache = self.ParseDict(self._head)
     if value is None:
       if key in self._cache:
