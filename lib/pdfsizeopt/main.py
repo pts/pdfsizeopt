@@ -873,9 +873,13 @@ class PdfObj(object):
   """Matches one or more PDF whitespace characters."""
 
   PDF_STREAM_OR_ENDOBJ_RE = re.compile(
-      r'(stream(?:\r\n|[\0\t\n\r\f ])|'
+      r'(stream(?:[\0\t\f ]*\r?\n|[\0\t\f ])|'
       r'endobj(?:\r\n|[\0\t\n\r\f /%]|\Z))')
-  """Matches stream or endobj in a PDF obj in .group(1)."""
+  """Matches stream or endobj in a PDF obj in .group(1).
+
+  pdf_reference_1-7.pdf requires stream\r?\n, we are more permissive.
+  Example: 2019-05-21-azure.pdf in https://github.com/pts/pdfsizeopt/issues/117
+  """
 
   PDF_PREFIXED_STREAM_OR_ENDOBJ_RE = re.compile(
       r'[\0\t\n\r\f \)>\]]' + PDF_STREAM_OR_ENDOBJ_RE.pattern)

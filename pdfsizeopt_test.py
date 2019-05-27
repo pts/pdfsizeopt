@@ -726,11 +726,26 @@ class PdfSizeOptTest(unittest.TestCase):
     # !!! TODO(pts): Fix bad numbers, all this to 0.
     obj = main.PdfObj('42 0 obj[. -. . .]endobj')
     self.assertEqual('[. -. . .]', obj.head)
+    expected_head = '<</Filter[/LZWDecode/ASCIIHexDecode]/Length 0>>'
+    # Syntax error, stream must be followed by a EOL according to
+    # pdf_reference_1-7.pdf.
+    self.assertRaisesX(main.PdfTokenParseError, main.PdfObj,
+                       '42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
+                       'stream%\nendstream endobj')
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
+                      'stream\nendstream endobj')
+    self.assertEqual(expected_head, obj.head)
+    # Not allowed by pdf_reference_1-7.pdf, we are permissive.
     obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
                       'stream endstream endobj')
-    self.assertEqual('<</Filter[/LZWDecode/ASCIIHexDecode]/Length 0>>',
-                     obj.head)
+    self.assertEqual(expected_head, obj.head)
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
+                      'stream\r\nendstream endobj')
+    self.assertEqual(expected_head, obj.head)
     self.assertEqual('', obj.stream)
+    obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 0>>'
+                      'stream \t\0\f \r\nendstream endobj')
+    self.assertEqual(expected_head, obj.head)
     obj = main.PdfObj('42 0 obj<</Filter [/LZW /AHx]/Length 42'
                       '/DecodeParms 43/Foo /Bar>>endobj')
     self.assertEqual('<</Foo/Bar>>', obj.head)
