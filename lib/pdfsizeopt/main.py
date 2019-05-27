@@ -1452,7 +1452,8 @@ class PdfObj(object):
             'expected endstream+endobj in obj %d at ofs=%s' %
             (obj_def_obj_num, file_ofs + stream_end_idx))
       LogWarning(
-          'incorrect /Length fixed for obj %d' % obj_def_obj_num)
+          'incorrect /Length fixed for obj %d: %d to %d' %
+          (obj_def_obj_num, stream_end_idx - stream_start_idx, match.end(1)))
       self.Set('Length', match.end(1))  # Trailing whitespace included.
       stream_end_idx = match.end(1) + stream_start_idx
       if end_ofs_out is not None:
