@@ -28,7 +28,7 @@ Send donations to the author of pdfsizeopt [via flattr](https://flattr.com/submi
   * [Error on Windows: The system cannot execute the specified command](#error-on-windows-the-system-cannot-execute-the-specified-command)
 - [More documentation](#more-documentation)
 
-<sub><Table of contents generated with <a href='http://ecotrust-canada.github.io/markdown-toc/'>markdown-toc</a></sub>
+<sub><em>Table of contents generated with <a href='http://ecotrust-canada.github.io/markdown-toc/'>markdown-toc</a></em></sub>
 
 
 ## Installation instructions and usage
