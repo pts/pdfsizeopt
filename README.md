@@ -2,9 +2,9 @@
 
 pdfsizeopt is a program for converting large PDF files to small ones. More specifically, pdfsizeopt is a free, cross-platform command-line application (for Linux, macOS, Windows and Unix) and a collection of best practices to optimize the size of PDF files, with focus on PDFs created from TeX and LaTeX documents. pdfsizeopt is written in Python, so it is a bit slow, but it offloads some of the heavy work to its faster (C, C++ and Java) dependencies. pdfsizeopt was developed on a Linux system, and it depends on existing tools such as Python 2.4, Ghostscript 8.50, jbig2enc (optional), sam2p, pngtopnm, pngout (optional), and the Multivalent PDF compressor (optional) written in Java.
 
-Doesn't pdfsizeopt work with your PDF? Report the issue here: <https://github.com/pts/pdfsizeopt/issues>
+Doesn't pdfsizeopt work with your PDF? Report the issue [here](https://github.com/pts/pdfsizeopt/issues)!
 
-Send donations to the author of pdfsizeopt: <https://flattr.com/submit/auto?user_id=pts&url=https://github.com/pts/pdfsizeopt>
+Send donations to the author of pdfsizeopt [via flattr](https://flattr.com/submit/auto?user_id=pts&url=https://github.com/pts/pdfsizeopt).
 
 ## Table of contents
 
@@ -22,13 +22,13 @@ Send donations to the author of pdfsizeopt: <https://flattr.com/submit/auto?user
   * [pdfsizeopt fails for some images](#pdfsizeopt-fails-for-some-images)
   * [pdfsizeopt is too slow processing images](#pdfsizeopt-is-too-slow-processing-images)
   * [pdfsizeopt fails without creating the output PDF](#pdfsizeopt-fails-without-creating-the-output-pdf)
-  * [The output PDF of pdfsizeopt doesn't look like the same as the input PDF](#the-output-pdf-of-pdfsizeopt-doesn-t-look-like-the-same-as-the-input-pdf)
+  * [The output PDF of pdfsizeopt doesn't look like the same as the input PDF](#the-output-pdf-of-pdfsizeopt-doesnt-look-like-the-same-as-the-input-pdf)
   * [pdfsizeopt is unable to find some input files on Windows](#pdfsizeopt-is-unable-to-find-some-input-files-on-windows)
-  * [Error on Windows: The application failed to initialize properly (`0xc0000034`). Click on OK to terminate the application](#error-on-windows--the-application-failed-to-initialize-properly---0xc0000034---click-on-ok-to-terminate-the-application)
-  * [Error on Windows: The system cannot execute the specified command](#error-on-windows--the-system-cannot-execute-the-specified-command)
+  * [Error on Windows: The application failed to initialize properly (`0xc0000034`). Click on OK to terminate the application](#error-on-windows-the-application-failed-to-initialize-properly-0xc0000034-click-on-ok-to-terminate-the-application
+  * [Error on Windows: The system cannot execute the specified command](#error-on-windows-the-system-cannot-execute-the-specified-command)
 - [More documentation](#more-documentation)
 
-<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
+<sub><Table of contents generated with <a href='http://ecotrust-canada.github.io/markdown-toc/'>markdown-toc</a></sub>
 
 
 ## Installation instructions and usage
