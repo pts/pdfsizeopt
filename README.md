@@ -24,7 +24,7 @@ Send donations to the author of pdfsizeopt [via flattr](https://flattr.com/submi
   * [pdfsizeopt fails without creating the output PDF](#pdfsizeopt-fails-without-creating-the-output-pdf)
   * [The output PDF of pdfsizeopt doesn't look like the same as the input PDF](#the-output-pdf-of-pdfsizeopt-doesnt-look-like-the-same-as-the-input-pdf)
   * [pdfsizeopt is unable to find some input files on Windows](#pdfsizeopt-is-unable-to-find-some-input-files-on-windows)
-  * [Error on Windows: The application failed to initialize properly (`0xc0000034`). Click on OK to terminate the application](#error-on-windows-the-application-failed-to-initialize-properly-0xc0000034-click-on-ok-to-terminate-the-application
+  * [Error on Windows: The application failed to initialize properly (`0xc0000034`). Click on OK to terminate the application](#error-on-windows-the-application-failed-to-initialize-properly-0xc0000034-click-on-ok-to-terminate-the-application)
   * [Error on Windows: The system cannot execute the specified command](#error-on-windows-the-system-cannot-execute-the-specified-command)
 - [More documentation](#more-documentation)
 
