@@ -43,7 +43,7 @@ a computer with Intel processor), the easiest way to try pdfsizeopt is
 borrowing a friend's computer with Linux or Windows, or renting a Linux VM
 in the cloud. The reason why it's difficult to run pdfsizeopt on your system
 is because pdfsizeopt has some required dependencies, some of them are old
-versions (e.g. Python 2.4--2.7, Ghostscript 8.50), so you'll have to compile
+versions (e.g. Python 2.4--2.7, Ghostscript 9.05), so you'll have to compile
 the right versions of the dependencies first, which may take several hours
 and lots of frustrating trial-and-error even for experienced hackers.
 
@@ -308,7 +308,7 @@ them from source.
 Installation instructions and usage on generic Unix
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Doing this is increasingly hard in 2023, because pdfsizeopt needs Python
-2.4--2.7 and Ghostscript 8.50, both very old, and thus hard to install to a
+2.4--2.7 and Ghostscript 9.05, both very old, and thus hard to install to a
 modern system.
 
 There is no installer, you need to run some commands in the command line
@@ -344,9 +344,9 @@ Dependencies:
 
 * Python (command: python). Version 2.4, 2.5, 2.6 and 2.7 work (3.x doesn't
   work).
-* Ghostscript (command: gs): Version 8.50 is known to work, and some early
-  9.x versions also work. The most recent versions don't work, especially
-  for font optimization.
+* Ghostscript (command: gs): Version 9.05 is recommended, 8.50 should also
+  work, and some early 9.x versions such as 9.14.1 also work. The most
+  recent versions don't work, especially for font optimization.
 * jbig2 (command: jbig2): Install from source:
   https://github.com/pts/pdfsizeopt-jbig2
   If you are unable to install, use pdfsizeopt --use-jbig2=no .
