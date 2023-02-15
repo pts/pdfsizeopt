@@ -35,7 +35,8 @@ Currently there is no easy way to to run pdfsizeopt on a modern Mac with
 Apple Silicon (ARM processor, e.g. M1 or M2 chip). The instructions without
 Docker below don't work. The instructions with Docker below don't work
 either, because Docker is not able to run 32-bit Intel programs on Apple
-Silicon.
+Silicon. See https://github.com/pts/pdfsizeopt/issues/154 for progress
+updates for Apple Silicon.
 
 If you are using an operating system other than Linux, Windows or macOS (on
 a computer with Intel processor), the easiest way to try pdfsizeopt is
