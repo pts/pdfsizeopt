@@ -241,12 +241,11 @@ Installation instructions and usage on macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 These instructions should work on Macs with macOS Catalina 10.15 or newer
 (including macOS Ventura 13), having a 64-bit ARM processor (Apple Silicon)
-or a 64-bit Intel x86 processor, but they are currently untested. If you have
-an older Mac running Mac OS X Leopard 10.5 -- macOS Mojave 10.14, follow the
-section ``Installaction instructions and usage on older macOS'' instead. The
-programs are compiled for 64-bit Intel x86 (x86_64, amd64) processors, and
-they work on 64-bit ARM processors as well, using the Rosetta 2 emulation in
-macOS.
+or a 64-bit Intel x86 processor. If you have an older Mac running Mac OS X
+Leopard 10.5 -- macOS Mojave 10.14, follow the section ``Installation
+instructions and usage on older macOS'' instead. The programs are compiled
+for 64-bit Intel x86 (x86_64, amd64) processors, and they work on 64-bit ARM
+processors as well, using the Rosetta 2 emulation in macOS.
 
 These instructions are not tested yet. See
 https://github.com/pts/pdfsizeopt/issues/154 for progress updates.
