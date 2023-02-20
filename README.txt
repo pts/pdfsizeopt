@@ -25,31 +25,32 @@ the following sections (``Installation instructions and usage on Linux'' or
 ``Installation instructions and usage on Windows''). It will take less than
 5 minutes.
 
-It's possible to install and run pdfsizeopt on a Mac with an Intel processor
-(x86, not the most modern Macs with an M1 or M2 chip). You need to install
-Docker first. After that, jump directly to the section
-``Installation instructions and usage with Docker on Linux and macOS''.
-That will take less than 5 minutes.
+It's easy to install and run pdfsizeopt on a Mac (both Intel x86 processors
+and ARM processors with Apple Silicon are supported). If you have such a
+system, jump directly to the section ``Installation instructions and usage
+on macOS'' (*not* using Docker). It will take less than 5 minutes.
 
-Currently there is no easy way to to run pdfsizeopt on a modern Mac with
-Apple Silicon (ARM processor, e.g. M1 or M2 chip). The instructions without
-Docker below don't work. The instructions with Docker below don't work
-either, because Docker is not able to run 32-bit Intel programs on Apple
-Silicon. See https://github.com/pts/pdfsizeopt/issues/154 for progress
-updates for Apple Silicon.
+Alternatively (but not recommended), it's possible to install and run
+pdfsizeopt on a Mac with an Intel processor (x86, not the most modern Macs
+with Apple Silicon (M1 or M2 chip)) or on a Linux system with an Intel
+processor. You need to install Docker first. After that, jump directly to
+the section ``Installation instructions and usage with Docker on Linux and
+macOS''. That will take less than 5 minutes.
 
 If you are using an operating system other than Linux, Windows or macOS (on
 a computer with Intel processor), the easiest way to try pdfsizeopt is
-borrowing a friend's computer with Linux or Windows, or renting a Linux VM
-in the cloud. The reason why it's difficult to run pdfsizeopt on your system
-is because pdfsizeopt has some required dependencies, some of them are old
-versions (e.g. Python 2.4--2.7, Ghostscript 9.05), so you'll have to compile
-the right versions of the dependencies first, which may take several hours
-and lots of frustrating trial-and-error even for experienced hackers.
+borrowing a friend's computer with Linux, Windows or macOS, or renting a
+Linux VM in the cloud. The reason why it's difficult to run pdfsizeopt on
+other kinds of systems is because pdfsizeopt has some required dependencies,
+some of them are old versions (e.g. Python 2.4--2.7, Ghostscript 9.05), so
+you'll have to compile the right versions of the dependencies first, which
+may take several hours and lots of frustrating trial-and-error even for
+experienced hackers.
 
 It's technically possible to port pdfsizeopt to other systems (and make it
 easy to install), but the author of pdfsizeopt doesn't have the free time to
-create and maintain such a port.
+create and maintain such a port. As an FYI, see
+https://github.com/pts/pdfsizeopt/issues/154 about porting to Apple Silicon.
 
 Installation instructions and usage on Linux
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -176,9 +177,19 @@ running it natively (as a Linux or Unix program).
 
 Installation instructions and usage with Docker on Linux and macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-These instructions work on a computer with an x86 processor (i.e. not Apple
-Silicon) only. For macOS, the macOS version doesn't matter: any macOS 10.5
-or later (with Docker installed) should work.
+These instructions work on a computer with an Interl x86 processor only.
+(Thus they don't work on Apple Silicon with the M1 or M2 or newer chips.)
+For macOS, the macOS version doesn't matter: any Mac OS X Leopard 10.5 or
+later (with Docker installed) should work.
+
+For Apple Silicon, follow the section ``Installation instructions and usage
+on macOS'' instead. The reason why these instructions don't work with Apple
+Silicon is that that Macs with Apple Silicon can run Linux 64-bit ARM and
+64-bit Intel (x86_64, amd64) code within Docker, but they aren't able to run
+Linux 32-bit Intel (i386) code within Docker, and the Docker image
+ptspts/pdfsizeopt contains such code (32-bit Intel). To fix it in the
+future, the ptspts/pdfsizeopt64 Docker image should be created with 64-bit
+Intel code.
 
 There is no installer, you need to run some commands in the command line to
 download and install. pdfsizeopt is a command-line only application, there
@@ -228,19 +239,28 @@ commands above. Example:
 
 Installation instructions and usage on macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-These instructions work only on an old macOS (macOS Mojave 10.14 or
-earlier), because they use 32-bit x86 programs.
+These instructions should work on Macs with macOS Catalina 10.15 or newer
+(including macOS Ventura 13), having a 64-bit ARM processor (Apple Silicon)
+or a 64-bit Intel x86 processor, but they are currently untested. If you have
+an older Mac running Mac OS X Leopard 10.5 -- macOS Mojave 10.14, follow the
+section ``Installaction instructions and usage on older macOS'' instead. The
+programs are compiled for 64-bit Intel x86 (x86_64, amd64) processors, and
+they work on 64-bit ARM processors as well, using the Rosetta 2 emulation in
+macOS.
+
+These instructions are not tested yet. See
+https://github.com/pts/pdfsizeopt/issues/154 for progress updates.
 
 There is no installer, you need to run some commands in the command line to
 download and install. pdfsizeopt is a command-line only application, there
 is no GUI.
 
-To install pdfsizeopt on a macOS system (with architecture i386 or amd64),
-open a terminal window and run these commands (without the leading `$'):
+To install pdfsizeopt on a macOS system, open a terminal window and run
+these commands (without the leading `$'):
 
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-02-20/pdfsizeopt_libexec_darwinc64-v2.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
   $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
@@ -269,6 +289,72 @@ Also, if you have an 32-bit Mac, then the pngout bundled with pdfsizeopt
 won't work (because it needs a 64-bit Mac), so you have to force
 --use-pngout=no . See the section ``Image optimizers'' for alternatives of
 pngout.
+
+pdfsizeopt creates lots of temporary files (psotmp.*) in the output
+directory, but it also cleans up after itself.
+
+It's possible to optimize a PDF outside the current directory. To do that,
+specify the pathname (including the directory name) in the command-line.
+
+Please note that the commands above download most dependencies (including
+Ghostscript, but excluding Python) as well. Everything should work as
+instructed above, out of the box. If you are experiencing problems, please
+report an issue on https://github.com/pts/pdfsizeopt/issues .
+
+To avoid typing ~/pdfsizeopt/pdfsizeopt, add "$HOME/pdfsizeopt" to your PATH
+(probably in your ~/.bashrc), open a new terminal window, and the
+command pdfsizeopt will work from any directory.
+
+You can also put pdfsizeopt to a directory other than ~/pdfsizeopt , as you
+like.
+
+Installation instructions and usage on older macOS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+These instructions should work on older Macs running Mac OS X Leopard 10.5
+-- macOS Mojave 10.14, and having a 32-bit or 64-bit Intel processor. The
+programs are compiled for 32-bit Intel x86 (i386) processor (and also work
+on a 64-bit Intel processor with macOS Mojave 10.14 or earlier), except for
+the pngout tool, which needs Mac OS X Snow Leopard 10.6 and a 64-bit Intel
+processor.
+
+There is no installer, you need to run some commands in the command line to
+download and install. pdfsizeopt is a command-line only application, there
+is no GUI.
+
+To install pdfsizeopt on an older macOS system, open a terminal window and
+run these commands (without the leading `$'):
+
+  $ mkdir ~/pdfsizeopt
+  $ cd ~/pdfsizeopt
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-09-03d/pdfsizeopt_libexec_darwin-v1.tar.gz
+  $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
+  $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
+  $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  $ chmod +x pdfsizeopt.single
+  $ ln -s pdfsizeopt.single pdfsizeopt
+
+Do a test optimization run, which exercises all dependencies of pdfsizeopt:
+
+  $ curl -L -o deptest.pdf https://github.com/pts/pdfsizeopt/raw/master/deptest/deptest.pdf
+  $ ~/pdfsizeopt/pdfsizeopt deptest.pdf
+
+... and open (view) deptest.pdf and the corresponding optimized
+deptest.pso.pdf .
+
+To optimize a PDF, run the following command:
+
+  ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
+
+If the input PDF has many images or large images, pdfsizeopt can be very
+slow. You can speed it up by disabling pngout, the slowest image optimization
+method, like this:
+
+  ~/pdfsizeopt/pdfsizeopt --use-pngout=no input.pdf output.pdf
+
+Also, if you have a Mac with a 32-bit Intel x86 processor, then the pngout
+bundled with pdfsizeopt won't work (because it needs a 64-bit processor), so
+you have to force --use-pngout=no . See the section ``Image optimizers'' for
+alternatives of pngout.
 
 pdfsizeopt creates lots of temporary files (psotmp.*) in the output
 directory, but it also cleans up after itself.
