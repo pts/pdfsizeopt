@@ -239,16 +239,12 @@ commands above. Example:
 
 Installation instructions and usage on macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-These instructions should work on Macs with macOS Catalina 10.15 -- macOS
-Bug Sur 11, having a 64-bit ARM processor (Apple Silicon) or a 64-bit Intel
-x86 processor. They currently don't work on macOS Monterey 12, macOS Ventura
-13 or newer, because these versions of macOS don't contain Python 2.7. In a
-future update, a copy of Python 2.7 will be included as part of pdfsizeopt, and thus
-pdfsizeopt will work on newer Macs as well.
-
-The programs are compiled for 64-bit Intel x86 (x86_64, amd64) processors,
-and they work on 64-bit ARM processors as well, using the Rosetta 2
-emulation in macOS.
+These instructions should work on Macs with macOS Catalina 10.15 (and even
+older, maybe macOS Snow Leopard 10.6) -- macOS Ventura 13 (and even newer),
+having a 64-bit ARM processor (Apple Silicon) or a 64-bit Intel x86
+processor. The programs are compiled for 64-bit Intel x86 (x86_64, amd64)
+processors, and they work on 64-bit ARM processors as well, using the
+Rosetta 2 emulation in macOS.
 
 If you have an older Mac running Mac OS X Leopard 10.5 -- macOS Mojave
 10.14, follow the section ``Installation instructions and usage on older
@@ -266,7 +262,7 @@ these commands (without the leading `$'):
 
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-02-20/pdfsizeopt_libexec_darwinc64-v2.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-02-20/pdfsizeopt_libexec_darwinc64-v3.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
   $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
