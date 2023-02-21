@@ -6,7 +6,7 @@ set -ex
 cd "${0%/*}"
 test -f ../pdfsizeopt.single
 if ! test -f pdfsizeopt_libexec_linux.tar.gz; then
-  wget -nv -O pdfsizeopt_libexec_linux.tar.gz.tmp https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_linux-v3.tar.gz
+  wget -nv -O pdfsizeopt_libexec_linux.tar.gz.tmp https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_linux-v4.tar.gz
   rm -f pdfsizeopt_libexec_linux.tar.gz
   mv pdfsizeopt_libexec_linux.tar.gz.tmp pdfsizeopt_libexec_linux.tar.gz
 fi

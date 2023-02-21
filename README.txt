@@ -30,12 +30,12 @@ and ARM processors with Apple Silicon are supported). If you have such a
 system, jump directly to the section ``Installation instructions and usage
 on macOS'' (*not* using Docker). It will take less than 5 minutes.
 
-Alternatively (but not recommended), it's possible to install and run
-pdfsizeopt on a Mac with an Intel processor (x86, not the most modern Macs
-with Apple Silicon (M1 or M2 chip)) or on a Linux system with an Intel
-processor. You need to install Docker first. After that, jump directly to
-the section ``Installation instructions and usage with Docker on Linux and
-macOS''. That will take less than 5 minutes.
+Alternatively (but not recommended because it's slower), it's possible to
+run pdfsizeopt within Docker on the following systems: Linux amd64, macOS
+64-bit Intel x86 (amd64, x86_64), macOS 64-bit ARM (Apple Silicon, e.g. M1
+or M2 chip). After that, jump directly to the section ``Installation
+instructions and usage with Docker on Linux and macOS''. That last step will
+take less than 5 minutes.
 
 If you are using an operating system other than Linux, Windows or macOS (on
 a computer with Intel processor), the easiest way to try pdfsizeopt is
@@ -63,7 +63,7 @@ open a terminal window and run these commands (without the leading `$'):
 
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_linux-v3.tar.gz
+  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-02-21/pdfsizeopt_libexec_linux-v4.tar.gz
   $ tar xzvf pdfsizeopt_libexec_linux.tar.gz
   $ rm -f    pdfsizeopt_libexec_linux.tar.gz
   $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
@@ -177,25 +177,41 @@ running it natively (as a Linux or Unix program).
 
 Installation instructions and usage with Docker on Linux and macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-These instructions work on a computer with an Interl x86 processor only.
-(Thus they don't work on Apple Silicon with the M1 or M2 or newer chips.)
-For macOS, the macOS version doesn't matter: any Mac OS X Leopard 10.5 or
-later (with Docker installed) should work.
+These instructions work on the following systems: Linux amd64, macOS 64-bit
+Intel x86 (amd64, x86_64), macOS 64-bit ARM (Apple Silicon, e.g. M1 or M2
+chip). The version of Linux or macOS doesn't matter (old systems such as
+macOS Leopard 10.5 also work), as long as it has Docker installed and
+working.
 
-For Apple Silicon, follow the section ``Installation instructions and usage
-on macOS'' instead. The reason why these instructions don't work with Apple
-Silicon is that that Macs with Apple Silicon can run Linux 64-bit ARM and
-64-bit Intel (x86_64, amd64) code within Docker, but they aren't able to run
-Linux 32-bit Intel (i386) code within Docker, and the Docker image
-ptspts/pdfsizeopt contains such code (32-bit Intel). To fix it in the
-future, the ptspts/pdfsizeopt64 Docker image should be created with 64-bit
-Intel code.
+The programs in the Docker image ptspts/pdfsizeopt are compiled for Linux
+i386 (32-bit Intel x86), and these binaries happen to work in all platforms
+mentioned above, even with Apple Silicon. (Tested on 2023-02-21.)
 
 There is no installer, you need to run some commands in the command line to
 download and install. pdfsizeopt is a command-line only application, there
 is no GUI.
 
-To optimize a PDF, install Docker, and then run this command:
+First, check that you have Docker installed properly by running this
+command and checking for the OK at the end:
+
+  docker version && echo OK
+
+If you don't get OK, then refere to the Docker installation instructions.
+
+Do a test optimization run, which exercises all dependencies of pdfsizeopt:
+
+  curl -L -o deptest.pdf https://github.com/pts/pdfsizeopt/raw/master/deptest/deptest.pdf
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt deptest.pdf
+
+If you get a (harmless) warning message like
+
+  WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+
+, and you don't want to get it again, then add `--platform linux/amd64' after the `-it':
+
+  docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it --platform linux/amd64 ptspts/pdfsizeopt pdfsizeopt deptest.pdf
+
+To optimize a PDF, run this command:
 
   docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt pdfsizeopt input.pdf output.pdf
 
@@ -221,17 +237,16 @@ window, and now this command will also work to optimize a PDF:
   pdfsizeopt input.pdf output.pdf
 
 Please note that the ptspts/pdfsizeopt Docker image is updated very rarely.
-To use a more up-to-date version, run these commands to download (without
-the leading `$'):
+To use a more up-to-date version of pdfsizeopt, run these commands to download:
 
-  wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+  curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
   chmod +x pdfsizeopt.single
 
 Then run this command to optimize a PDF:
 
   docker run -v "$PWD:/workdir" -u "$(id -u):$(id -g)" --rm -it ptspts/pdfsizeopt ./pdfsizeopt.single --use-pngout=no input.pdf output.pdf
 
-If you want to have extra image optimizers included, use
+If you want to have extra image optimizers included on Linux, use
 ptspts/pdfsizeopt-with-extraimgopt instead of ptspts/pdfsizeopt in the
 commands above. Example:
 

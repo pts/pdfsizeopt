@@ -17,7 +17,7 @@ ADD busybox /bin/
 RUN ["busybox", "ln", "-s", "/", "/usr"]
 RUN ["busybox", "--install", "-s"]
 
-ADD pdfsizeopt_libexec/gs pdfsizeopt_libexec/jbig2 pdfsizeopt_libexec/png22pnm pdfsizeopt_libexec/sam2p pdfsizeopt_libexec/pngout pdfsizeopt_libexec/python /bin/
+ADD pdfsizeopt_libexec/gs pdfsizeopt_libexec/jbig2 pdfsizeopt_libexec/sam2p pdfsizeopt_libexec/pngout pdfsizeopt_libexec/python /bin/
 #RUN cd /bin && chmod 755 gs jbig2 png22pnm sam2p pngout python
 # Run this ADD last, to improve caching.
 ADD pdfsizeopt.single /bin/pdfsizeopt
