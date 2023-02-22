@@ -254,12 +254,14 @@ commands above. Example:
 
 Installation instructions and usage on macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-These instructions should work on Macs with macOS Catalina 10.15 (and even
+These instructions work on Macs with macOS Catalina 10.15 (and even
 older, maybe macOS Snow Leopard 10.6) -- macOS Ventura 13 (and even newer),
 having a 64-bit ARM processor (Apple Silicon) or a 64-bit Intel x86
-processor. The programs are compiled for 64-bit Intel x86 (x86_64, amd64)
+(x86_64, amd64) processor. The programs are compiled for 64-bit Intel x86
 processors, and they work on 64-bit ARM processors as well, using the
-Rosetta 2 emulation in macOS.
+Rosetta 2 emulation in macOS. These instructions were tested and known to
+work on macOS Ventura 13.3, both with 64-bit Intel x86 (x86_64, amd64)
+processor and Apple Silicon (ARM processor).
 
 If you have an older Mac running Mac OS X Leopard 10.5 -- macOS Mojave
 10.14, follow the section ``Installation instructions and usage on older
@@ -328,11 +330,11 @@ like.
 Installation instructions and usage on older macOS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 These instructions should work on older Macs running Mac OS X Leopard 10.5
--- macOS Mojave 10.14, and having a 32-bit or 64-bit Intel processor. The
+-- macOS Mojave 10.14, and having a 32-bit or 64-bit Intel x86 processor. The
 programs are compiled for 32-bit Intel x86 (i386) processor (and also work
 on a 64-bit Intel processor with macOS Mojave 10.14 or earlier), except for
-the pngout tool, which needs Mac OS X Snow Leopard 10.6 and a 64-bit Intel
-processor.
+the pngout tool, which needs at least Mac OS X Snow Leopard 10.6 and a
+64-bit Intel processor.
 
 There is no installer, you need to run some commands in the command line to
 download and install. pdfsizeopt is a command-line only application, there
