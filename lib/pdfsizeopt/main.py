@@ -726,7 +726,7 @@ def PermissiveZlibDecompress(data):
     # This works if the ADLER32 is truncated, but it raises zlib.error on any
     # other error.
     uncompressed = zlib.decompressobj().decompress(data)
-    adler32_data = struct.pack('>L', zlib.adler32(uncompressed))
+    adler32_data = struct.pack('>l', zlib.adler32(uncompressed))
     try:
       return zlib.decompress(data + adler32_data[3:])
     except zlib.error:
