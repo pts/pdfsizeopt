@@ -1255,13 +1255,13 @@ class PdfObj(object):
   """Matches a single comment line without a terminator."""
 
   PDF_SIMPLE2_REF_RE = re.compile(r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+R\b')
-  """Matches `<obj> 0 R', not allowing comments.
+  """Matches `<obj> <gen> R', not allowing comments.
 
   TODO(pts): Remove this, in favor of PDF_SIMPLE_REF_RE.
   """
 
-  PDF_SIMPLE_REF_RE = re.compile(r'([-+]?\d+) 0 R\b')
-  """Matches an <x> 0 R, separated by a single space."""
+  PDF_SIMPLE_REF_RE = re.compile(r'([-+]?\d+) \d+ R\b')
+  """Matches an <obj> <gen> R, separated by a single space."""
 
   PDF_HEX_STRING_OR_DICT_RE = re.compile(r'<<|<(?!<)([^>]*)>')
   """Matches a hex string or <<."""
