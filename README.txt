@@ -196,7 +196,30 @@ command and checking for the OK at the end:
 
   docker version && echo OK
 
-If you don't get OK, then refere to the Docker installation instructions.
+If you don't get OK, because the `docker' command was not found, then Docker
+is not installed to your computer. Installation instructions (on 2023-02-22):
+
+* To install Docker on Linux, you have two options: Docker Engine
+  (https://docs.docker.com/engine/install/ , within the Server section) or
+  Docker Desktop (https://docs.docker.com/desktop/install/linux-install/). Any
+  of them would work.
+
+* To install Docker on macOS, install Docker Desktop
+  (https://docs.docker.com/desktop/install/mac-install/).
+
+  Then (on macOS), add the `docker' command to your PATH by running the
+  following command (copy-paste it, don't type, to avoid typos):
+
+    (echo; echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"') >>~/.profile
+
+  Then (on macOS), close the Terminal app, and open it again (so that
+  changes to ~/.profile take effect).
+
+* After the installation, retry the `docker version' command above.
+
+Remove any previous Docker images of pdfsizeopt:
+
+  docker image rm ptspts/pdfsizeopt
 
 Do a test optimization run, which exercises all dependencies of pdfsizeopt:
 
