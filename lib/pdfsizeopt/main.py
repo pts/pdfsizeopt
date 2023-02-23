@@ -9455,7 +9455,10 @@ def SetupTmpPrefix(output_file_name, tmp_dir):
     else:
       tmp_dir = os.getenv('TMPDIR', '')
     if not (tmp_dir and os.path.isdir(tmp_dir)):
-      tmp_dir = os.path.dirname(output_file_name)
+      if output_file_name:
+        tmp_dir = os.path.dirname(output_file_name)
+      else:
+        tmp_dir = '.'
   tmp_basename = 'psotmp.%d.' % os.getpid()
   if tmp_dir == '.':
     TMP_PREFIX = tmp_basename
@@ -9663,6 +9666,9 @@ def main(argv, script_dir=None, zip_file=None):
     PrependToPath(used_script_dir)  # ... otherwise, find them in script dir.
   del used_script_dir  # Make sure it's not used.
 
+  # Call it before the first call to GetGsCommand(...).
+  SetupTmpPrefix(output_file_name, f.tmp_dir)
+
   if f.do_debug_gs:
     LogInfo('PATH: %s' % os.getenv('PATH', ''))
     LogInfo('getcwd: %s' % os.getcwd())
@@ -9706,7 +9712,6 @@ def main(argv, script_dir=None, zip_file=None):
 
   if output_file_name is None:  # Just --do-debug-gs=yes.
     return
-  SetupTmpPrefix(output_file_name, f.tmp_dir)
 
   # It's OK that file_name == output_file_name: we don't read and write them
   # at the same time.
