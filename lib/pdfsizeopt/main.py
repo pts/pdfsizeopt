@@ -4776,7 +4776,7 @@ class PdfData(object):
 
   @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
-                           xref_ofs, xref_obj_num, xref_generation, obj_starts=None):
+                           xref_ofs, xref_obj_num, xref_generation, obj_starts=None, do_allow_duplicate_obj=False):
     """Determine obj offsets in a PDF file using the cross-reference stream.
 
     Args:
@@ -4835,7 +4835,8 @@ class PdfData(object):
             if f0 == 2:
               compressed_objects_to_ignore.add((obj_num, f1))
             continue  # Ignore this entry, obj defined in higher xref stream.
-          raise PdfXrefStreamError('duplicate obj %d' % obj_num)
+          if not do_allow_duplicate_obj:
+            raise PdfXrefStreamError('duplicate obj %d' % obj_num)
         if f0 == 1:  # f1 is the object offset in the file.
           if f2:
             if not do_ignore_generation_numbers:
@@ -5132,7 +5133,7 @@ class PdfData(object):
       for xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation in xrefstm_objs:
         obj_starts_copy = dict(obj_starts)
         # Updates obj_starts, changes obj_starts['trailer'] to a PdfObj.
-        cls.ParseUsingXrefStream(data, do_ignore_generation_numbers, xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation, obj_starts_copy)
+        cls.ParseUsingXrefStream(data, do_ignore_generation_numbers, xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation, obj_starts_copy, do_allow_duplicate_obj=True)
         for obj_num, obj_ofs in obj_starts_copy.iteritems():
           if obj_num not in obj_start_nums:
             obj_starts[obj_num] = obj_ofs
