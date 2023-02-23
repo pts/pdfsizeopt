@@ -2014,7 +2014,6 @@ class PdfObj(object):
     trailer_obj = PdfObj(None)
     trailer_obj.head, _ = cls.ParseTokensToSafe(
         data, start=start, end_ofs_out=end_ofs_out, do_expect_startxref=True)
-    trailer_obj.Set('XRefStm', None)
     # We don't remove 'Prev' here, the caller might be interested.
     return trailer_obj
 
@@ -4637,6 +4636,7 @@ class PdfData(object):
         obj_starts.pop('xref', None)
       else:
         self.trailer = PdfObj.ParseTrailer(data, start=trailer_ofs)
+        self.trailer.Set('XRefStm', None)
         self.trailer.Set('Prev', None)
         if 'xref' in obj_starts:
           last_ofs = min(trailer_ofs, obj_starts.pop('xref'))
@@ -4776,7 +4776,7 @@ class PdfData(object):
 
   @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
-                           xref_ofs, xref_obj_num, xref_generation):
+                           xref_ofs, xref_obj_num, xref_generation, obj_starts=None):
     """Determine obj offsets in a PDF file using the cross-reference stream.
 
     Args:
@@ -4795,8 +4795,9 @@ class PdfData(object):
     """
     has_generational_objs = False
     # Parse the cross-reference stream (xref stream).
-    # Maps object numbers to offset or (objstm_obj_num, index) values.
-    obj_starts = {'xref': xref_ofs}  # 'xref' is just informational.
+    if obj_starts is None:
+      # Maps object numbers to offset or (objstm_obj_num, index) values.
+      obj_starts = {'xref': xref_ofs}  # 'xref' is just informational.
     # Maps /Type/ObjStm object numbers to compressed_obj_headbufs, or
     # None if that object stream is not loaded yet.
     obj_streams = {}
@@ -4893,7 +4894,7 @@ class PdfData(object):
     assert trailer_obj
     LogProportionalInfo(
         'found %d obj offsets and %d obj streams in xref stream' %
-        (len(obj_starts) - 1,  # `- 1' for the key 'xref' itself.
+        (len(obj_starts) - ('xref' in obj_starts) - ('trailer' in obj_starts),
          len(obj_streams)))
     max_obj_num = None
     for xref_obj_num in sorted(xref_obj_nums):
@@ -4901,7 +4902,7 @@ class PdfData(object):
       if obj_start is None:
         if max_obj_num is None:
           max_obj_num = max(
-              (obj_num != 'xref' and obj_num or 0) for obj_num in obj_starts)
+              (obj_num != 'xref' and obj_num != 'trailer' and obj_num or 0) for obj_num in obj_starts)
         if xref_obj_num != max_obj_num + 1:
           # pgfmanual.pdf in
           # https://code.google.com/p/pdfsizeopt/issues/detail?id=75
@@ -5032,6 +5033,7 @@ class PdfData(object):
     obj_starts_rev = {}
     # Set of object numbers not to be overwritten.
     keep_obj_nums = set()
+    xrefstm_objs = []
     _xref_re = PdfObj.PDF_XREF_SUBSECTION_OR_TRAILER_RE
     _xref_section_re = PdfObj.PDF_XREF_SECTION_RE
     _xref_entry_re = PdfObj.PDF_XREF_ENTRY_RE
@@ -5087,6 +5089,7 @@ class PdfData(object):
               obj_starts_rev[obj_ofs] = obj_num
               # TODO(pts): Check that we match PdfObj.OBJ_DEF_RE at obj_ofs.
               obj_starts[obj_num] = obj_ofs
+          # TODO(pts): Process deleted objects since /Prev.
           obj_num += 1
           obj_count -= 1
           xref_ofs += 20
@@ -5099,17 +5102,40 @@ class PdfData(object):
 
       # TODO(pts): How to test this?
       try:
-        xref_ofs = PdfObj.ParseTrailer(data, start=xref_ofs).Get('Prev')
+        trailer_obj = PdfObj.ParseTrailer(data, start=xref_ofs)
       except PdfTokenParseError, exc:
         raise PdfXrefError(str(exc))
+      xrefstm_ofs = trailer_obj.Get('XRefStm')
+      if xrefstm_ofs is not None:  # Hybrid.
+        if type(xrefstm_ofs) not in (int, long):
+          raise PdfXrefError('/XRefStm offset not an int: %r' % (xrefstm_ofs,))
+        match = PdfObj.PDF_OBJ_DEF_RE.match(data, xrefstm_ofs)
+        if not match:
+          raise PdfXrefStreamError('/XRefStm obj definition expected at %d' % xrefstm_ofs)
+        xrefstm_obj_num = int(match.group(1))
+        xrefstm_obj_generation = int(match.group(2))
+        xrefstm_objs.append((xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation))
+      xref_ofs = trailer_obj.Get('Prev')
+      del trailer_obj  # Save memory.
       if xref_ofs is None:
         break
-      if not isinstance(xref_ofs, int) and not isinstance(xref_ofs, long):
-        raise PdfXrefError('/Prev xref offset not an int: %r' % xref_ofs)
+      if type(xref_ofs) not in (int, long):
+        raise PdfXrefError('/Prev xref offset not an int: %r' % (xref_ofs,))
       # Subsequent /Prev xref tables are not allowed to modify objects
       # we've already created.
       # for testing: obj 5 in bfilter.pdf
       keep_obj_nums.update(obj_starts)
+    if xrefstm_objs:
+      obj_start_nums = set(obj_starts)
+      obj_start_nums.add('trailer')
+      obj_start_nums.add('xref')
+      for xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation in xrefstm_objs:
+        obj_starts_copy = dict(obj_starts)
+        # Updates obj_starts, changes obj_starts['trailer'] to a PdfObj.
+        cls.ParseUsingXrefStream(data, do_ignore_generation_numbers, xrefstm_ofs, xrefstm_obj_num, xrefstm_obj_generation, obj_starts_copy)
+        for obj_num, obj_ofs in obj_starts_copy.iteritems():
+          if obj_num not in obj_start_nums:
+            obj_starts[obj_num] = obj_ofs
     return obj_starts, has_generational_objs
 
   @classmethod
@@ -8404,10 +8430,11 @@ class PdfData(object):
         # TODO(pts): What if there are multiple trailers (linearized)?
         self.trailer = PdfObj.ParseTrailer(
             data, start=i, end_ofs_out=end_ofs_out)
+        self.trailer.Set('XRefStm', None)
+        self.trailer.Set('Prev', None)
         if self.trailer.Get('Type') is not None:
           raise PdfTokenParseError(
               'unexpected trailer obj type: %s' % self.trailer.Get('Type'))
-        self.trailer.Set('Prev', None)  # Why?
         i = end_ofs_out[-1]
         if data[i : i + 1] in ws:
           i += 1
