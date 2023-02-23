@@ -7746,8 +7746,10 @@ class PdfData(object):
           assert oi_image.height == obj_height
           assert oi_image.compression == 'zip-png'
           assert not oi_image.is_interlaced
-          assert oi_image.bpc == np_image_bpc
-          assert oi_image.color_type == np_image_color_type
+          # These may not match: e.g. oi_image (sam2p_pr) is Indexed4,
+          # np_image is Rgb1 (non-standard PNG activated by -pdf:2).
+          if oi_image.color_type == np_image_color_type:
+            assert oi_image.bpc == np_image_bpc, (oi_image.bpc, np_image_bpc)
 
           # !! add /FlateEncode again to all obj_images to find the smallest
           #    (maybe to UpdatePdfObj)
