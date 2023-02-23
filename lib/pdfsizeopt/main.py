@@ -7298,7 +7298,10 @@ class PdfData(object):
           force_grayscale_obj_nums.add(int(match.group(1)))
 
       if obj.Get('Type') is not None:
-        if obj.Get('Type') != '/XObject':
+        # /Xobject is nonstandard, but some PDF files have it (see
+        # /https://github.com/pts/pdfsizeopt/issues/133), and pdfimages
+        # /seems to be ignoring it:
+        if obj.Get('Type') not in ('/XObject', '/Xobject'):
           continue  # Something is wrong with this object, don't touch it.
         obj.Set('Type', None)  # Remove explicit default.
 
