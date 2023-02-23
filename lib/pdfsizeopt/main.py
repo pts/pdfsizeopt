@@ -5011,8 +5011,8 @@ class PdfData(object):
     # https://github.com/pts/pdfsizeopt/issues/80
     # Example: https://github.com/pts/pdfsizeopt/issues/86
     for match in PdfObj.PDF_STARTXREF_EOF_RE.finditer(data[-400:]):
-      break
-    else:
+      pass  # Find the last math.
+    if match is None:
       raise PdfXrefError('startxref+%%EOF not found')
     xref_ofs = int(match.group(1))
     match = PdfObj.PDF_OBJ_DEF_RE.match(data, xref_ofs)
