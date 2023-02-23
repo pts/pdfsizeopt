@@ -1,12 +1,13 @@
 # README for pdfsizeopt
 
-pdfsizeopt is a program for converting large PDF files to small ones. More
-specifically, pdfsizeopt is a free, cross-platform command-line application
-(for Linux, Windows, macOS and Unix) and a collection of best practices
-to optimize the size of PDF files, with focus on PDFs created from TeX and
-LaTeX documents. pdfsizeopt is written in Python, so it is a bit slow, but
-it offloads some of the heavy work to its faster (C, C++ and Java)
-dependencies.
+pdfsizeopt is a program for converting large PDF files to small ones,
+without decreasing visual quality or removing interactive features (such as
+hyperlinks). More specifically, pdfsizeopt is a free, cross-platform
+command-line application (for Linux, Windows, macOS and Unix) and a
+collection of best practices to optimize the size of PDF files, with focus
+on PDFs created from TeX and LaTeX documents. pdfsizeopt is written in
+Python, so it is a bit slow, but it offloads some of the heavy work to its
+faster (C, C++ and Java) dependencies.
 
 Doesn't pdfsizeopt work with your PDF?
 Report the issue here: https://github.com/pts/pdfsizeopt/issues
