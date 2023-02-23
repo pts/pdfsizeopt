@@ -7277,6 +7277,7 @@ class PdfData(object):
     # Maps obj_nums (to be modified) to obj_nums (to be modified to).
     modify_obj_nums = {}
     force_grayscale_obj_nums = set()
+    removed_entries = {}
     for obj_num in sorted(self.objs):
       obj = self.objs[obj_num]
       if (not obj.head.startswith('<<') or '/Image' not in obj.head or
@@ -7432,6 +7433,19 @@ class PdfData(object):
                       r'/Device(?:RGB|Gray)[\0\t\n\r\f (<\[/])', colorspace):
         continue
 
+      # These entries may contain references we don't want to resolve
+      # (especially /Metadata and /SMask). Also we don't want to pass these
+      # entries to GhostScript with RenderImages.
+      #
+      # TODO(pts): Can we remove /Metadata from images and Type 1 fonts?
+      for name in ('Metadata', 'SMask', 'Name', 'Intent'):
+        value = obj.Get(name)
+        if value is not None:
+          if obj_num not in removed_entries:
+            removed_entries[obj_num] = {}
+          removed_entries[obj_num][name] = value
+          obj.Set(name, None)
+
       # We've already called ResolveReferences on /Filter, /BitsPerComponent,
       # /ColorSpace, /Width, /Height, /Decode, /DecodeParms, /ImageMask.
       #
@@ -7439,6 +7453,7 @@ class PdfData(object):
       # !!! TODO(pts): Do proper PDF token sequence parsing, for example what if
       #                the /ColorSpace palette accidentally matches the regexp?
       # !! TODO(pts): Allow references in image fields we don't care about.
+      #               We can't whitelist everything because of
       #               Especially with RenderImages for Ghostscript.
       if 'R' in obj.head and PdfObj.PDF_REF_RE.search(obj.head):
         continue
@@ -7903,6 +7918,10 @@ class PdfData(object):
 
     for obj_num in modify_obj_nums:
       self.objs[obj_num] = PdfObj(self.objs[modify_obj_nums[obj_num]])
+    for obj_num in removed_entries:
+      obj = self.objs[obj_num]
+      for name, value in removed_entries[obj_num].iteritems():
+        obj.Set(name, value)
 
     return self
 
