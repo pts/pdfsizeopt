@@ -936,7 +936,7 @@ class PdfObj(object):
   """Matches any number (>= 1) of terminated comments and whitespace."""
 
   PDF_JUST_OBJ_DEF_RE = re.compile(
-      r'(\d+)[\0\t\n\r\f ](\d+)[\0\t\n\r\f ]+obj'
+      r'(\d+)[\0\t\n\r\f ]+(\d+)[\0\t\n\r\f ]+obj'
       r'(?=[\0\t\n\r\f %/<\[({])')
   """Matches an `obj' definition without leading or trailing whitespace."""
 
