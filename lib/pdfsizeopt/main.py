@@ -4735,6 +4735,46 @@ class PdfData(object):
       raise PdfFileEncryptedError
 
   @classmethod
+  def YieldXrefStreamEntries(cls, w0, w1, w2, index, xref_data):
+    w01 = w0 + w1
+    w012 = w01 + w2
+    ii = 0
+    obj_num = None
+    ii_remaining = 0
+    for i in xrange(0, len(xref_data), w012):
+      if not ii_remaining:
+        # PdfObj.GetAndClearXrefStream() guarantees that we get a positive
+        # ii_remaining and we don't exhaust the index array below.
+        if ii >= len(index):
+          raise PdfXrefStreamError(
+              'Index too large: ii=%d index_size=%d' % (ii, len(index)))
+        if obj_num is not None and index[ii] <= obj_num:
+          # TODO(pts): Check in xref_obj.GetAndClearXrefStream() instead.
+          raise PdfXrefStreamError(
+              'Sections within an xref stream not increasing: '
+              'old_obj_num=%d new_obj_num=%d' %
+              (obj_num, index[ii]))
+        obj_num = index[ii]
+        ii_remaining = index[ii + 1] - 1
+        assert ii_remaining >= 0
+        ii += 2
+      else:
+        obj_num += 1
+        ii_remaining -= 1
+      if w0:
+        f0 = cls.MSBFirstToInteger(xref_data[i : i + w0])
+      else:
+        f0 = 1
+      f1 = cls.MSBFirstToInteger(xref_data[i + w0 : i + w01])
+      if w2:
+        f2 = cls.MSBFirstToInteger(xref_data[i + w01 : i + w012])
+      else:
+        f2 = 0
+      if not f0:  # A free object, ignore it.
+        continue
+      yield obj_num, f0, f1, f2
+
+  @classmethod
   def ParseUsingXrefStream(cls, data, do_ignore_generation_numbers,
                            xref_ofs, xref_obj_num, xref_generation):
     """Determine obj offsets in a PDF file using the cross-reference stream.
@@ -4788,42 +4828,7 @@ class PdfData(object):
       #            xref_obj.GetUncompressedStream().
       w0, w1, w2, index, xref_data = xref_obj.GetAndClearXrefStream(
           xref_ofs=xref_ofs, xref_obj_num=xref_obj_num)
-      w01 = w0 + w1
-      w012 = w01 + w2
-      ii = 0
-      obj_num = None
-      ii_remaining = 0
-      for i in xrange(0, len(xref_data), w012):
-        if not ii_remaining:
-          # PdfObj.GetAndClearXrefStream() guarantees that we get a positive
-          # ii_remaining and we don't exhaust the index array below.
-          if ii >= len(index):
-            raise PdfXrefStreamError(
-                'Index too large: ii=%d index_size=%d' % (ii, len(index)))
-          if obj_num is not None and index[ii] <= obj_num:
-            # TODO(pts): Check in xref_obj.GetAndClearXrefStream() instead.
-            raise PdfXrefStreamError(
-                'Sections within an xref stream not increasing: '
-                'old_obj_num=%d new_obj_num=%d' %
-                (obj_num, index[ii]))
-          obj_num = index[ii]
-          ii_remaining = index[ii + 1] - 1
-          assert ii_remaining >= 0
-          ii += 2
-        else:
-          obj_num += 1
-          ii_remaining -= 1
-        if w0:
-          f0 = cls.MSBFirstToInteger(xref_data[i : i + w0])
-        else:
-          f0 = 1
-        f1 = cls.MSBFirstToInteger(xref_data[i + w0 : i + w01])
-        if w2:
-          f2 = cls.MSBFirstToInteger(xref_data[i + w01 : i + w012])
-        else:
-          f2 = 0
-        if not f0:  # A free object, ignore it.
-          continue
+      for obj_num, f0, f1, f2 in cls.YieldXrefStreamEntries(w0, w1, w2, index, xref_data):
         if obj_num in obj_starts:
           if obj_num in keep_obj_starts:
             if f0 == 2:
