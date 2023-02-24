@@ -740,7 +740,7 @@ def PermissiveZlibDecompress(data):
     data = zd.decompress(buffer(data, 2))
     data += zd.flush()
     if len(zd.unused_data) >= 4:  # Full Adler-32 checksum.
-      # Python 2.4 or 2.5 may return signed or unsigned.
+      # Python 2.4 or 2.5 zlib.adler32(...) may return signed or unsigned.
       adler32_data = struct.pack('>L', zlib.adler32(data) & 0xffffffff)
       if adler32_data != zd.unused_data[:4]:
         raise zlib.error('Bad zlib data Adler-32 checksum.')
@@ -4232,7 +4232,8 @@ class ImageData(object):
       # TODO(pts): Optimize memory use.
       chunk_type += chunk_data
       output.append(chunk_type)
-      output.append(struct.pack('>l', zlib.crc32(chunk_type)))
+      # Python 2.4 or 2.5 zlib.crc32(...) may return signed or unsigned.
+      output.append(struct.pack('>L', zlib.crc32(chunk_type) & 0xffffffff))
 
     if do_force_gray:
       assert (self.color_type.startswith('indexed-') or
