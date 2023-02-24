@@ -1525,8 +1525,23 @@ class PdfSizeOptTest(unittest.TestCase):
     self.assertEqual(data, e(compressed[:-1]))
     self.assertEqual(data, e(compressed[:-2]))
     self.assertEqual(data, e(compressed[:-3]))
-    self.assertEqual(data, e(compressed[:-4]))
-    self.assertRaisesX(zlib.error, e, compressed[:-5])
+    self.assertEqual(data, e(compressed[:-4]))  # No Adler-32 checksum.
+    self.assertEqual(data, e(compressed[:-5]))  # No Adler-32 checksum, no end-of-strem marker, output truncated.
+
+    data = 'Hi! ' + 'Hello, World! ' * 7
+    zdata1 = zlib.compress(data, 9)
+    self.assertEqual(e(zdata1), data)
+    self.assertEqual(e(zdata1 + 'X'), data)
+    try:
+      e(zdata1[:-4] + 'ABCD')  # Bad zlib data Adler-32 checksum.
+      raise AssertionError('PermissiveZlibDecompress zlib.error not raised.')
+    except zlib.error, ex:
+      if not str(ex).startswith('Error -3 '):
+        self.assertEqual(str(ex), 'Bad zlib data Adler-32 checksum.')
+    zc = zlib.compressobj(9)
+    zdata2 = zc.compress(data)
+    zdata2 += zc.flush(zlib.Z_SYNC_FLUSH)
+    self.assertEqual(e(zdata2), data)
 
   def testResolveReferencesChanged(self):
     def NewObj(head, stream=None, do_compress=False):
