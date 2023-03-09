@@ -3567,6 +3567,22 @@ class PdfObj(object):
       end_ofs_out.append(i)
     return output_data
 
+  def CopyStreamObj(self, objs=None):
+    """Returns a new PdfObj containing just the stream of self."""
+    if self.stream is None:
+      raise ValueError('Missing stream in obj.')
+    obj = type(self)('1 0 obj<<>>endobj')
+    if not self.HasUncompressedStream():
+      if objs is None:
+        objs = {}
+      # Don't copy e.g. `/MetaData <n> 0 R', which Type1CParser won't be
+      # able to resolve.
+      for name in ('Filter', 'DecodeParms'):
+        obj.Set(name, self.ResolveReferences(self.Get(name), objs=objs))
+    obj.stream = self.stream
+    obj.Set('Length', len(obj.stream))
+    return obj
+
   def HasUncompressedStream(self):  # !!! Add unit tests.
     """Returns a bool indicating whether this obj has an uncompressed stream."""
     return (self.stream is not None and
@@ -5921,7 +5937,10 @@ class PdfData(object):
     type1_size = 0
     for obj_num in sorted(objs):
       type1_size += objs[obj_num].size
-      objs[obj_num].AppendTo(output, obj_num)
+      obj = objs[obj_num]
+      if obj.stream is None:
+        raise ValueError('Missing stream in Type1C obj %d' % obj_num)
+      obj.CopyStreamObj().AppendTo(output, obj_num)
     output.append('(Type1CParser: all OK\\n) print flush\n%%EOF\n')
     output_str = ''.join(output)
     LogInfo(
