@@ -632,6 +632,15 @@ Lossless JPEG optimization:
   deserves to get a lot more attention from people.
   ;
   ECT contains a zopfli-fork, with some brotli code cut-and-pasted into it. Recently, the author of ECT asked me to do the same in the official zopfli release, and I tried. I saw some improvements here and there, but an equal amount of worse compression results.
+* https://www.pdfa.org/norm-refs/5116.DCT_Filter.pdf
+  For JPEG experts only: The SOF0, SOF1, DHT, RSTm, EOI, SOS, DQT,
+  DRI, and COM markers are properly decoded. APPn (application-specific)
+  markers are skipped over harmlessly except for the Adobe reserved marker
+  described later.
+  These markers are not decoded: SOF2-SOF15, DAC, DNL, DHP, EXP,
+  JPGn, TEM, and RESn. If any occurs in a compressed image, it will be
+  rejected. With the exception of DNL, none of these markers is useful in a
+  Baseline DCT or Extended sequential DCT image
 
 Removing JPEG metadata (e.g. comments, JFIF, Exif etc.) manually:
 
