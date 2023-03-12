@@ -120,7 +120,7 @@ FLAGS_HELP = r"""
   it deduplicates objects, it reserialize object headers etc. These
   optimizations don't depend on the object type.
 --do-optimize-obj-heads=YES_NO; default: yes
-  Reserialize object headers? Only relevant if --do-optimize-obs=no (otherwise
+  Reserialize object headers? Only relevant if --do-optimize-objs=no (otherwise
   it's enabled regardless of the flag). It removes unnecessary whitespace and
   comments.
 --do-ignore-generation-numbers=YES_NO; default: yes
@@ -5505,7 +5505,7 @@ class PdfData(object):
           # not be part of an object stream. So we skip them here.
           if not (head.endswith('R') and PdfObj.PDF_REF_END_RE.search(head)):
             if do_emit_short_unsafe:
-              # To Call this in the final objstm_output insted, we'd have to
+              # To call this in the final objstm_output instead, we'd have to
               # fix the offsets (objstm_numbers). See also
               # https://github.com/pts/pdfsizeopt/issues/69 .
               head = PdfObj.CompressValue(
