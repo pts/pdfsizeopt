@@ -65,7 +65,7 @@ open a terminal window and run these commands (without the leading `$`):
 ```
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_linux-v8.tar.gz
+  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-9/pdfsizeopt_libexec_linux-v8.tar.gz
   $ tar xzvf pdfsizeopt_libexec_linux.tar.gz
   $ rm -f    pdfsizeopt_libexec_linux.tar.gz
   $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
