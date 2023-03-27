@@ -129,7 +129,7 @@ There is no installer, you need to run some commands in the command line
 command-line only application, there is no GUI.
 
 Create folder C:\pdfsizeopt, download
-https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_win32exec-v8.zip
+https://github.com/pts/pdfsizeopt/releases/download/2023-03-9/pdfsizeopt_win32exec-v8.zip
 , and extract its contents to the folder C:\pdfsizeopt, so that the file
 C:\pdfsizeopt\pdfsizeopt.exe exists.
 
@@ -416,7 +416,7 @@ run these commands (without the leading `$`):
 ```
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_darwin-v8.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-9/pdfsizeopt_libexec_darwin-v8.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
   $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
