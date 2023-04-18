@@ -1,10 +1,10 @@
 # This config file contains the latest pdfsizeopt libexec download URLs in a
 # machine-readable format. It is useful for distribution package maintainers.
 # For the same URLs in a human-readable format and installation instuctions,
-# see README.txt .
+# see README.md .
 
-Linux: https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_linux-v8.tar.gz
+Linux: https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_linux-v9.tar.gz
 Linux_extraimgopt: https://github.com/pts/pdfsizeopt/releases/download/2017-01-24/pdfsizeopt_libexec_extraimgopt_linux-v3.tar.gz
-macOS_i386: https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_darwin-v8.tar.gz
-macOS_x86_64: https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_darwinc64-v8.tar.gz
-Win32: https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_win32exec-v8.zip
+macOS_i386: https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_darwin-v9.tar.gz
+macOS_x86_64: https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_darwinc64-v9.tar.gz
+Win32: https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_win32exec-v9.zip

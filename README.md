@@ -65,7 +65,7 @@ open a terminal window and run these commands (without the leading `$`):
 ```
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_linux-v8.tar.gz
+  $ wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_linux-v9.tar.gz
   $ tar xzvf pdfsizeopt_libexec_linux.tar.gz
   $ rm -f    pdfsizeopt_libexec_linux.tar.gz
   $ wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
@@ -129,7 +129,7 @@ There is no installer, you need to run some commands in the command line
 command-line only application, there is no GUI.
 
 Create folder C:\pdfsizeopt, download
-https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_win32exec-v8.zip
+https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_win32exec-v9.zip
 , and extract its contents to the folder C:\pdfsizeopt, so that the file
 C:\pdfsizeopt\pdfsizeopt.exe exists.
 
@@ -342,7 +342,7 @@ these commands (without the leading `$`):
 ```
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_darwinc64-v8.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_darwinc64-v9.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
   $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
@@ -416,7 +416,7 @@ run these commands (without the leading `$`):
 ```
   $ mkdir ~/pdfsizeopt
   $ cd ~/pdfsizeopt
-  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-03-09/pdfsizeopt_libexec_darwin-v8.tar.gz
+  $ curl -L -o pdfsizeopt_libexec_darwin.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_darwin-v9.tar.gz
   $ tar xzvf pdfsizeopt_libexec_darwin.tar.gz
   $ rm -f    pdfsizeopt_libexec_darwin.tar.gz
   $ curl -L -o pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
