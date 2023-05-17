@@ -53,6 +53,29 @@ easy to install), but the author of pdfsizeopt doesn't have the free time to
 create and maintain such a port. As an FYI, see
 https://github.com/pts/pdfsizeopt/issues/154 about porting to Apple Silicon.
 
+## Running on GitHub Codespaces
+
+Codespaces is free on GitHub thus you can use pdfsizeopt without installing anything.
+
+1) Click on the green Code button and select Codespaces. You can go with the default Codespace.
+2) When the Codespace opens, click on Terminal and paste this in. Alternatively if you fork, the pdfsizeopt repo, you can save the below as `setup.sh` and run `sh setup.sh`.
+```
+mkdir ~/pdfsizeopt
+cd ~/pdfsizeopt
+wget -O pdfsizeopt_libexec_linux.tar.gz https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_linux-v9.tar.gz
+tar xzvf pdfsizeopt_libexec_linux.tar.gz
+rm -f    pdfsizeopt_libexec_linux.tar.gz
+wget -O pdfsizeopt.single https://raw.githubusercontent.com/pts/pdfsizeopt/master/pdfsizeopt.single
+chmod +x pdfsizeopt.single
+ln -s pdfsizeopt.single pdfsizeopt
+```
+3) The right-click and upload your PDF file.
+4) Now you can run 
+```
+  ~/pdfsizeopt/pdfsizeopt input.pdf output.pdf
+```
+5) Download your file by right-clicking on the file.
+
 ## Installation instructions and usage on Linux
 
 There is no installer, you need to run some commands in the command line to
