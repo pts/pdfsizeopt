@@ -6,7 +6,7 @@ set -ex
 cd "${0%/*}"
 test -f ../pdfsizeopt.single
 if ! test -f pdfsizeopt_libexec_linux.tar.gz; then
-  wget -nv -O pdfsizeopt_libexec_linux.tar.gz.tmp https://github.com/pts/pdfsizeopt/releases/download/2023-02-21/pdfsizeopt_libexec_linux-v4.tar.gz
+  wget -nv -O pdfsizeopt_libexec_linux.tar.gz.tmp https://github.com/pts/pdfsizeopt/releases/download/2023-04-18/pdfsizeopt_libexec_linux-v9.tar.gz
   rm -f pdfsizeopt_libexec_linux.tar.gz
   mv pdfsizeopt_libexec_linux.tar.gz.tmp pdfsizeopt_libexec_linux.tar.gz
 fi
@@ -20,7 +20,7 @@ fi
 chmod 755 busybox
 rm -rf pdfsizeopt_libexec
 tar xzvf pdfsizeopt_libexec_linux.tar.gz
-chmod 755 pdfsizeopt_libexec/gs pdfsizeopt_libexec/jbig2 pdfsizeopt_libexec/png22pnm pdfsizeopt_libexec/sam2p pdfsizeopt_libexec/pngout pdfsizeopt_libexec/python
+chmod 755 pdfsizeopt_libexec/gs pdfsizeopt_libexec/jbig2 pdfsizeopt_libexec/sam2p pdfsizeopt_libexec/pngout pdfsizeopt_libexec/python
 rm -f pdfsizeopt.single
 cp -a ../pdfsizeopt.single ./
 chmod 755 pdfsizeopt.single
